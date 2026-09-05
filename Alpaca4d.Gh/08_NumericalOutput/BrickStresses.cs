@@ -124,14 +124,16 @@ namespace Alpaca4d.Gh
             }
 
 
-            var ids = alpacaModel.Bricks.Select(d => d.Id).ToList();
-
-            var sigma11 = tetraSigma11.Concat(sspSigma11).OrderBy(i => ids).ToList();
-            var sigma22 = tetraSigma22.Concat(sspSigma22).OrderBy(i => ids).ToList();
-            var sigma33 = tetraSigma33.Concat(sspSigma33).OrderBy(i => ids).ToList();
-            var sigma12 = tetraSigma12.Concat(sspSigma12).OrderBy(i => ids).ToList();
-            var sigma23 = tetraSigma23.Concat(sspSigma23).OrderBy(i => ids).ToList();
-            var sigma13 = tetraSigma13.Concat(sspSigma13).OrderBy(i => ids).ToList();
+            // Tetrahedra then SSP bricks, which in a model mixing the two is not the order they
+            // were assembled in. These used to carry an ".OrderBy(i => ids)", which sorted every
+            // value by the same whole list of IDs and so could not reorder anything; the
+            // concatenation below is what the order has always really been.
+            var sigma11 = tetraSigma11.Concat(sspSigma11).ToList();
+            var sigma22 = tetraSigma22.Concat(sspSigma22).ToList();
+            var sigma33 = tetraSigma33.Concat(sspSigma33).ToList();
+            var sigma12 = tetraSigma12.Concat(sspSigma12).ToList();
+            var sigma23 = tetraSigma23.Concat(sspSigma23).ToList();
+            var sigma13 = tetraSigma13.Concat(sspSigma13).ToList();
 
             // Calculate Con Mises stress
 
