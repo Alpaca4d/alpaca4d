@@ -54,16 +54,29 @@ namespace Alpaca4d.Section
     /// is expressed by declaring a second material with Ex and Ey exchanged rather than by rotating
     /// the layer.
     ///
-    /// The one thing this section CANNOT do is interlayer slip. Every layer shares a single strain
-    /// field, in-plane strain running as eps0 - z*kappa across the whole stack and transverse shear
-    /// held constant through it (LayeredShellFiberSection::setTrialSectionDeformation). Plane
-    /// sections stay plane over the full depth, so a stiff-soft-stiff laminate held together by a
-    /// compliant core - laminated glass on a PVB interlayer, a sandwich panel on a weak adhesive -
-    /// comes out very near its monolithic limit rather than somewhere between monolithic and fully
-    /// layered. Measured on a cantilever strip of 6mm glass / 1.52mm PVB / 6mm glass: this section
-    /// gives a tip deflection 21% above monolithic, where two independently bending panes would be
-    /// 5.7 times above it. Stiff by a factor of about five, and unsafe in that direction. Model
-    /// those as two shells with an explicit shear connection instead.
+    /// The one thing this section CANNOT do is in-plane interlayer slip. Every layer shares a
+    /// single strain field, in-plane strain running as eps0 - z*kappa across the whole stack
+    /// (LayeredShellFiberSection::setTrialSectionDeformation), so plane sections stay plane over
+    /// the full depth. A stiff-soft-stiff laminate held together by a compliant core - laminated
+    /// glass on a PVB interlayer, a sandwich panel on a weak adhesive - carries its load by two
+    /// faces sliding against each other, and that is the one mechanism missing.
+    ///
+    /// It is not simply monolithic: transverse shear IS integrated layer by layer, so a soft core
+    /// does soften the section that way. It is the in-plane slip that is absent.
+    ///
+    /// How wrong that leaves it depends entirely on how well the core couples the faces - on the
+    /// span, the core's shear modulus, and for a polymer on temperature and load duration.
+    /// Measured on a cantilever strip of 6mm glass / 1.52mm PVB / 6mm glass at G = 1.0 MPa, tip
+    /// deflection:
+    ///
+    ///     two panes, no coupling      0.1286
+    ///     two shells + shear springs  0.0358      <- what the laminate really does
+    ///     this section                0.0273      <- 31% stiff here
+    ///     monolithic 13.52mm          0.0225
+    ///
+    /// So 31% for that case, tending to nothing for a stiff interlayer over a short span and to a
+    /// factor of 4.7 for a soft one over a long span - always stiff, which is the unsafe
+    /// direction. Model a laminate that matters as two shells with an explicit shear connection.
     /// </summary>
     public partial class LayeredShellSection : ISerialize, IMultiDimensionSection
     {

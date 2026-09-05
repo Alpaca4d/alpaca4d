@@ -32,10 +32,11 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("Material", "Material",
                 "Materials the layers are made of, bottom face first. Any nD material, orthotropic " +
                 "included.\n" +
-                "Every layer shares one strain field, so a stiff-soft-stiff laminate held by a " +
-                "compliant core comes out near its monolithic limit: 6mm glass / 1.52mm PVB / 6mm " +
-                "glass reads about 5 times stiffer than two panes bending independently. Model that " +
-                "as two shells with a shear connection instead.", GH_ParamAccess.list);
+                "Every layer shares one strain field, so in-plane slip across a soft core is not " +
+                "modelled and the section comes out stiff. How stiff depends on the span and the " +
+                "core: 6mm glass / 1.52mm PVB / 6mm glass over a 1m cantilever reads 31% stiff, " +
+                "more over a longer span. Model a laminate that matters as two shells with a shear " +
+                "connection.", GH_ParamAccess.list);
             pManager.AddNumberParameter("Thickness", "Thickness",
                 $"[{Units.Length}] Thickness of each layer, bottom face first, matching Material.\n" +
                 "A single value against a single material is the whole section, split into Layers " +
