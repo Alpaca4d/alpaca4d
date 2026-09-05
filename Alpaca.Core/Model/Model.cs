@@ -31,6 +31,13 @@ namespace Alpaca4d
         public List<IBeam> Beams { get; set; } = new List<IBeam> { };
         public List<IShell> Shells { get; set; } = new List<IShell> { };
         public List<IBrick> Bricks { get; set; } = new List<IBrick> { };
+
+        /// <summary>
+        /// The spring elements - links between two nodes and springs to ground alike. They are kept
+        /// apart from the other three because they carry no geometry the model can weigh, mesh or
+        /// draw a stress on: a spring is a stiffness between nodes and nothing else.
+        /// </summary>
+        public List<ILink> Links { get; set; } = new List<ILink> { };
         public List<IElement> Elements { get; set; } = new List<IElement> { };
         public List<ForceBeamColumn> ForceBeamColumns { get; set; }
         public List<LoadPattern> LoadPatterns { get; set; } = new List<LoadPattern> { };
@@ -101,6 +108,15 @@ namespace Alpaca4d
                         var density = (double)brick.Material.Rho;
                         mass += density * meshVolume;
                     }
+
+                    // A spring weighs nothing. Both spring elements are massless by construction -
+                    // a link can be given a mass, but that is a lumped mass the user put there
+                    // rather than material this model knows the density of, and the mass loads
+                    // counted below are where a weight of that sort belongs.
+                    else if (item.Type == ElementType.Link || item.Type == ElementType.ZeroLength)
+                    {
+                    }
+
                     else
                     {
                         throw new NotImplementedException($"{item.Type} has not been considered!");
@@ -528,6 +544,82 @@ namespace Alpaca4d
 
         }
 
+        /// <summary>
+        /// The tag of the node already standing at <paramref name="point"/>, and through
+        /// <paramref name="ndf"/> how many degrees of freedom it has.
+        ///
+        /// Everything that makes nodes - beams, shells, solids - has been through
+        /// <see cref="GetUniquePoints"/> by the time this is called, so a point that finds nothing
+        /// is a point no element reaches. That is worth saying plainly: the alternative is a
+        /// spring quietly attached to the nearest node it could find, which looks right and is not.
+        ///
+        /// Six degree of freedom nodes are searched first because that is where a spring nearly
+        /// always lands, and because a point shared by a shell and a solid exists in both pools -
+        /// the six degree of freedom one being the one that can carry a moment.
+        /// </summary>
+        public int NodeTagAt(Point3d point, out int ndf, string owner)
+        {
+            if (this.RTreeCloudPointSixNDF != null)
+            {
+                var found = FirstWithin(this.RTreeCloudPointSixNDF, point, this.Tollerance);
+                if (found >= 0)
+                {
+                    ndf = 6;
+                    return found + 1 + this.UniquePointsThreeNDF.Count;
+                }
+            }
+
+            if (this.RTreeCloudPointThreeNDF != null)
+            {
+                var found = FirstWithin(this.RTreeCloudPointThreeNDF, point, this.Tollerance);
+                if (found >= 0)
+                {
+                    ndf = 3;
+                    return found + 1;
+                }
+            }
+
+            throw new Exception($"{owner} sits at {point}, where the model has no node. A spring joins " +
+                                $"nodes that are already there; it does not make them. Move the end onto a " +
+                                $"beam end, a mesh vertex or another node, or raise the model tolerance " +
+                                $"(currently {this.Tollerance}).");
+        }
+
+        /// <summary>The index of the first point within <paramref name="tol"/>, or -1.</summary>
+        private static int FirstWithin(RTree tree, Point3d point, double tol)
+        {
+            int found = -1;
+
+            tree.Search(new Sphere(point, tol), (sender, e) =>
+            {
+                found = e.Id;
+                e.Cancel = true;
+            });
+
+            return found;
+        }
+
+        /// <summary>
+        /// Where the running node tag has reached. Zero until the first auxiliary node is asked
+        /// for, so that the count of real nodes is read after the point cloud has been built.
+        /// </summary>
+        private int _auxiliaryNodeTag = 0;
+
+        /// <summary>
+        /// The next free node tag past the ones the point cloud handed out.
+        ///
+        /// Some things need a node the geometry never asked for - a skewed support reacting through
+        /// a spring, a spring to ground - and they all draw from here so that no two of them pick
+        /// the same tag.
+        /// </summary>
+        public int NextNodeTag()
+        {
+            if (this._auxiliaryNodeTag == 0)
+                this._auxiliaryNodeTag = this.UniquePointsThreeNDF.Count + this.UniquePointsSixNDF.Count;
+
+            return ++this._auxiliaryNodeTag;
+        }
+
         public override string ToString()
         {
             return "<Class Model>";
@@ -692,6 +784,8 @@ namespace Alpaca4d
                 }
                 else if (element.Type == ElementType.Brick)
                     this.Bricks.Add((IBrick)element);
+                else if (element.Type == ElementType.Link || element.Type == ElementType.ZeroLength)
+                    this.Links.Add((ILink)element);
             }
         }
 
@@ -828,12 +922,11 @@ namespace Alpaca4d
 
             var stiffness = this.PenaltyStiffness();
 
-            var auxiliaryNodeTag = this.UniquePointsThreeNDF.Count + this.UniquePointsSixNDF.Count;
             var springElementTag = this.Elements.Count;
 
             foreach (var support in skewed)
             {
-                support.AuxiliaryNodeId = ++auxiliaryNodeTag;
+                support.AuxiliaryNodeId = this.NextNodeTag();
                 support.SpringElementId = ++springElementTag;
                 support.TranslationSpring = SupportSpring(stiffness.translation);
                 support.RotationSpring = SupportSpring(stiffness.rotation);
@@ -1147,6 +1240,14 @@ namespace Alpaca4d
                     // without ever being declared.
                     materials.AddRange(((IShell)item).Section.Materials);
                 }
+
+                // A spring carries one material per direction, and every one of them has to be
+                // declared before the element line that names it.
+                else if (item.Type == ElementType.Link || item.Type == ElementType.ZeroLength)
+                {
+                    materials.AddRange(((ILink)item).Materials);
+                }
+
                 else
                     materials.Add(((IBrick)item).Material);
             }

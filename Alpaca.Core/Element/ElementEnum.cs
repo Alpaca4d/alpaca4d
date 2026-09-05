@@ -11,7 +11,8 @@ namespace Alpaca4d.Element
         ZeroLength,
         Beam,
         Shell,
-        Brick
+        Brick,
+        Link
     }
 
     public enum ElementClass
