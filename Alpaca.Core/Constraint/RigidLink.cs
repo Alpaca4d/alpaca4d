@@ -39,6 +39,16 @@ namespace Alpaca4d.Constraints
             this.ConstrainedNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { this.ConstrainedNode }, model.Tollerance)
                 .Select(x => x + 1 + model.UniquePointsThreeNDF.Count)
                 .First();
+
+            // "rigidLink beam n n" is a FATAL out of the system of equations, and takes OpenSees
+            // down with it. Culling makes it easy to reach: two points closer together than the
+            // model tolerance are one node, and Alpaca4d never puts two nodes at one point.
+            if (this.RetainedNodeId == this.ConstrainedNodeId)
+                throw new Exception($"A Rigid Link has both ends on node {this.RetainedNodeId}, at " +
+                                    $"{this.RetainedNode}. Alpaca4d puts one node at each point, so " +
+                                    "two points closer together than the model tolerance are one " +
+                                    "node and there is nothing to link. Move one end onto the other " +
+                                    "node you meant.");
         }
 
         public RigidLink(Point3d retainedNode, Point3d constrainedNode, RigidLinkType type = RigidLinkType.beam)

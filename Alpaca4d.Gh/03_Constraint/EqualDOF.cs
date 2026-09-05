@@ -11,11 +11,12 @@ namespace Alpaca4d.Gh
     {
         public EqualDOF()
           : base("Equal DOF (Alpaca4d)", "Equal DOF",
-            "Tie chosen degrees of freedom of one node to another, so the two move together in " +
+            "Copy chosen degrees of freedom from one node to another, so the two read the same in " +
             "those and stay independent in the rest.\n" +
-            "A rigid link ties everything and holds the distance between the nodes; this ties only " +
-            "what you list and ignores the distance, which is what makes a hinge, a slider or a " +
-            "shear key.",
+            "Copy, not connect: the offset between the nodes plays no part, so a rotation of the " +
+            "first does not move the second. That is what separates it from a Rigid Link, which " +
+            "carries the offset, and what makes it the one for a shear key, a slider, or two faces " +
+            "tied for symmetry.",
             "Alpaca4d", "03_Constraint")
         {
             // Draw a Description Underneath the component
@@ -33,7 +34,7 @@ namespace Alpaca4d.Gh
                 "Which degrees of freedom to tie. Always global - 1, 2, 3 translation along X, Y " +
                 "and Z, 4, 5, 6 rotation about them. Left empty all six are tied.\n" +
                 "There is no local option: OpenSees ties nodal degrees of freedom, and a node has " +
-                "no axes of its own. For a tie along a skewed axis use a Link.", GH_ParamAccess.list);
+                "no axes of its own. For a tie along a skewed axis use a Spring Link.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 

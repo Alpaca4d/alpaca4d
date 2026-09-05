@@ -97,16 +97,11 @@ class LinkTest
             Check(tcl.Contains(" -mat 1 1 1 "), "one material tag per direction");
             Check(tcl.Contains(" -dir 1 2 3 "), "the directions, in the order given");
             Check(tcl.Contains(" -orient "), "an orientation is always written");
-            Check(!tcl.Contains(" -mass "), "no -mass when the link is massless");
+            Check(!tcl.Contains(" -mass "), "no -mass: a spring is a stiffness, weight is a Mass Point");
 
             // Local x runs along the link, so the y hint alone is enough and OpenSees stays quiet.
             var orient = tcl.Substring(tcl.IndexOf("-orient ") + 8).Trim().Split(' ');
             Check(orient.Length == 3, $"three numbers after -orient, not six (got {orient.Length})");
-
-            // A link's mass goes through ModelMass like every other mass in a deck: given in kg,
-            // written in the unit the solver's mass matrix is assembled in.
-            link.Mass = 12.5;
-            Check(link.WriteTcl().Contains(" -mass 0.0125"), "a mass is written, converted from kg");
         }
 
         Section("Link - the local frame");
@@ -261,7 +256,8 @@ class LinkTest
             Deck.SpringSupport(Path.Combine(outputDirectory, "spring.tcl"));
             Deck.Tie(Path.Combine(outputDirectory, "equaldof.tcl"));
             Deck.Laminate(Path.Combine(outputDirectory, "laminate.tcl"));
-            Console.WriteLine("  [ .. ] link.tcl, spring.tcl, equaldof.tcl, laminate.tcl written");
+            Deck.Joins(Path.Combine(outputDirectory, "joins.tcl"));
+            Console.WriteLine("  [ .. ] link, spring, equaldof, laminate, joins written");
         }
 
         Console.WriteLine();

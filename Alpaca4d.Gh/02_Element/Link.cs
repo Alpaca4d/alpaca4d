@@ -9,16 +9,25 @@ using Alpaca4d.Generic;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>
+    /// Shown as "Spring Link" and called Link in the code, after OpenSees' twoNodeLink.
+    ///
+    /// The display name earns its extra word next to Rigid Link, which sits two tabs away and does
+    /// a job that overlaps this one. Both join two nodes; the difference is that a rigid link is an
+    /// exact constraint with no stiffness to choose, and this is an element with a real stiffness
+    /// per direction. Naming them Link and Rigid Link left the reader to guess which was which.
+    /// </summary>
     public class Link : GH_Component
     {
         public Link()
-          : base("Link (Alpaca4d)", "Link",
+          : base("Spring Link (Alpaca4d)", "Spring Link",
             "A spring between two nodes that are apart - a bearing, a bolt, a damper, the " +
             "interlayer of a laminate.\n" +
             "One material per direction, and only the directions given carry anything: a link on " +
             "direction 1 alone pulls along its own axis and resists nothing else.\n" +
             "Directions are local. 1 runs along the link, 2 and 3 across it, unless a Plane says " +
-            "otherwise.",
+            "otherwise.\n" +
+            "For a join with no give at all use a Rigid Link, which is exact and needs no stiffness.",
             "Alpaca4d", "02_Element")
         {
             // Draw a Description Underneath the component
@@ -47,11 +56,6 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.ElementIdInput, GH_ParamAccess.item);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Mass", "Mass",
-                $"Mass of the link itself [{Units.Mass}], split between its two nodes. A spring " +
-                "normally has none; a bearing heavy enough to matter is a Mass Point.",
-                GH_ParamAccess.item, 0.0);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -96,9 +100,6 @@ namespace Alpaca4d.Gh
             string elementId = null;
             DA.GetData(4, ref elementId);
 
-            double mass = 0.0;
-            DA.GetData(5, ref mass);
-
             var links = new List<Alpaca4d.Element.Link>();
             foreach (var line in lines)
             {
@@ -112,7 +113,6 @@ namespace Alpaca4d.Gh
 
                 var link = new Alpaca4d.Element.Link(line, materials.ToList(), directions.ToList(), plane);
                 link.ElementId = elementId;
-                link.Mass = mass;
                 links.Add(link);
             }
 

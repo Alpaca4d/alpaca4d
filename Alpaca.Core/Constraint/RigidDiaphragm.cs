@@ -27,6 +27,17 @@ namespace Alpaca4d.Constraints
             // three degree of freedom node because those are written first.
             this.SlaveNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, SlaveNodes, model.Tollerance).Select(x => x + 1 + model.UniquePointsThreeNDF.Count).ToList();
             this.MasterNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { (Point3d)MasterNode }, model.Tollerance).Select(x => x + 1 + model.UniquePointsThreeNDF.Count).First();
+
+            // A node cannot be its own slave, and a diaphragm whose master is one of the points it
+            // was drawn over is an ordinary thing to draw. Dropped rather than refused: what was
+            // meant is unambiguous, and the alternative is a constraint OpenSees cannot solve.
+            this.SlaveNodeId = this.SlaveNodeId.Where(tag => tag != this.MasterNodeId).ToList();
+
+            if (this.SlaveNodeId.Count == 0)
+                throw new Exception($"A Rigid Diaphragm has no nodes left once its retained node is " +
+                                    "taken out - every point given was the same node. Alpaca4d puts " +
+                                    "one node at each point, so points closer together than the model " +
+                                    "tolerance are one node.");
         }
 
 

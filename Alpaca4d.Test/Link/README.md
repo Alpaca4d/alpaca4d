@@ -1,4 +1,4 @@
-# Link, Zero Length Spring and Equal DOF
+# Spring Link, Zero Length Spring and Equal DOF
 
     ./run.sh
 
@@ -6,7 +6,7 @@ Three ways of joining things that were not joined before:
 
 | | OpenSees | what it is |
 |---|---|---|
-| **Link** | `twoNodeLink` | a spring between two nodes that are apart |
+| **Spring Link** | `twoNodeLink` | a spring between two nodes that are apart |
 | **Zero Length Spring** | `zeroLength` | a spring between a node and the ground |
 | **Equal DOF** | `equalDOF` | a tie between chosen degrees of freedom of two nodes |
 
@@ -29,8 +29,47 @@ than a transcription of it. The decks check themselves against closed form:
 | `spring.tcl` | a cantilever whose built-in end is a spring, `P/k` and `PL/k` and the tip that picks up both |
 | `equaldof.tcl` | two cantilevers of different span sharing a tip translation and keeping their own rotations |
 | `laminate.tcl` | laminated glass: two shells and an interlayer, swept over its shear modulus |
+| `joins.tcl` | what separates a rigid link, an equalDOF and a stiff spring link |
 
 Without OpenSees on PATH the decks are written and left unsolved, and the tcl checks still run.
+
+## Three ways of joining two nodes
+
+`joins.tcl` exists because the component descriptions now tell the user which to reach for, and
+that advice ought to rest on a measurement. A cantilever tip both drops and turns; a second node a
+metre away is joined to it by one of the four, and the question is whether that node picks up the
+tip rotation times the metre as well:
+
+| join | carries the offset |
+|---|---|
+| Rigid Link, `beam` | yes - a rigid body, which is what it says |
+| Rigid Link, `bar` | no - translations only |
+| **Equal DOF, all six** | **no** |
+| Spring Link, very stiff | yes, through its own shear springs at mid-length |
+
+The third is the one worth a test. Tying all six degrees of freedom reads like a rigid connection
+and is not one: `equalDOF` copies each degree of freedom on its own, and copying every component is
+not the same as moving as a body once there is a distance between the two nodes.
+
+So the three are not alternatives. A **Rigid Link** is an exact constraint for a join with no give -
+no stiffness to choose and nothing for the solver to condition around. A **Spring Link** is an
+element with a real stiffness per direction, for a join that flexes or that is stiff some ways and
+free others. **Equal DOF** copies components and ignores the geometry, which is what a shear key, a
+slider, or a pair of faces tied for symmetry actually needs.
+
+## What a self-referential constraint does
+
+Alpaca4d puts one node at each point, so two points closer together than the model tolerance are
+one node - and a constraint drawn between them ends up with both ends on it. Neither OpenSees
+command says anything useful:
+
+* `equalDOF n n` is accepted and solved without complaint, and the answer is wrong. In the case
+  measured it came out 5.3 times too stiff.
+* `rigidLink beam n n` is worse: `FATAL FullGenLinSOE::getX - vectX == 0`, and the process dies.
+
+Both are caught in `SetTopologyRTree` now, with a message saying why. Neither guard is checked here
+because both live behind an `RTree`; the behaviour they prevent is recorded above so nobody removes
+them wondering what they were for.
 
 ## The laminate deck
 
@@ -77,3 +116,6 @@ the way from loose to rigid.
 * Its shear springs act at mid-length by default, so a shear force on a link of finite length also
   turns its nodes. That is not an error to be tuned away - it is what makes two offset shells act
   compositely - and `link.tcl` measures it.
+* A local x handed to it on `-orient` really is used, even though it warns that it is doing exactly
+  that. `link.tcl` checks it, because the Plane input tells the user that the world XY plane is how
+  the directions become global.

@@ -26,11 +26,11 @@ cp Link.cs Deck.cs "$work/"; cp "$CORE" "$RHINO" "$work/"
   fi
 
   fails=0
-  for deck in link spring equaldof laminate; do
+  for deck in link spring equaldof laminate joins; do
     # OpenSees says nothing about an unreadable deck other than through its exit code, so both
     # the printed FAILs and a non-zero exit are worth catching.
     out=$("$OPENSEES" "$deck.tcl" 2>&1) || { echo "$out"; echo "  [FAIL] $deck.tcl did not run"; fails=1; continue; }
-    echo "$out" | sed -n '/^[A-D]\./,$p'
+    echo "$out" | sed -n '/^[A-E]\./,$p'
     echo "$out" | grep -q "\[FAIL\]" && fails=1
   done
 

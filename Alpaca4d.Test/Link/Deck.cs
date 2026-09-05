@@ -255,6 +255,86 @@ proc solve {} {
     }
 
     /// <summary>
+    /// Deck E. What separates the three ways of joining two nodes, measured rather than asserted,
+    /// because the component descriptions now tell the user which to reach for.
+    ///
+    /// A cantilever runs along Y and is loaded down at its tip, so the tip both drops and turns.
+    /// A second node sits a metre further along Y, joined only by the thing under test. A join
+    /// that carries the offset takes that node down by the tip rotation times the metre as well;
+    /// one that only copies components leaves it level with the tip.
+    ///
+    ///   Rigid Link (beam)   carries the offset. A rigid body, which is what it says.
+    ///   Rigid Link (bar)    translations only, no offset carried.
+    ///   Equal DOF, all six  does NOT carry the offset, even tying every degree of freedom. It
+    ///                       copies each one on its own, which is a different thing from moving
+    ///                       as a body, and over a distance the two part company.
+    ///   Spring Link, stiff  carries it, through its own shear springs at mid-length.
+    ///
+    /// The third is the one worth having in a test. Tying all six degrees of freedom reads like a
+    /// rigid connection and is not one.
+    /// </summary>
+    public static void Joins(string path)
+    {
+        const double load = -1000.0;
+        const double arm = 1.0;
+
+        var rigid = Spring(1, 1.0e12);
+        var link = new Alpaca4d.Element.Link(
+            new Line(new Point3d(0, 0, 0), new Point3d(0, arm, 0)),
+            Enumerable.Repeat((IUniaxialMaterial)rigid, 6).ToList(),
+            new List<int> { 1, 2, 3, 4, 5, 6 });
+        link.Id = 9;
+        link.INode = 1;
+        link.JNode = 2;
+
+        var tieAll = new EqualDOF(new Point3d(0, 0, 0), new Point3d(0, arm, 0), true, true, true, true, true, true);
+        tieAll.MasterNodeId = 1;
+        tieAll.SlaveNodeId = 2;
+
+        var beamLink = new RigidLink(new Point3d(0, 0, 0), new Point3d(0, arm, 0), RigidLinkType.beam);
+        beamLink.RetainedNodeId = 1;
+        beamLink.ConstrainedNodeId = 2;
+
+        var deck = new StringBuilder();
+        deck.Append("# Deck E - what separates a rigid link, an equalDOF and a stiff spring link.\n");
+        deck.Append(Checker);
+        deck.Append("puts \"\\nE. Three ways of joining two nodes a metre apart\"\n");
+
+        // A whisper of rotational stiffness to ground keeps the joins that leave rotations free
+        // from being singular. At 1e-6 it moves no translation that matters here.
+        Action<string, string, bool> run = (label, join, carriesOffset) =>
+        {
+            deck.Append("wipe\nmodel BasicBuilder -ndm 3 -ndf 6\n");
+            deck.Append($"node 0 0 -1 0\nnode 1 0 0 0\nnode 2 0 {N(arm)} 0\nnode 3 0 {N(arm)} 0\n");
+            deck.Append("fix 0 1 1 1 1 1 1\nfix 3 1 1 1 1 1 1\n");
+            deck.Append("geomTransf Linear 1 0 0 1\n");
+            deck.Append("element elasticBeamColumn 1 0 1 0.01 2.1e11 8.0e10 1e-5 1e-5 1e-5 1\n");
+            deck.Append(rigid.WriteTcl());
+            deck.Append("uniaxialMaterial Elastic 2 1e-6 0 1e-6\n");
+            deck.Append("element zeroLength 8 3 2 -mat 2 2 2 -dir 4 5 6 -orient 1 0 0 0 1 0\n");
+            deck.Append(join);
+            deck.Append("timeSeries Linear 1\n");
+            deck.Append($"pattern Plain 1 1 {{ load 1 0 0 {N(load)} 0 0 0 }}\n");
+            deck.Append($"if {{[solve] != 0}} {{ puts \"  [FAIL] {label} did not solve\" }}\n");
+
+            // The tip rotation is read from the model rather than worked out here, so the check is
+            // about what the join does with it and not about the cantilever.
+            deck.Append($"set carried [expr {{[nodeDisp 2 3] - [nodeDisp 1 3]}}]\n");
+            deck.Append(carriesOffset
+                ? $"check \"{label} carries the offset\" $carried [expr {{[nodeDisp 1 4] * {N(arm)}}}] 1e-6\n"
+                : $"check \"{label} does not carry the offset\" $carried 0.0 1e-9\n");
+        };
+
+        run("Rigid Link, beam", beamLink.WriteTcl(), true);
+        run("Rigid Link, bar", new RigidLink(Point3d.Origin, Point3d.Origin, RigidLinkType.bar)
+            { RetainedNodeId = 1, ConstrainedNodeId = 2 }.WriteTcl(), false);
+        run("Equal DOF, all six", tieAll.WriteTcl(), false);
+        run("Spring Link, stiff", link.WriteTcl(), true);
+
+        File.WriteAllText(path, deck.ToString());
+    }
+
+    /// <summary>
     /// Deck D. Laminated glass, which is what these elements were added for: two panes of glass
     /// with an interlayer between them that is soft in shear, so the two panes slide over each
     /// other and the pair is stiffer than two loose panes and softer than one thick one.

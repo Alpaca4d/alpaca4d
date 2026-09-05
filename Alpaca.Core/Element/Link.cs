@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 
 using Rhino.Geometry;
@@ -37,12 +36,6 @@ namespace Alpaca4d.Element
         /// The local frame. Left invalid, it is built from the line: X along the link, Y across it.
         /// </summary>
         public Plane Orient { get; set; } = Plane.Unset;
-
-        /// <summary>
-        /// Mass of the link itself in kg, split evenly between the two nodes. Usually zero - a
-        /// spring is a stiffness, and a bearing heavy enough to matter is a mass load.
-        /// </summary>
-        public double Mass { get; set; } = 0.0;
 
         public ElementType Type => ElementType.Link;
         public int? Id { get; set; }
@@ -118,16 +111,14 @@ namespace Alpaca4d.Element
 
             var materials = string.Join(" ", this.Materials.Select(material => material.Id));
             var directions = string.Join(" ", this.Directions);
-            // Through ModelMass like every other mass in a deck: OpenSees has no units, so a
-            // link's mass has to be in the same one as every nodal mass and every density.
-            var mass = this.Mass > 0.0
-                ? " -mass " + ModelMass.FromKg(this.Mass).ToString("R", CultureInfo.InvariantCulture)
-                : "";
 
+            // No -mass. A spring is a stiffness between two nodes and nothing else, and a bearing
+            // heavy enough to weigh is a Mass Point at the node - which is the one place mass is
+            // written from, converted once, and counted by Model.TotalMass.
             return $"element twoNodeLink {this.Id} {this.INode} {this.JNode}" +
                    $" -mat {materials}" +
                    $" -dir {directions}" +
-                   $" -orient {LinkFrame.OrientAlong(x, y, axis)}{mass}\n";
+                   $" -orient {LinkFrame.OrientAlong(x, y, axis)}\n";
         }
 
         public override string ToString()

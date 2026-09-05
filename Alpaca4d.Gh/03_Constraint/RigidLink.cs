@@ -11,7 +11,11 @@ namespace Alpaca4d.Gh
     {
         public RigidLink()
           : base("Rigid Link (Alpaca4d)", "Rigid Link",
-            "Construct a Rigid Link",
+            "Join two nodes with no give at all, so the second follows the first as a rigid body.\n" +
+            "An exact constraint, not a stiff spring: there is no number to choose and nothing for " +
+            "the solver to condition around. Use it for an offset, a haunch, a rigid bracket.\n" +
+            "For a join with real flexibility, or one stiff in some directions and free in others, " +
+            "use a Spring Link.",
             "Alpaca4d", "03_Constraint")
         {
             // Draw a Description Underneath the component
@@ -20,9 +24,14 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
-            pManager.AddPointParameter("RetainedPoint", "RetainedPoint", "Retained node", GH_ParamAccess.item);
-            pManager.AddPointParameter("ConstrainedPoint", "ConstrainedPoint", "Constrained node", GH_ParamAccess.item);
-            pManager.AddTextParameter("Type", "Type", "Connect a 'ValueList'\nbar - ties the translations only\nbeam - ties the rotations as well", GH_ParamAccess.item, "beam");
+            pManager.AddPointParameter("RetainedPoint", "RetainedPoint", $"The node that leads [{Units.Length}]. It keeps its own degrees of freedom.", GH_ParamAccess.item);
+            pManager.AddPointParameter("ConstrainedPoint", "ConstrainedPoint", $"The node that follows [{Units.Length}], as a rigid body about the one above.", GH_ParamAccess.item);
+            pManager.AddTextParameter("Type", "Type",
+                "Connect a 'ValueList'.\n" +
+                "beam - a full rigid body, so a rotation of the retained node also moves this one " +
+                "by the offset between them.\n" +
+                "bar - the translations only, with no rotation carried and no offset lever.",
+                GH_ParamAccess.item, "beam");
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 

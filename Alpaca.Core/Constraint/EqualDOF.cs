@@ -51,11 +51,19 @@ namespace Alpaca4d.Constraints
 
 
         /// <summary>
+        /// The pair of nodes this constraint ties, found by position.
+        ///
         /// This used to collect every hit of both searches into one list and then take the first
         /// two, which is only the right pair when each point matches exactly one node. A tolerance
-        /// wide enough to catch two nodes at the master end - or a master end that matches nothing -
-        /// silently tied the wrong pair together. RTreeSearch takes the first hit per point and
-        /// says so when a point matches none.
+        /// wide enough to catch two nodes at the retained end - or a retained end that matches
+        /// nothing - silently tied the wrong pair together. RTreeSearch takes the first hit per
+        /// point and says so when a point matches none.
+        ///
+        /// Both ends landing on one node is caught here rather than left to OpenSees, which
+        /// accepts "equalDOF n n" and solves it without complaint - and gets it wrong, several
+        /// times too stiff in the case measured. It is easy to reach, because Alpaca4d never puts
+        /// two nodes at one point: every element arriving at a location shares the node there, so
+        /// two points closer together than the model tolerance are one node with nothing to tie.
         /// </summary>
         public void SetTopologyRTree(Model model)
         {
@@ -66,6 +74,13 @@ namespace Alpaca4d.Constraints
 
             this.MasterNodeId = found[0];
             this.SlaveNodeId = found[1];
+
+            if (this.MasterNodeId == this.SlaveNodeId)
+                throw new Exception($"An Equal DOF has both ends on node {this.MasterNodeId}, at " +
+                                    $"{this.MasterNode}. Alpaca4d puts one node at each point, so " +
+                                    "two points closer together than the model tolerance are one " +
+                                    "node and there is nothing to tie. Move one end onto the other " +
+                                    "node you meant, or use a Spring Link if the two really are together.");
         }
 
         public List<bool> Dof { get; set; }
