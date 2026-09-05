@@ -34,8 +34,8 @@ namespace Alpaca4d.Gh
                 "bearing is written. The node has to be one the model already has.", GH_ParamAccess.list);
             pManager.AddGenericParameter("Material", "Material",
                 "One uniaxial material per direction, in the order the directions are given.\n" +
-                $"A spring's material is read as a stiffness, so its E is a force per length " +
-                $"[{Units.Force}/{Units.Length}] for a translation and a moment per radian for a rotation.",
+                $"A spring's material is read as a stiffness: its E is [{Units.Force}/{Units.Length}] " +
+                $"for a translation and [{Units.Force}{Units.Length}/{Units.Angle}] for a rotation.",
                 GH_ParamAccess.list);
             pManager.AddIntegerParameter("Direction", "Direction",
                 "Which directions the materials act in: 1, 2, 3 translation along the plane's x, y " +

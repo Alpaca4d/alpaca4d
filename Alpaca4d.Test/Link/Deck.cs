@@ -117,6 +117,30 @@ proc solve {} {
         deck.Append(Case(link, materials, "0 0 0 1 0 0", load));
         deck.Append(Expect("torsion, M/k", "nodeDisp 2 4", N(load / k[3]), 1e-9));
 
+        // A frame that does not run along the link. The Plane input says it counts the directions
+        // along its own axes, and the component tells the user that the world XY plane is how you
+        // get the global ones - so it is worth knowing that OpenSees really does take the x it is
+        // handed rather than quietly recomputing it from the two nodes. It warns that it is doing
+        // exactly that, and the warning turns out to be true: this link runs along global Z and
+        // still reads direction 1 along global X.
+        double[] stiff = { 1000.0, 500.0, 250.0, 1.0e9, 1.0e9, 1.0e9 };
+        var rigid = stiff.Select((stiffness, index) => Spring(index + 1, stiffness)).ToList();
+
+        var across = new Alpaca4d.Element.Link(
+            new Line(new Point3d(0, 0, 0), new Point3d(0, 0, 1)),
+            rigid.Cast<IUniaxialMaterial>().ToList(),
+            new List<int> { 1, 2, 3, 4, 5, 6 },
+            Plane.WorldXY);
+        across.Id = 1;
+        across.INode = 1;
+        across.JNode = 2;
+
+        deck.Append(Case(across, rigid, "1 0 0 0 0 0", load));
+        deck.Append(Expect("world XY frame: direction 1 is global X", "nodeDisp 2 1", N(load / stiff[0]), 1e-6));
+
+        deck.Append(Case(across, rigid, "0 0 1 0 0 0", load));
+        deck.Append(Expect("and direction 3 is global Z, not the link", "nodeDisp 2 3", N(load / stiff[2]), 1e-6));
+
         File.WriteAllText(path, deck.ToString());
     }
 
@@ -124,7 +148,8 @@ proc solve {} {
     {
         var deck = new StringBuilder();
         deck.Append("wipe\nmodel BasicBuilder -ndm 3 -ndf 6\n");
-        deck.Append("node 1 0 0 0\nnode 2 1 0 0\n");
+        deck.Append($"node 1 {N(link.Line.FromX)} {N(link.Line.FromY)} {N(link.Line.FromZ)}\n");
+        deck.Append($"node 2 {N(link.Line.ToX)} {N(link.Line.ToY)} {N(link.Line.ToZ)}\n");
         deck.Append("fix 1 1 1 1 1 1 1\n");
         foreach (var material in materials) deck.Append(material.WriteTcl());
         deck.Append(link.WriteTcl());
