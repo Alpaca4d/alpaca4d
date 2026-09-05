@@ -58,6 +58,9 @@ the way from loose to rigid.
   spring materials so they are declared before the elements - all of it goes through
   `Model.Assemble`, which needs an `RTree`, whose native library only loads inside Rhino. The tag
   allocator is checked here because it is plain arithmetic; the rest has to be run in Rhino.
+* **The reaction at a spring support.** Reaction Forces is built around `Support` objects, and a
+  Zero Length Spring reacts against a ground node of its own, which is not one. The reaction is in
+  the recorder file under that node's tag; nothing reads it out yet.
 * **The round trip.** `TclReader` does not read `element twoNodeLink` or `element zeroLength` back.
   It says so in its warnings rather than dropping them quietly, but a model with springs in it does
   not survive Serialise and Deserialise intact.

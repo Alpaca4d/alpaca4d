@@ -17,7 +17,9 @@ namespace Alpaca4d.Gh
             "spring, a foundation that gives.\n" +
             "One material per direction, and only the directions given are held: a spring on " +
             "direction 3 alone props the node up and leaves it free to slide and turn.\n" +
-            "Use a Support to hold a node outright, and a Link to join two nodes to each other.",
+            "Use a Support to hold a node outright, and a Link to join two nodes to each other.\n" +
+            "Reaction Forces does not report these: the spring reacts against a node of its own, " +
+            "which is not a support.",
             "Alpaca4d", "02_Element")
         {
             // Draw a Description Underneath the component
