@@ -17,9 +17,10 @@ namespace Alpaca4d.Gh
           : base("Beam Forces (Alpaca4d)", "Beam Forces",
             "Reads the internal forces along every beam element of an analysed model - axial force, " +
             "two shears, torsion and two bending moments.\n" +
-            "Each output is a tree with one branch per element, holding the values at the element's " +
-            "integration sections from the I end to the J end, in local axes. N is positive in " +
-            "tension.",
+            "Each output is a tree with one branch per element, keyed by the element's tag, holding " +
+            "the values at the element's integration sections from the I end to the J end, in local " +
+            "axes. N is positive in tension.\n" +
+            "Give ElementId a tag, an identifier or a wildcard to read part of a big model instead of all of it.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -34,12 +35,18 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
                 "Read every recorded step instead of one. The outputs then carry a step index in " +
-                "front of the element index, so a branch reads {step; element}. Step is ignored.",
+                "front of the element's tag, so a branch reads {step; tag}. Step is ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _filterInput = pManager.ParamCount;
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
+
+        /// <summary>Where the ElementId filter sits in the input list.</summary>
+        private int _filterInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
@@ -52,6 +59,8 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("Mx", "Mx", $"[{Units.Force}{Units.Length}]");
             pManager.Register_GenericParam("My", "My", $"[{Units.Force}{Units.Length}]");
             pManager.Register_GenericParam("Mz", "Mz", $"[{Units.Force}{Units.Length}]");
+            pManager.Register_IntegerParam("Tag", "Tag", ElementIdentity.TagOutput);
+            pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
         /// <summary>
@@ -70,8 +79,16 @@ namespace Alpaca4d.Gh
             DA.GetData(2, ref step);
 
 
+            var filter = ElementFilterInput.Read(DA, _filterInput, this);
+
             var steps = HistorySteps.Of(alpacaModel, history, step, this);
             if (steps == null) return;
+
+            // Read.ForceBeamColumn gives one entry per beam in this same order, so a position in
+            // this list is a position in every one of its six return values.
+            var beams = alpacaModel.Beams;
+            var kept = ElementFilterInput.Select(filter, beams, alpacaModel, "beams", this);
+            var keptTags = kept.Select(i => beams[i].Id).ToList();
 
             var nTree = new DataTree<object>();
             var vyTree = new DataTree<object>();
@@ -84,13 +101,17 @@ namespace Alpaca4d.Gh
             {
                 (var n, var mz, var vy, var my, var vz, var t) = Alpaca4d.Result.Read.ForceBeamColumn(alpacaModel, current);
 
-                // Convert Nested List to DataTree
-                HistorySteps.Collect(nTree, Utils.DataTreeFromNestedList(n), current, history);
-                HistorySteps.Collect(vyTree, Utils.DataTreeFromNestedList(vy), current, history);
-                HistorySteps.Collect(vzTree, Utils.DataTreeFromNestedList(vz), current, history);
-                HistorySteps.Collect(tTree, Utils.DataTreeFromNestedList(t), current, history);
-                HistorySteps.Collect(myTree, Utils.DataTreeFromNestedList(my), current, history);
-                HistorySteps.Collect(mzTree, Utils.DataTreeFromNestedList(mz), current, history);
+                // Convert Nested List to DataTree, one branch per beam being reported, keyed by
+                // the element's tag rather than by its position in the model. The tag is unique
+                // and is what the Tag output gives back, so a branch says which element it belongs
+                // to even when only a handful were asked for - which matters most when a whole
+                // group sharing one ElementId comes back at once.
+                HistorySteps.Collect(nTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(n, kept), keptTags), current, history);
+                HistorySteps.Collect(vyTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vy, kept), keptTags), current, history);
+                HistorySteps.Collect(vzTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vz, kept), keptTags), current, history);
+                HistorySteps.Collect(tTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(t, kept), keptTags), current, history);
+                HistorySteps.Collect(myTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(my, kept), keptTags), current, history);
+                HistorySteps.Collect(mzTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(mz, kept), keptTags), current, history);
             }
 
             // Finally assign the spiral to the output parameter.
@@ -100,6 +121,8 @@ namespace Alpaca4d.Gh
             DA.SetDataTree(3, tTree);
             DA.SetDataTree(4, myTree);
             DA.SetDataTree(5, mzTree);
+            DA.SetDataList(6, keptTags.Select(tag => tag.Value));
+            DA.SetDataList(7, kept.Select(i => beams[i]));
         }
 
         

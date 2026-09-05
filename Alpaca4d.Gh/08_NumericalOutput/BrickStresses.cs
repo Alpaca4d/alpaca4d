@@ -18,7 +18,11 @@ namespace Alpaca4d.Gh
             "of the stress tensor plus the Von Mises equivalent stress.\n" +
             "One value per element, in the element's local axes - an SSP Brick and a Four Node " +
             "Tetrahedron both have a single integration point, so there is nothing to sample along. " +
-            "These are the only two element types it reads.",
+            "These are the only two element types it reads.\n" +
+            "Values come out tetrahedra first, then SSP bricks, which in a model mixing the two is " +
+            "not the order they were assembled in - the Tag output says which element each value " +
+            "belongs to. Give ElementId a tag, an identifier or a wildcard to read part of a big model " +
+            "instead of all of it.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -38,7 +42,13 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _filterInput = pManager.ParamCount;
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
+
+        /// <summary>Where the ElementId filter sits in the input list.</summary>
+        private int _filterInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
@@ -52,6 +62,8 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("Sigma23", "σ₂₃", $"Shear stress in the local 2-3 plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_GenericParam("Sigma13", "σ₁₃", $"Shear stress in the local 1-3 plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, derived from the six components above [{Units.Force}/{Units.Length}²]");
+            pManager.Register_IntegerParam("Tag", "Tag", ElementIdentity.TagOutput);
+            pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
         /// <summary>
@@ -69,8 +81,13 @@ namespace Alpaca4d.Gh
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
+            var filter = ElementFilterInput.Read(DA, _filterInput, this);
+
             var steps = HistorySteps.Of(alpacaModel, history, step, this);
             if (steps == null) return;
+
+            var bricks = RecordedOrder(alpacaModel);
+            var kept = ElementFilterInput.Select(filter, bricks, alpacaModel, "solid elements", this);
 
             // Six components plus von Mises, in the output order.
             var outputs = Enumerable.Range(0, 7).Select(_ => new DataTree<double>()).ToArray();
@@ -79,7 +96,7 @@ namespace Alpaca4d.Gh
             {
                 var stresses = StressesAt(alpacaModel, current);
                 for (int i = 0; i < outputs.Length; i++)
-                    outputs[i].AddRange(stresses[i], new Grasshopper.Kernel.Data.GH_Path(current));
+                    outputs[i].AddRange(ElementFilterInput.Slice(stresses[i], kept), new Grasshopper.Kernel.Data.GH_Path(current));
             }
 
             // Finally assign the spiral to the output parameter.
@@ -92,6 +109,27 @@ namespace Alpaca4d.Gh
                 else
                     DA.SetDataList(i, outputs[i].AllData());
             }
+
+            DA.SetDataList(7, kept.Select(i => bricks[i].Id.Value));
+            DA.SetDataList(8, kept.Select(i => bricks[i]));
+        }
+
+        /// <summary>
+        /// The solid elements in the order <see cref="StressesAt"/> returns their stresses: every
+        /// tetrahedron first, then every SSP brick.
+        ///
+        /// Not the order the model holds them in. The recorder writes one dataset per element
+        /// class, and StressesAt concatenates the two, so a model mixing the two kinds reports
+        /// them regrouped by kind rather than interleaved as assembled. Building the matching
+        /// element list here is what makes the Tag output honest about which value belongs to
+        /// which element, and what the filter selects against.
+        /// </summary>
+        private static List<Alpaca4d.Generic.IBrick> RecordedOrder(Alpaca4d.Model alpacaModel)
+        {
+            var tetrahedra = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.FourNodeTetrahedron);
+            var sspBricks = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.SSPBrick);
+
+            return tetrahedra.Concat(sspBricks).ToList();
         }
 
         /// <summary>
@@ -124,10 +162,11 @@ namespace Alpaca4d.Gh
             }
 
 
-            // Tetrahedra then SSP bricks, which in a model mixing the two is not the order they
-            // were assembled in. These used to carry an ".OrderBy(i => ids)", which sorted every
-            // value by the same whole list of IDs and so could not reorder anything; the
-            // concatenation below is what the order has always really been.
+            // Tetrahedra then SSP bricks, which is the order RecordedOrder lists the elements in
+            // and the order the Tag output reports. These used to carry an
+            // ".OrderBy(i => ids)", which sorted every value by the same whole list of IDs and so
+            // could not reorder anything; the concatenation below is what the order has always
+            // really been.
             var sigma11 = tetraSigma11.Concat(sspSigma11).ToList();
             var sigma22 = tetraSigma22.Concat(sspSigma22).ToList();
             var sigma33 = tetraSigma33.Concat(sspSigma33).ToList();

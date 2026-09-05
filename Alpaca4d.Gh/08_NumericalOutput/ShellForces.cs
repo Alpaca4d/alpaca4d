@@ -19,7 +19,9 @@ namespace Alpaca4d.Gh
             "forces pxx, pyy and pxy, bending moments mxx, myy and mxy, and transverse shears vxz " +
             "and vyz.\n" +
             "All of them per unit width and in the shell's local axes. Each output is a tree with " +
-            "one branch per element, holding the values at the element's integration points.",
+            "one branch per element, keyed by the element's tag, holding the values at the element's " +
+            "integration points.\n" +
+            "Give ElementId a tag, an identifier or a wildcard to read part of a big model instead of all of it.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -34,12 +36,18 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
                 "Read every recorded step instead of one. The outputs then carry a step index in " +
-                "front of the element index, so a branch reads {step; element}. Step is ignored.",
+                "front of the element's tag, so a branch reads {step; tag}. Step is ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _filterInput = pManager.ParamCount;
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
+
+        /// <summary>Where the ElementId filter sits in the input list.</summary>
+        private int _filterInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
@@ -54,6 +62,8 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("mxy", "mxy", $"[{Units.Force}{Units.Length}/{Units.Length}]");
             pManager.Register_GenericParam("vxz", "vxz", $"[{Units.Force}/{Units.Length}]");
             pManager.Register_GenericParam("vyz", "vyz", $"[{Units.Force}/{Units.Length}]");
+            pManager.Register_IntegerParam("Tag", "Tag", ElementIdentity.TagOutput);
+            pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
         /// <summary>
@@ -71,8 +81,40 @@ namespace Alpaca4d.Gh
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
+            var filter = ElementFilterInput.Read(DA, _filterInput, this);
+
             var steps = HistorySteps.Of(alpacaModel, history, step, this);
             if (steps == null) return;
+
+            // The recorder keeps one dataset per element class, and Read.ASDQ4Forces and
+            // Read.ASDT3Forces each give one entry per shell of their own class in the order the
+            // model holds them - so the two classes are filtered and sliced apart, then merged
+            // into one tree keyed by element tag.
+            var quadShells = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellQ4).ToList();
+            var triShells = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellT3).ToList();
+
+            var keptQuad = filter.SelectIndices(quadShells);
+            var keptTri = filter.SelectIndices(triShells);
+
+            var quadShellTag = keptQuad.Select(i => quadShells[i].Id).ToList();
+            var triShellTag = keptTri.Select(i => triShells[i].Id).ToList();
+
+            if (keptQuad.Count == 0 && keptTri.Count == 0 && !filter.MatchesEverything)
+            {
+                // Nothing to report and no results to show for it, which on its own is
+                // indistinguishable from an analysis that wrote nothing. Say which it is.
+                ElementFilterInput.Select(filter, alpacaModel.Shells, alpacaModel, "shells", this);
+            }
+
+            // The elements being reported, sorted by tag. The quads and the triangles are read
+            // from two separate datasets and merged into one tree keyed by element tag, and
+            // Grasshopper walks a tree's branches in path order - so anything handed out as a
+            // flat list beside that tree has to be in tag order as well, or it reads against the
+            // wrong branch in any model that mixes the two kinds.
+            var keptShells = keptQuad.Select(i => quadShells[i])
+                                     .Concat(keptTri.Select(i => triShells[i]))
+                                     .OrderBy(x => x.Id)
+                                     .ToList();
 
             var fxTree = new DataTree<object>();
             var fyTree = new DataTree<object>();
@@ -109,31 +151,28 @@ namespace Alpaca4d.Gh
                 if(alpacaModel.HasTriShell)
                     (fxTri, fyTri, fxyTri, mxTri, myTri, mxyTri, vxzTri, vyzTri) = Alpaca4d.Result.Read.ASDT3Forces(alpacaModel, current);
 
-                var ids = alpacaModel.Shells.Select(d => d.Id).ToList();
+                // Convert Nested List to DataTree, one branch per shell being reported, keyed by
+                // the element's tag. It used to be keyed by Id-1, so branch {0} meant element 1;
+                // the tag itself is unique and is what the Tag output gives back, which is what
+                // lets a branch say which element it belongs to.
+                var fxQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fxQuad, keptQuad), quadShellTag);
+                var fyQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fyQuad, keptQuad), quadShellTag);
+                var fxyQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fxyQuad, keptQuad), quadShellTag);
+                var mxQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(mxQuad, keptQuad), quadShellTag);
+                var myQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(myQuad, keptQuad), quadShellTag);
+                var mxyQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(mxyQuad, keptQuad), quadShellTag);
+                var vxzQuadTree =  Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vxzQuad, keptQuad), quadShellTag);
+                var vyzQuadTree =  Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vyzQuad, keptQuad), quadShellTag);
 
                 // Convert Nested List to DataTree
-                var quadShellId = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellQ4).Select(x => x.Id-1).ToList();
-
-                var fxQuadTree = Utils.DataTreeFromNestedList(fxQuad, quadShellId);
-                var fyQuadTree = Utils.DataTreeFromNestedList(fyQuad, quadShellId);
-                var fxyQuadTree = Utils.DataTreeFromNestedList(fxyQuad, quadShellId);
-                var mxQuadTree = Utils.DataTreeFromNestedList(mxQuad, quadShellId);
-                var myQuadTree = Utils.DataTreeFromNestedList(myQuad, quadShellId);
-                var mxyQuadTree = Utils.DataTreeFromNestedList(mxyQuad, quadShellId);
-                var vxzQuadTree =  Utils.DataTreeFromNestedList(vxzQuad, quadShellId);
-                var vyzQuadTree =  Utils.DataTreeFromNestedList(vyzQuad, quadShellId);
-
-                // Convert Nested List to DataTree
-                var triShellId = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellT3).Select(x => x.Id-1).ToList();
-
-                var fxTriTree = Utils.DataTreeFromNestedList(fxTri, triShellId);
-                var fyTriTree = Utils.DataTreeFromNestedList(fyTri, triShellId);
-                var fxyTriTree = Utils.DataTreeFromNestedList(fxyTri, triShellId);
-                var mxTriTree = Utils.DataTreeFromNestedList(mxTri, triShellId);
-                var myTriTree = Utils.DataTreeFromNestedList(myTri, triShellId);
-                var mxyTriTree = Utils.DataTreeFromNestedList(mxyTri, triShellId);
-                var vxzTriTree = Utils.DataTreeFromNestedList(vxzTri, triShellId);
-                var vyzTriTree = Utils.DataTreeFromNestedList(vyzTri, triShellId);
+                var fxTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fxTri, keptTri), triShellTag);
+                var fyTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fyTri, keptTri), triShellTag);
+                var fxyTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fxyTri, keptTri), triShellTag);
+                var mxTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(mxTri, keptTri), triShellTag);
+                var myTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(myTri, keptTri), triShellTag);
+                var mxyTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(mxyTri, keptTri), triShellTag);
+                var vxzTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vxzTri, keptTri), triShellTag);
+                var vyzTriTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vyzTri, keptTri), triShellTag);
             
 
                 fxQuadTree.MergeTree(fxTriTree);
@@ -165,6 +204,8 @@ namespace Alpaca4d.Gh
             DA.SetDataTree(5, mxyTree);
             DA.SetDataTree(6, vxzTree);
             DA.SetDataTree(7, vyzTree);
+            DA.SetDataList(8, keptShells.Select(x => x.Id.Value));
+            DA.SetDataList(9, keptShells);
         }
 
 
