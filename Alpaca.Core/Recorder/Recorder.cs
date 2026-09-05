@@ -11,7 +11,17 @@ namespace Alpaca4d
         public bool Displacement { get; set; }
         public bool Rotation { get; set; }
         public bool Velocity { get; set; }
+
+        /// <summary>
+        /// Rotational velocity, the other half of Velocity. Recorded separately by OpenSees -
+        /// "velocity" is the translational dofs only - so a model that asks for one and not the
+        /// other gets half a transient answer.
+        /// </summary>
+        public bool AngularVelocity { get; set; }
         public bool Acceleration { get; set; }
+
+        /// <summary>Rotational acceleration. See <see cref="AngularVelocity"/>.</summary>
+        public bool AngularAcceleration { get; set; }
         public bool ReactionForce { get; set; }
         public bool ReactionMoment { get; set; }
         public bool ModesOfVibration { get; set; }
@@ -25,13 +35,15 @@ namespace Alpaca4d
         {
         }
 
-        public Recorder(string filePath, bool displacements = false, bool rotations = true, bool velocity = false, bool accelerations = false, bool reactionForces = false, bool reactionMoments = false, bool modesOfVibrations = false, bool modesOfVibrationsRotational = false, bool forces = false, bool stresses = false, bool sectionForces = false, bool sectionFiberStresses = false)
+        public Recorder(string filePath, bool displacements = false, bool rotations = true, bool velocity = false, bool accelerations = false, bool reactionForces = false, bool reactionMoments = false, bool modesOfVibrations = false, bool modesOfVibrationsRotational = false, bool forces = false, bool stresses = false, bool sectionForces = false, bool sectionFiberStresses = false, bool angularVelocity = false, bool angularAccelerations = false)
         {
             this.FileName = filePath;
             this.Displacement = displacements;
             this.Rotation = rotations;
             this.Velocity = velocity;
+            this.AngularVelocity = angularVelocity;
             this.Acceleration = accelerations;
+            this.AngularAcceleration = angularAccelerations;
             this.ReactionForce = reactionForces;
             this.ReactionMoment = reactionMoments;
             this.ModesOfVibration = modesOfVibrations;
@@ -55,8 +67,14 @@ namespace Alpaca4d
             if (this.Velocity)
                 nodeRespType += " velocity";
 
+            if (this.AngularVelocity)
+                nodeRespType += " angularVelocity";
+
             if (this.Acceleration)
                 nodeRespType += " acceleration";
+
+            if (this.AngularAcceleration)
+                nodeRespType += " angularAcceleration";
 
             if (this.ReactionForce)
                 nodeRespType += " reactionForce";
@@ -96,12 +114,14 @@ namespace Alpaca4d
                                   bool reactionMoments = true,
                                   bool modesOfVibrations = false,
                                   bool modesOfVibrationsRotational = false,
-                                  bool forces = true,
+                                  bool forces = false,
                                   bool stresses = true,
                                   bool sectionForces = true,
-                                  bool sectionFiberStresses = true)
+                                  bool sectionFiberStresses = true,
+                                  bool angularVelocity = false,
+                                  bool angularAccelerations = false)
         {
-            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses);
+            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses, angularVelocity, angularAccelerations);
         }
 
         public static Recorder MpcoTransient(string filePath,
@@ -113,12 +133,14 @@ namespace Alpaca4d
                           bool reactionMoments = true,
                           bool modesOfVibrations = false,
                           bool modesOfVibrationsRotational = false,
-                          bool forces = true,
+                          bool forces = false,
                           bool stresses = true,
                           bool sectionForces = true,
-                          bool sectionFiberStresses = true)
+                          bool sectionFiberStresses = true,
+                          bool angularVelocity = true,
+                          bool angularAccelerations = true)
         {
-            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses);
+            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses, angularVelocity, angularAccelerations);
         }
 
         public static Recorder MpcoEigen(string filePath,

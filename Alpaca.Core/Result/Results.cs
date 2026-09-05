@@ -20,7 +20,9 @@ namespace Alpaca4d.Result
         DISPLACEMENT,
         ROTATION,
         VELOCITY,
+        ANGULAR_VELOCITY,
         ACCELERATION,
+        ANGULAR_ACCELERATION,
         REACTION_FORCE,
         REACTION_MOMENT,
         MODES_OF_VIBRATION_U,
@@ -588,6 +590,190 @@ namespace Alpaca4d.Result
             }
 
             return (fxxNested, fyyNested, fxyNested, mxxNested, myyNested, mxyNested, vxzNested, vyzNested);
+        }
+
+        /// <summary>
+        /// The stress at one through-thickness station of one shell, at one Gauss point.
+        /// </summary>
+        public struct ShellFibreStress
+        {
+            /// <summary>Element tag.</summary>
+            public int ElementId;
+            /// <summary>Gauss point, 0-based.</summary>
+            public int GaussPoint;
+            /// <summary>Station through the thickness, 0-based, counting from the bottom face up.</summary>
+            public int Fibre;
+            /// <summary>Direct stress along the section's local 1 axis.</summary>
+            public double S11;
+            /// <summary>Direct stress along the section's local 2 axis.</summary>
+            public double S22;
+            /// <summary>In-plane shear.</summary>
+            public double S12;
+            /// <summary>Transverse shear, local 2-3 plane.</summary>
+            public double S23;
+            /// <summary>Transverse shear, local 3-1 plane.</summary>
+            public double S31;
+
+            /// <summary>
+            /// Von Mises equivalent stress. A shell fibre is in plane stress - the through-thickness
+            /// direct stress is condensed out by PlateFiberMaterial - so s33 is zero and the general
+            /// form collapses to this.
+            /// </summary>
+            public double VonMises
+            {
+                get
+                {
+                    return System.Math.Sqrt(
+                        S11 * S11 - S11 * S22 + S22 * S22 +
+                        3.0 * (S12 * S12 + S23 * S23 + S31 * S31));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reads the true stresses through the thickness of every shell, from the recorder's
+        /// "section.fiber.stress" group.
+        ///
+        /// Not to be confused with what Shell Forces reads. That one is "section.force", the stress
+        /// resultants - forces and moments per unit width, the whole thickness collapsed into eight
+        /// numbers. These are stresses proper, in force over area, at stations through the depth.
+        /// OpenSees also offers an element level "stresses" response, but for a shell that is the
+        /// same stress resultant again under a misleading name: ASDShellQ4::getResponse case 2 loops
+        /// getStressResultant(), exactly what section.force returns. Checked against OpenSees 3.5 on
+        /// a two element model: the two datasets came back bit for bit identical.
+        ///
+        /// The layout is read from the file's own META rather than assumed, because the number of
+        /// stations depends on the section. A PlateFiber section has five, at the Lobatto points
+        /// -1, -0.6547, 0, 0.6547, 1 of the thickness, so the first and last sit exactly on the
+        /// bottom and top faces. A LayeredShell section has one per layer, at the layer centres,
+        /// which do not reach the faces. Either way they are ordered bottom to top.
+        ///
+        /// Columns run gauss-major: gauss, then fibre, then component.
+        /// </summary>
+        public static List<ShellFibreStress> ShellFibreStresses(Model alpacaModel, int step)
+        {
+            const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.fiber.stress";
+
+            var output = new List<ShellFibreStress>();
+
+            string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
+
+            using var h5File = PureHDF.H5File.OpenRead(recorderPath);
+
+            if (!h5File.LinkExists(BASE))
+                throw new Exception(
+                    "The recorder file holds no through-thickness stresses. Switch \"section.fiber.stress\" " +
+                    "on in the Recorder component and run the analysis again.");
+
+            // One group per element class, named <classTag>-<className>[<rule>:<index>:<header>].
+            // Enumerated rather than named: the index is handed out in order of discovery, so it is
+            // not a stable label, and a model can hold quads and triangles at once.
+            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>())
+            {
+                if (!group.LinkExists("DATA") || !group.LinkExists("ID") || !group.LinkExists("META"))
+                    continue;
+
+                var dataGroup = group.Group("DATA");
+                if (!dataGroup.LinkExists($"STEP_{step}"))
+                    throw new Exception($"STEP_{step} not defined!");
+
+                var meta = group.Group("META");
+
+                // One entry per Gauss point. MULTIPLICITY is how many stations that Gauss point
+                // holds, NUM_COMPONENTS how many numbers each station holds.
+                int[,] multiplicity = ReadIntColumn(meta, "MULTIPLICITY");
+                int[,] numComponents = ReadIntColumn(meta, "NUM_COMPONENTS");
+                if (multiplicity == null || numComponents == null)
+                    continue;
+
+                int gaussCount = multiplicity.GetLength(0);
+
+                var idDataset = group.Dataset("ID");
+                var dataDataset = dataGroup.Dataset($"STEP_{step}");
+
+                long rows = (long)dataDataset.Space.Dimensions[0];
+                long cols = (long)dataDataset.Space.Dimensions[1];
+                long idRows = (long)idDataset.Space.Dimensions[0];
+
+                double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                int[,] ids = idDataset.Read<int>().ToArray2D(idRows, 1L);
+
+                for (int r = 0; r < rows; r++)
+                {
+                    int elementId = ids[r, 0];
+                    int column = 0;
+
+                    for (int gauss = 0; gauss < gaussCount; gauss++)
+                    {
+                        int fibres = multiplicity[gauss, 0];
+                        int components = numComponents[gauss, 0];
+
+                        for (int fibre = 0; fibre < fibres; fibre++)
+                        {
+                            if (column + components > cols)
+                                break;
+
+                            // Five components for a plate fibre: PlateFiberMaterial condenses the
+                            // through-thickness direct stress out and reports 11, 22, 12, 23, 31.
+                            // Anything shorter is padded with zero rather than dropped, so an
+                            // unusual material cannot cost the components that are there.
+                            var entry = new ShellFibreStress
+                            {
+                                ElementId = elementId,
+                                GaussPoint = gauss,
+                                Fibre = fibre,
+                                S11 = components > 0 ? data[r, column + 0] : 0.0,
+                                S22 = components > 1 ? data[r, column + 1] : 0.0,
+                                S12 = components > 2 ? data[r, column + 2] : 0.0,
+                                S23 = components > 3 ? data[r, column + 3] : 0.0,
+                                S31 = components > 4 ? data[r, column + 4] : 0.0,
+                            };
+
+                            output.Add(entry);
+                            column += components;
+                        }
+                    }
+                }
+            }
+
+            return output;
+        }
+
+        /// <summary>
+        /// Which of the stations through the thickness are the top, the middle and the bottom, in
+        /// that order, given how many there are.
+        ///
+        /// Stations run bottom to top, so the top is the last and the bottom the first. Whether
+        /// those sit on the faces depends on the section: a PlateFiber section integrates over five
+        /// Lobatto points, whose first and last are the faces exactly and whose third is the
+        /// mid-surface exactly; a LayeredShell section reports its layer centres, so its outermost
+        /// stations are half a layer in from the faces. An even number of layers has no station at
+        /// the mid-surface at all, and the one just above it is used.
+        ///
+        /// One copy, because the Shell Stresses component and its view have to agree about which
+        /// station "Top" means.
+        /// </summary>
+        public static int[] LayerFibres(int fibreCount)
+        {
+            if (fibreCount <= 0)
+                return new int[0];
+
+            return new[] { fibreCount - 1, fibreCount / 2, 0 };
+        }
+
+        /// <summary>The layers <see cref="LayerFibres"/> hands back, in the same order.</summary>
+        public static readonly string[] LayerNames = { "Top", "Middle", "Bottom" };
+
+        /// <summary>A META column of ints, or null when the file does not hold it.</summary>
+        private static int[,] ReadIntColumn(PureHDF.IH5Group meta, string name)
+        {
+            if (!meta.LinkExists(name))
+                return null;
+
+            var dataset = meta.Dataset(name);
+            long rows = (long)dataset.Space.Dimensions[0];
+
+            return dataset.Read<int>().ToArray2D(rows, 1L);
         }
 
 
