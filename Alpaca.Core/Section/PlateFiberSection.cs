@@ -13,6 +13,7 @@ namespace Alpaca4d.Section
         public string SectionName { get; set; }
         public double Thickness { get; set; }
         public IMultiDimensionMaterial Material { get; set; }
+        public IEnumerable<IMaterial> Materials => new IMaterial[] { this.Material };
         public int? Id { get; set; } = IdGenerator.GenerateId();
 
         public PlateFiberSection(string sectionName, double thickness, IMultiDimensionMaterial material)

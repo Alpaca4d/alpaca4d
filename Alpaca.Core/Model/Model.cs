@@ -1142,7 +1142,10 @@ namespace Alpaca4d
                 else if (item.Type == ElementType.Shell)
                 {
                     crossSections.Add(((IShell)item).Section);
-                    materials.Add(((IShell)item).Section.Material);
+                    // Every layer's material, not just the first: a LayeredShell section stacks
+                    // materials, and any left out here would be referenced by the section line
+                    // without ever being declared.
+                    materials.AddRange(((IShell)item).Section.Materials);
                 }
                 else
                     materials.Add(((IBrick)item).Material);
