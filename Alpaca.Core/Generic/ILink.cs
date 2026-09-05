@@ -5,7 +5,7 @@ using Rhino.Geometry;
 namespace Alpaca4d.Generic
 {
     /// <summary>
-    /// What the two spring elements have in common.
+    /// What makes an element a spring rather than a piece of structure.
     ///
     /// A spring is a set of uniaxial materials, one per degree of freedom it acts in, and a local
     /// frame those degrees of freedom count along. Directions left out of the list carry no

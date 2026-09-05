@@ -91,7 +91,7 @@ namespace Alpaca4d.Gh
             if (materials.Count == 1 && directions.Count > 1)
                 materials = Enumerable.Repeat(materials[0], directions.Count).ToList();
 
-            if (!LinkInput.Check(materials, directions, this))
+            if (!Check(materials, directions))
                 return;
 
             var plane = Plane.Unset;
@@ -106,8 +106,8 @@ namespace Alpaca4d.Gh
                 if (line.Length <= 0.0)
                 {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                        "A link needs two different points. To hold a single node against the " +
-                        "ground, use Zero Length Spring instead.");
+                        "A link needs two different points. Alpaca4d puts one node at each point, " +
+                        "so there is nothing at a zero length line to join.");
                     return;
                 }
 
@@ -117,6 +117,49 @@ namespace Alpaca4d.Gh
             }
 
             DA.SetDataList(0, links);
+        }
+
+        /// <summary>
+        /// Everything that would otherwise reach OpenSees as a parse error, caught on the component
+        /// that can be fixed rather than several steps downstream on Assemble Model. The element
+        /// checks the same things when it writes its tcl, because a link built in code has to be
+        /// caught too; these run first only so the message lands somewhere useful.
+        /// </summary>
+        private bool Check(List<IUniaxialMaterial> materials, List<int> directions)
+        {
+            if (materials.Count != directions.Count)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    $"{materials.Count} materials against {directions.Count} directions. Give one " +
+                    "material per direction, or a single material to use in all of them.");
+                return false;
+            }
+
+            var outside = directions.Where(direction => direction < 1 || direction > 6).ToList();
+            if (outside.Count != 0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    $"Direction runs 1 to 6; {string.Join(", ", outside)} is outside that. 1-3 are " +
+                    "translation along the local x, y and z axes, 4-6 rotation about them.");
+                return false;
+            }
+
+            if (directions.Distinct().Count() != directions.Count)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "The same direction is listed more than once. Each direction takes one material; " +
+                    "for two springs in parallel, use two of these.");
+                return false;
+            }
+
+            if (materials.Any(material => material == null))
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "One of the materials is empty. Every direction needs one.");
+                return false;
+            }
+
+            return true;
         }
 
         public override GH_Exposure Exposure => GH_Exposure.tertiary;

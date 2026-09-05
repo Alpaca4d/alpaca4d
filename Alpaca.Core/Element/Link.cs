@@ -23,8 +23,9 @@ namespace Alpaca4d.Element
     /// does not bring nodes into being, and a point of its own that no element reaches is an error
     /// rather than a new node.
     ///
-    /// Not the same as <see cref="ZeroLengthSpring"/>, which grounds a single node. Use this one
-    /// when the two ends are apart, that one when the spring reacts against the ground.
+    /// It cannot ground a node, because both ends have to be apart: two coincident points are one
+    /// node in Alpaca4d, every element arriving at a location sharing the node there. A support
+    /// holds a node outright, and a support on a Plane holds it through a spring of its own.
     /// </summary>
     public partial class Link : IStructure, IElement, ILink, ISerialize
     {
@@ -102,8 +103,9 @@ namespace Alpaca4d.Element
             LinkFrame.CheckAgainstNdf(this.Directions, this.Ndf, "A link");
 
             if (this.Line.Length <= 0.0)
-                throw new Exception("A link joins two different points; this one has both ends in the same place. " +
-                                    "Use a Zero Length Spring to ground a node, or move one end.");
+                throw new Exception("A link joins two different points; this one has both ends in the same " +
+                                    "place. Alpaca4d puts one node at each point, so there is nothing " +
+                                    "there to join - move one end onto the other node you meant.");
 
             var axis = this.Line.To - this.Line.From;
             Vector3d x, y;

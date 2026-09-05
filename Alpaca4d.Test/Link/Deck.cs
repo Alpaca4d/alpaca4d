@@ -1,9 +1,9 @@
 // The decks the Link test leaves for OpenSees.
 //
-// Every line that comes from a class under test is written by that class - the element lines are
-// Link.WriteTcl and ZeroLengthSpring.WriteTcl, the tie is EqualDOF.WriteTcl - so what the solver
-// reads is the string Alpaca4d produces rather than a transcription of it. Everything around
-// them, the nodes and the shells and the analysis, is scaffolding.
+// Every line that comes from a class under test is written by that class - the element lines by
+// Link.WriteTcl, the ties by EqualDOF.WriteTcl and RigidLink.WriteTcl - so what the solver reads
+// is the string Alpaca4d produces rather than a transcription of it. Everything around them, the
+// nodes and the shells and the analysis, is scaffolding.
 //
 // The decks check themselves: each prints one PASS or FAIL line per number it knows the answer
 // to, and run.sh looks for FAIL.
@@ -161,49 +161,7 @@ proc solve {} {
     }
 
     /// <summary>
-    /// Deck B. A stiff cantilever whose built-in end is not built in at all but held by a spring to
-    /// ground, so the whole tip movement is the spring giving way.
-    ///
-    /// The held node drops by P/k and turns by PL/k, and the tip picks up both: P/k + (PL/k)L.
-    /// The beam is made stiff enough that its own bending is far below the tolerance.
-    /// </summary>
-    public static void SpringSupport(string path)
-    {
-        const double k = 1.0e6;
-        const double load = -1000.0;
-        const double length = 1.0;
-
-        var material = Spring(1, k);
-        var spring = new ZeroLengthSpring(new Point3d(0, 0, 0),
-            Enumerable.Repeat((IUniaxialMaterial)material, 6).ToList(),
-            new List<int> { 1, 2, 3, 4, 5, 6 });
-        spring.Id = 2;
-        spring.NodeId = 1;
-        spring.GroundNodeId = 3;
-
-        var deck = new StringBuilder();
-        deck.Append("# Deck B - a cantilever held by a zeroLength spring instead of a support.\n");
-        deck.Append(Checker);
-        deck.Append("wipe\nmodel BasicBuilder -ndm 3 -ndf 6\n");
-        deck.Append("node 1 0 0 0\nnode 2 1 0 0\n");
-        deck.Append("geomTransf Linear 1 0 0 1\n");
-        // Stiff enough that the beam's own bending is three orders below the spring's give.
-        deck.Append("element elasticBeamColumn 1 1 2 1.0 2.1e14 8.0e13 1.0 1.0 1.0 1\n");
-        deck.Append(material.WriteTcl());
-        deck.Append(spring.WriteTcl());
-        deck.Append("timeSeries Linear 1\n");
-        deck.Append($"pattern Plain 1 1 {{ load 2 0 0 {N(load)} 0 0 0 }}\n");
-        deck.Append("puts \"\\nB. Zero Length Spring holding a cantilever\"\n");
-        deck.Append("if {[solve] != 0} { puts \"  [FAIL] deck B did not solve\" }\n");
-        deck.Append(Expect("held node drops by P/k", "nodeDisp 1 3", N(load / k), 1e-6));
-        deck.Append(Expect("held node turns by PL/k", "expr abs([nodeDisp 1 5])", N(Math.Abs(load * length / k)), 1e-6));
-        deck.Append(Expect("tip picks up both", "nodeDisp 2 3", N(load / k + (load * length / k) * length), 1e-6));
-
-        File.WriteAllText(path, deck.ToString());
-    }
-
-    /// <summary>
-    /// Deck C. Two cantilevers of different span side by side, their tips tied in the vertical
+    /// Deck B. Two cantilevers of different span side by side, their tips tied in the vertical
     /// translation only. The load goes on one tip and both tips move together, so the two share it
     /// in proportion to their stiffness and the deflection is P over the sum of the two.
     ///
@@ -231,7 +189,7 @@ proc solve {} {
         tie.SlaveNodeId = 4;
 
         var deck = new StringBuilder();
-        deck.Append("# Deck C - two cantilevers of different span, tips tied in the vertical translation.\n");
+        deck.Append("# Deck B - two cantilevers of different span, tips tied in the vertical translation.\n");
         deck.Append(Checker);
         deck.Append("wipe\nmodel BasicBuilder -ndm 3 -ndf 6\n");
         deck.Append($"node 1 0 0 0\nnode 2 {N(longSpan)} 0 0\nnode 3 0 1 0\nnode 4 {N(shortSpan)} 1 0\n");
@@ -242,8 +200,8 @@ proc solve {} {
         deck.Append(tie.WriteTcl());
         deck.Append("timeSeries Linear 1\n");
         deck.Append($"pattern Plain 1 1 {{ load 2 0 0 {N(load)} 0 0 0 }}\n");
-        deck.Append("puts \"\\nC. Equal DOF tying two cantilever tips\"\n");
-        deck.Append("if {[solve] != 0} { puts \"  [FAIL] deck C did not solve\" }\n");
+        deck.Append("puts \"\\nB. Equal DOF tying two cantilever tips\"\n");
+        deck.Append("if {[solve] != 0} { puts \"  [FAIL] deck B did not solve\" }\n");
         deck.Append(Expect("loaded tip, P over the two stiffnesses", "nodeDisp 2 3", N(together), 1e-6));
         deck.Append(Expect("tied tip follows it exactly", "nodeDisp 4 3", N(together), 1e-9));
         // Only the vertical translation was tied, so each beam keeps its own tip rotation and the
@@ -255,7 +213,7 @@ proc solve {} {
     }
 
     /// <summary>
-    /// Deck E. What separates the three ways of joining two nodes, measured rather than asserted,
+    /// Deck D. What separates the three ways of joining two nodes, measured rather than asserted,
     /// because the component descriptions now tell the user which to reach for.
     ///
     /// A cantilever runs along Y and is loaded down at its tip, so the tip both drops and turns.
@@ -296,9 +254,9 @@ proc solve {} {
         beamLink.ConstrainedNodeId = 2;
 
         var deck = new StringBuilder();
-        deck.Append("# Deck E - what separates a rigid link, an equalDOF and a stiff spring link.\n");
+        deck.Append("# Deck D - what separates a rigid link, an equalDOF and a stiff spring link.\n");
         deck.Append(Checker);
-        deck.Append("puts \"\\nE. Three ways of joining two nodes a metre apart\"\n");
+        deck.Append("puts \"\\nD. Three ways of joining two nodes a metre apart\"\n");
 
         // A whisper of rotational stiffness to ground keeps the joins that leave rotations free
         // from being singular. At 1e-6 it moves no translation that matters here.
@@ -335,7 +293,7 @@ proc solve {} {
     }
 
     /// <summary>
-    /// Deck D. Laminated glass, which is what these elements were added for: two panes of glass
+    /// Deck C. Laminated glass, which is what these elements were added for: two panes of glass
     /// with an interlayer between them that is soft in shear, so the two panes slide over each
     /// other and the pair is stiffer than two loose panes and softer than one thick one.
     ///
@@ -372,9 +330,9 @@ proc solve {} {
         Func<int, int, int, int> tag = (pane, station, row) => pane * perPane + row * (spans + 1) + station + 1;
 
         var deck = new StringBuilder();
-        deck.Append("# Deck D - laminated glass: two shells joined by twoNodeLink shear springs.\n");
+        deck.Append("# Deck C - laminated glass: two shells joined by twoNodeLink shear springs.\n");
         deck.Append(Checker);
-        deck.Append("puts \"\\nD. Laminated glass, two panes and an interlayer\"\n");
+        deck.Append("puts \"\\nC. Laminated glass, two panes and an interlayer\"\n");
 
         // --- the parts of the deck that do not change over the sweep ---
         var nodes = new StringBuilder();

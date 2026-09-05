@@ -33,9 +33,8 @@ namespace Alpaca4d
         public List<IBrick> Bricks { get; set; } = new List<IBrick> { };
 
         /// <summary>
-        /// The spring elements - links between two nodes and springs to ground alike. They are kept
-        /// apart from the other three because they carry no geometry the model can weigh, mesh or
-        /// draw a stress on: a spring is a stiffness between nodes and nothing else.
+        /// The links. Kept apart from the other three because they carry no geometry the model can
+        /// weigh, mesh or draw a stress on: a link is a stiffness between two nodes and nothing else.
         /// </summary>
         public List<ILink> Links { get; set; } = new List<ILink> { };
         public List<IElement> Elements { get; set; } = new List<IElement> { };
@@ -109,11 +108,10 @@ namespace Alpaca4d
                         mass += density * meshVolume;
                     }
 
-                    // A spring weighs nothing. Both spring elements are massless by construction -
-                    // a link can be given a mass, but that is a lumped mass the user put there
-                    // rather than material this model knows the density of, and the mass loads
-                    // counted below are where a weight of that sort belongs.
-                    else if (item.Type == ElementType.Link || item.Type == ElementType.ZeroLength)
+                    // A link weighs nothing. It is a stiffness between two nodes, with no material
+                    // and no volume for this to read a density off; weight at a link belongs to
+                    // the mass loads counted below.
+                    else if (item.Type == ElementType.Link)
                     {
                     }
 
@@ -608,9 +606,9 @@ namespace Alpaca4d
         /// <summary>
         /// The next free node tag past the ones the point cloud handed out.
         ///
-        /// Some things need a node the geometry never asked for - a skewed support reacting through
-        /// a spring, a spring to ground - and they all draw from here so that no two of them pick
-        /// the same tag.
+        /// A skewed support needs a node the geometry never asked for, to react against through the
+        /// spring that carries its restraint. Anything else of that sort draws from here too, so
+        /// that no two of them pick the same tag.
         /// </summary>
         public int NextNodeTag()
         {
@@ -784,7 +782,7 @@ namespace Alpaca4d
                 }
                 else if (element.Type == ElementType.Brick)
                     this.Bricks.Add((IBrick)element);
-                else if (element.Type == ElementType.Link || element.Type == ElementType.ZeroLength)
+                else if (element.Type == ElementType.Link)
                     this.Links.Add((ILink)element);
             }
         }
@@ -1241,9 +1239,9 @@ namespace Alpaca4d
                     materials.AddRange(((IShell)item).Section.Materials);
                 }
 
-                // A spring carries one material per direction, and every one of them has to be
+                // A link carries one material per direction, and every one of them has to be
                 // declared before the element line that names it.
-                else if (item.Type == ElementType.Link || item.Type == ElementType.ZeroLength)
+                else if (item.Type == ElementType.Link)
                 {
                     materials.AddRange(((ILink)item).Materials);
                 }

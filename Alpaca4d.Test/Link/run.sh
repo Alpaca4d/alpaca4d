@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Link, Zero Length Spring and Equal DOF checks.
+# Spring Link and Equal DOF checks.
 #
-# Two halves. The first checks the tcl the three classes write; it needs a built Alpaca4d.Core,
+# Two halves. The first checks the tcl these classes write; it needs a built Alpaca4d.Core,
 # a C# compiler and a net48 RhinoCommon, and always runs. The second solves the decks that same
 # code writes and needs OpenSees on PATH; without it the decks are written and left unsolved.
 set -e
@@ -26,7 +26,7 @@ cp Link.cs Deck.cs "$work/"; cp "$CORE" "$RHINO" "$work/"
   fi
 
   fails=0
-  for deck in link spring equaldof laminate joins; do
+  for deck in link equaldof laminate joins; do
     # OpenSees says nothing about an unreadable deck other than through its exit code, so both
     # the printed FAILs and a non-zero exit are worth catching.
     out=$("$OPENSEES" "$deck.tcl" 2>&1) || { echo "$out"; echo "  [FAIL] $deck.tcl did not run"; fails=1; continue; }
