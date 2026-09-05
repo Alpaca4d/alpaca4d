@@ -61,7 +61,6 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("mxy", "mxy", $"[{Units.Force}{Units.Length}/{Units.Length}]");
             pManager.Register_GenericParam("vxz", "vxz", $"[{Units.Force}/{Units.Length}]");
             pManager.Register_GenericParam("vyz", "vyz", $"[{Units.Force}/{Units.Length}]");
-            pManager.Register_IntegerParam("Tag", "Tag", ElementIdentity.TagOutput);
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
@@ -152,8 +151,8 @@ namespace Alpaca4d.Gh
 
                 // Convert Nested List to DataTree, one branch per shell being reported, keyed by
                 // the element's tag. It used to be keyed by Id-1, so branch {0} meant element 1;
-                // the tag itself is unique and is what the Tag output gives back, which is what
-                // lets a branch say which element it belongs to.
+                // the tag itself is unique, which is what lets a branch say which element it
+                // belongs to without an output of its own.
                 var fxQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fxQuad, keptQuad), quadShellTag);
                 var fyQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fyQuad, keptQuad), quadShellTag);
                 var fxyQuadTree = Utils.DataTreeFromNestedList(ElementFilterInput.Slice(fxyQuad, keptQuad), quadShellTag);
@@ -203,8 +202,7 @@ namespace Alpaca4d.Gh
             DA.SetDataTree(5, mxyTree);
             DA.SetDataTree(6, vxzTree);
             DA.SetDataTree(7, vyzTree);
-            DA.SetDataList(8, keptShells.Select(x => x.Id.Value));
-            DA.SetDataList(9, keptShells);
+            DA.SetDataList(8, keptShells);
         }
 
 

@@ -18,7 +18,7 @@ namespace Alpaca4d.Gh
             "of the stress tensor plus the Von Mises equivalent stress.\n" +
             "One value per element, in its local axes. An SSP Brick and a Four Node Tetrahedron, " +
             "the only two solid types, each have one integration point.\n" +
-            "Values come tetrahedra first, then SSP bricks - Tag says which is which. Give " +
+            "Values come tetrahedra first, then SSP bricks - Element says which is which. Give " +
             "ElementId to read part of a big model.",
             "Alpaca4d", "08_NumericalOutput")
         {
@@ -59,7 +59,6 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("Sigma23", "σ₂₃", $"Shear stress in the local 2-3 plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_GenericParam("Sigma13", "σ₁₃", $"Shear stress in the local 1-3 plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, derived from the six components above [{Units.Force}/{Units.Length}²]");
-            pManager.Register_IntegerParam("Tag", "Tag", ElementIdentity.TagOutput);
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
@@ -107,8 +106,9 @@ namespace Alpaca4d.Gh
                     DA.SetDataList(i, outputs[i].AllData());
             }
 
-            DA.SetDataList(7, kept.Select(i => bricks[i].Id.Value));
-            DA.SetDataList(8, kept.Select(i => bricks[i]));
+            // The only thing saying which element each value belongs to: unlike the beam and
+            // shell components these outputs are flat lists, with no branch path to carry a tag.
+            DA.SetDataList(7, kept.Select(i => bricks[i]));
         }
 
         /// <summary>
@@ -118,8 +118,8 @@ namespace Alpaca4d.Gh
         /// Not the order the model holds them in. The recorder writes one dataset per element
         /// class, and StressesAt concatenates the two, so a model mixing the two kinds reports
         /// them regrouped by kind rather than interleaved as assembled. Building the matching
-        /// element list here is what makes the Tag output honest about which value belongs to
-        /// which element, and what the filter selects against.
+        /// element list here is what makes the Element output honest about which value belongs
+        /// to which element, and what the filter selects against.
         /// </summary>
         private static List<Alpaca4d.Generic.IBrick> RecordedOrder(Alpaca4d.Model alpacaModel)
         {
@@ -160,7 +160,7 @@ namespace Alpaca4d.Gh
 
 
             // Tetrahedra then SSP bricks, which is the order RecordedOrder lists the elements in
-            // and the order the Tag output reports. These used to carry an
+            // and the order the Element output reports. These used to carry an
             // ".OrderBy(i => ids)", which sorted every value by the same whole list of IDs and so
             // could not reorder anything; the concatenation below is what the order has always
             // really been.

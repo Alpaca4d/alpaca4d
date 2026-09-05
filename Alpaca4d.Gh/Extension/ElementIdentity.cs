@@ -22,14 +22,9 @@ namespace Alpaca4d.Gh
             "Takes an ElementId (MyBeam_3), a wildcard over them (MyBeam*, Col_?), an element tag " +
             "(47), or a regular expression (regex:^Col), mixed freely in one list.";
 
-        /// <summary>The Tag output on a result component.</summary>
-        public const string TagOutput =
-            "The tag of each element reported, in the same order as the results, and the number " +
-            "each result branch is keyed by.";
-
         /// <summary>The Element output on a result component.</summary>
         public const string ElementOutput =
             "The elements reported, in the same order as the results. Deconstruct them for the " +
-            "geometry to draw the results on.";
+            "tag and for the geometry to draw the results on.";
     }
 }

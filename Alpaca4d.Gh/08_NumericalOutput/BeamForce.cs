@@ -58,7 +58,6 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("Mx", "Mx", $"[{Units.Force}{Units.Length}]");
             pManager.Register_GenericParam("My", "My", $"[{Units.Force}{Units.Length}]");
             pManager.Register_GenericParam("Mz", "Mz", $"[{Units.Force}{Units.Length}]");
-            pManager.Register_IntegerParam("Tag", "Tag", ElementIdentity.TagOutput);
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
@@ -102,9 +101,9 @@ namespace Alpaca4d.Gh
 
                 // Convert Nested List to DataTree, one branch per beam being reported, keyed by
                 // the element's tag rather than by its position in the model. The tag is unique
-                // and is what the Tag output gives back, so a branch says which element it belongs
-                // to even when only a handful were asked for - which matters most when a whole
-                // group sharing one ElementId comes back at once.
+                // so a branch says which element it belongs to even when only a handful were
+                // asked for - which matters most when a whole group sharing one ElementId comes
+                // back at once. The branch path is why no separate tag output is needed.
                 HistorySteps.Collect(nTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(n, kept), keptTags), current, history);
                 HistorySteps.Collect(vyTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vy, kept), keptTags), current, history);
                 HistorySteps.Collect(vzTree, Utils.DataTreeFromNestedList(ElementFilterInput.Slice(vz, kept), keptTags), current, history);
@@ -120,8 +119,7 @@ namespace Alpaca4d.Gh
             DA.SetDataTree(3, tTree);
             DA.SetDataTree(4, myTree);
             DA.SetDataTree(5, mzTree);
-            DA.SetDataList(6, keptTags.Select(tag => tag.Value));
-            DA.SetDataList(7, kept.Select(i => beams[i]));
+            DA.SetDataList(6, kept.Select(i => beams[i]));
         }
 
         
