@@ -18,7 +18,8 @@ namespace Alpaca4d.Gh
             "Reads the force and the moment carried by every support of an analysed model.\n" +
             "One value per support, given in the support's own axes, so a support placed on a Plane " +
             "reports along that plane rather than along the global axes. SupportPosition gives both " +
-            "where each support sits and the frame its reactions are in.",
+            "where each support sits and the frame its reactions are in.\n" +
+            "Give PointPos to read some of the supports instead of all of them.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -39,7 +40,13 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _filterInput = pManager.ParamCount;
+            pManager.AddPointParameter("PointPos", "PointPos", NodeFilterInput.SupportPointFilter, GH_ParamAccess.list);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
+
+        /// <summary>Where the PointPos filter sits in the input list.</summary>
+        private int _filterInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
@@ -57,6 +64,7 @@ namespace Alpaca4d.Gh
                 $"[{Units.Force}] in the support's own axes.");
             pManager.Register_VectorParam("ReactionMoment", "ReactionMoment",
                 $"[{Units.Force}{Units.Length}] in the support's own axes.");
+            pManager.Register_IntegerParam("NodeTag", "NodeTag", NodeFilterInput.NodeTagOutput);
         }
 
         /// <summary>
@@ -77,17 +85,36 @@ namespace Alpaca4d.Gh
             var steps = HistorySteps.Of(alpacaModel, history, step, this);
             if (steps == null) return;
 
+            // Filtered on where each support is, which is the handle the user already has - they
+            // placed these themselves and can point at them. Matched against the support's own
+            // point rather than the coincident auxiliary node a skewed support carries its fix on:
+            // the two are at the same place anyway, and the auxiliary one is Alpaca4d's own doing.
+            var supportPoints = alpacaModel.Supports.Select(x => x.Pos).ToList();
+
+            var requested = NodeFilterInput.ReadPoints(DA, _filterInput, this);
+            var kept = Alpaca4d.Result.NodeFilter.SelectByPoint(
+                requested, supportPoints, alpacaModel.Tollerance, out var missed);
+
+            if (missed.Count > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"No support is within {alpacaModel.Tollerance} of " +
+                    $"{string.Join("; ", missed.Select(point => point.ToString()))}, so there is no " +
+                    $"reaction to report there - a node with nothing holding it carries none. " +
+                    $"Plug the same points into PointPos that you gave the Support component.");
+
+            var supports = kept.Select(i => alpacaModel.Supports[i]).ToList();
+
             // A skewed support carries its fix on a coincident auxiliary node, so that is
             // where OpenSees puts the reaction; the support node itself reads zero. An
             // axis-aligned support has no auxiliary node and is read where it always was.
-            var nodes = alpacaModel.Supports.Select(x => x.AuxiliaryNodeId ?? x.Id).ToList();
+            var nodes = supports.Select(x => x.AuxiliaryNodeId ?? x.Id).ToList();
 
             // Reactions come out of the recorder in global components whatever the
             // support is turned to, which for a skewed one spreads a reaction that runs
             // along a single local axis across all three global ones. Resolving them onto
             // the support's own axes is what makes a released direction read as the zero
             // it is.
-            var planes = alpacaModel.Supports.Select(x => x.Plane).ToList();
+            var planes = supports.Select(x => x.Plane).ToList();
 
             var forceTree = new DataTree<Vector3d>();
             var momentTree = new DataTree<Vector3d>();
@@ -117,6 +144,8 @@ namespace Alpaca4d.Gh
                 DA.SetDataList(1, forceTree.AllData());
                 DA.SetDataList(2, momentTree.AllData());
             }
+
+            DA.SetDataList(3, supports.Select(x => x.Id.Value));
         }
 
         private static Vector3d InAxesOf(Vector3d vector, Plane frame)

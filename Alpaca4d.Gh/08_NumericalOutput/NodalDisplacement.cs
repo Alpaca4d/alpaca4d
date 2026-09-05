@@ -19,7 +19,8 @@ namespace Alpaca4d.Gh
             "model.\n" +
             "One value per node, in global axes, in the order the nodes were assembled. Velocity and " +
             "acceleration are recorded by a transient analysis only. After a Natural Vibration " +
-            "Analysis, Step picks the mode and Displacement and Rotation are that mode's shape.",
+            "Analysis, Step picks the mode and Displacement and Rotation are that mode's shape.\n" +
+            "Give NodeTag to read part of a big model instead of all of it.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -42,13 +43,20 @@ namespace Alpaca4d.Gh
             pManager.AddIntegerParameter("Step", "Step",
                 "Which recorded step to read, or which mode after a modal analysis.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _filterInput = pManager.ParamCount;
+            pManager.AddIntegerParameter("NodeTag", "NodeTag", NodeFilterInput.NodeTagFilter, GH_ParamAccess.list);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
+
+        /// <summary>Where the NodeTag filter sits in the input list.</summary>
+        private int _filterInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
+            pManager.Register_PointParam("Position", "Position", NodeFilterInput.PositionOutput);
             pManager.Register_VectorParam("Displacement", "Displacement", $"[{Units.Length}]");
             pManager.Register_VectorParam("Rotation", "Rotation", $"[{Units.Angle}]");
             pManager.Register_GenericParam("--------", "--------", "Separator. Nothing comes out of it - it keeps the static results above apart from the transient ones below.");
@@ -71,6 +79,23 @@ namespace Alpaca4d.Gh
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
+            // Every node of the model, in the order the recorder wrote them - Assemble numbers the
+            // unique points it finds from 1, adding them to Nodes as it goes, so a node's tag is
+            // its position here plus one.
+            var nodeTags = alpacaModel.Nodes.Select(node => node.Id).ToList();
+
+            var requested = NodeFilterInput.Read(DA, _filterInput, this);
+            var kept = NodeFilterInput.Select(requested, nodeTags, out var missing);
+
+            if (missing.Count > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"The model has no node {string.Join(", ", missing)}. Its nodes are tagged " +
+                    $"1 to {nodeTags.Count}.");
+
+            // Handed to Read.NodalOutput as the rows to pick out. Left unfiltered this is every
+            // node in order, which is the whole recorder table and what came out before.
+            var readTags = NodeFilterInput.Slice(nodeTags, kept);
+
 
 			if (alpacaModel.IsModal == false)
 			{
@@ -81,19 +106,20 @@ namespace Alpaca4d.Gh
                     var vel = Enumerable.Empty<Rhino.Geometry.Vector3d>();
                     var acc = Enumerable.Empty<Rhino.Geometry.Vector3d>();
 
-                    disp = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.DISPLACEMENT);
-                    rot = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.ROTATION);
+                    disp = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.DISPLACEMENT, readTags);
+                    rot = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.ROTATION, readTags);
                     if (alpacaModel.IsTransient)
                     {
-                        vel = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.VELOCITY);
-                        acc = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.ACCELERATION);
+                        vel = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.VELOCITY, readTags);
+                        acc = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.ACCELERATION, readTags);
                     }
 
                     // Finally assign the spiral to the output parameter.
-                    DA.SetDataList(0, disp);
-                    DA.SetDataList(1, rot);
-                    DA.SetDataList(3, vel);
-                    DA.SetDataList(4, acc);
+                    SetPositions(DA, alpacaModel, kept);
+                    DA.SetDataList(1, disp);
+                    DA.SetDataList(2, rot);
+                    DA.SetDataList(4, vel);
+                    DA.SetDataList(5, acc);
                 }
                 else if(history == true)
                 {
@@ -111,21 +137,22 @@ namespace Alpaca4d.Gh
                     foreach (int current in steps)
                     {
                         var path = new Grasshopper.Kernel.Data.GH_Path(current);
-                        disp.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.DISPLACEMENT), path);
-                        rot.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.ROTATION), path);
+                        disp.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.DISPLACEMENT, readTags), path);
+                        rot.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.ROTATION, readTags), path);
                         if (alpacaModel.IsTransient)
                         {
-                            vel.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.VELOCITY), path);
-                            acc.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.ACCELERATION), path);
+                            vel.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.VELOCITY, readTags), path);
+                            acc.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.ACCELERATION, readTags), path);
                         }
                     }
 
-                    // 2 is the "--------" separator, so velocity and acceleration are
-                    // 3 and 4 - the same indices RegisterOutputParams gives them.
-                    DA.SetDataTree(0, disp);
-                    DA.SetDataTree(1, rot);
-                    DA.SetDataTree(3, vel);
-                    DA.SetDataTree(4, acc);
+                    // Position leads, so 3 is the "--------" separator and velocity and
+                    // acceleration are 4 and 5 - the same indices RegisterOutputParams gives them.
+                    SetPositions(DA, alpacaModel, kept);
+                    DA.SetDataTree(1, disp);
+                    DA.SetDataTree(2, rot);
+                    DA.SetDataTree(4, vel);
+                    DA.SetDataTree(5, acc);
                 }
 			}
 			else
@@ -133,13 +160,29 @@ namespace Alpaca4d.Gh
                 var disp = Enumerable.Empty<Rhino.Geometry.Vector3d>();
                 var rot = Enumerable.Empty<Rhino.Geometry.Vector3d>();
 
-                disp = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.MODES_OF_VIBRATION_U);
-                rot = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.MODES_OF_VIBRATION_R);
+                disp = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.MODES_OF_VIBRATION_U, readTags);
+                rot = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.MODES_OF_VIBRATION_R, readTags);
 
                 // Finally assign the spiral to the output parameter.
-                DA.SetDataList(0, disp);
-                DA.SetDataList(1, rot);
+                SetPositions(DA, alpacaModel, kept);
+                DA.SetDataList(1, disp);
+                DA.SetDataList(2, rot);
             }
+        }
+
+        /// <summary>
+        /// Where the nodes being reported sit, undeformed - the first output, so the results read
+        /// against the points they belong to.
+        ///
+        /// Worth having whether or not a filter was given, and the one thing a filtered component
+        /// has to hand back: the model's own node list no longer lines up with the output, so
+        /// without these there is nothing to draw the displacements against. The tags need no
+        /// output of their own - filtered they are exactly what was typed into NodeTag, and
+        /// unfiltered they are one to the number of nodes, in order.
+        /// </summary>
+        private static void SetPositions(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, System.Collections.Generic.List<int> kept)
+        {
+            DA.SetDataList(0, kept.Select(i => alpacaModel.Nodes[i].Pos));
         }
 
 
