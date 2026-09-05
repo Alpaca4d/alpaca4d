@@ -1174,6 +1174,14 @@ namespace Alpaca4d
 
             foreach(var item in this.Elements)
             {
+                // The identifier goes out as a comment because OpenSees has no command for one:
+                // the solver ignores the line, and Deserialise reads it back, so it survives a
+                // Serialise/Deserialise round trip and can still be filtered on afterwards. The
+                // element's own tag is written alongside because that is the only thing tying the
+                // line to an element - the identifier itself need not be unique.
+                if (!string.IsNullOrWhiteSpace(item.ElementId))
+                    this.Tcl.Add($"# alpaca:elementid {item.Id} {item.ElementId.Trim()}\n");
+
                 this.Tcl.Add(item.WriteTcl());
             }
 
@@ -1192,5 +1200,6 @@ namespace Alpaca4d
 
             this.addLoadPattern(this.LoadPatterns);
         }
+
     }
 }

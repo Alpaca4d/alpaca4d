@@ -45,6 +45,9 @@ namespace Alpaca4d.Gh
 
             evaluationUnit.RegisterInputParam(new Param_Colour(), "Colour", "Colour", "", GH_ParamAccess.item, new GH_Colour(Alpaca4d.Colors.DefaultBeamWithHinges));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
+
+            evaluationUnit.RegisterInputParam(new Param_String(), "ElementId", "ElementId", ElementIdentity.ElementIdInput, GH_ParamAccess.item);
+            evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
         }
 
         /// <summary>
@@ -107,8 +110,12 @@ namespace Alpaca4d.Gh
             Color color = Alpaca4d.Colors.DefaultBeamWithHinges;
             DA.GetData(8, ref color);
 
+            string elementId = null;
+            DA.GetData(9, ref elementId);
+
             var element = new Alpaca4d.Element.BeamWithHinges(line, section, geomTransf, releaseI, lpRatioI, releaseJ, lpRatioJ);
             element.Color = color;
+            element.ElementId = elementId;
 
             DA.SetData(0, element);
         }

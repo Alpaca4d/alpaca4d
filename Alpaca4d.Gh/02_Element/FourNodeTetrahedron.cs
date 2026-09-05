@@ -36,6 +36,8 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("Material", "Material", "Material the solid is made of. Connect an nD material.", GH_ParamAccess.item);
             pManager.AddColourParameter("Colour", "Colour", "Colour to draw the element in. Display only; it changes nothing in the analysis.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.ElementIdInput, GH_ParamAccess.item);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
 
         /// <summary>
@@ -65,8 +67,12 @@ namespace Alpaca4d.Gh
 
             var _mesh = Utils.CleanTetrahedron(mesh);
 
+            string elementId = null;
+            DA.GetData(3, ref elementId);
+
             var element = new Alpaca4d.Element.Tetrahedron(_mesh, material);
             element.Color = color;
+            element.ElementId = elementId;
             DA.SetData(0, element);
         }
 

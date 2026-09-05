@@ -23,6 +23,7 @@ namespace Alpaca4d.Element
         public struct Colour { };
         public ElementType Type => ElementType.Beam;
         public int? Id { get; set; }
+        public string ElementId { get; set; }
         public int? INode { get; set; }
         public int? JNode { get; set; }
         public int Ndf { get; set; }

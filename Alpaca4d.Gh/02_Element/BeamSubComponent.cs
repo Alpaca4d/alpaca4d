@@ -33,6 +33,9 @@ namespace Alpaca4d.Gh
 
             evaluationUnit.RegisterInputParam(new Param_Colour(), "Colour", "Colour", "", GH_ParamAccess.item, new GH_Colour(Alpaca4d.Colors.DefaultBeam));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
+
+            evaluationUnit.RegisterInputParam(new Param_String(), "ElementId", "ElementId", ElementIdentity.ElementIdInput, GH_ParamAccess.item);
+            evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
         }
 
         public override void SolveInstance(IGH_DataAccess DA, out string msg, out GH_RuntimeMessageLevel level)
@@ -67,8 +70,12 @@ namespace Alpaca4d.Gh
             Color color = Alpaca4d.Colors.DefaultBeam;
             DA.GetData(4, ref color);
 
+            string elementId = null;
+            DA.GetData(5, ref elementId);
+
             var element = new Alpaca4d.Element.ForceBeamColumn(line, section, geomTransf);
             element.Color = color;
+            element.ElementId = elementId;
 
             DA.SetData(0, element);
         }

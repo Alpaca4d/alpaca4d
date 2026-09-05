@@ -12,6 +12,7 @@ namespace Alpaca4d.Element
     public partial class Tetrahedron : ISerialize, IBrick, IElement, IStructure
     {
         public int? Id { get; set; }
+        public string ElementId { get; set; }
         public Mesh Mesh { get; set; }
         public IMultiDimensionMaterial Material { get; set; }
         public ElementType Type => ElementType.Brick;

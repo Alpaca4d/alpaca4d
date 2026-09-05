@@ -33,6 +33,8 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Is Corotational", "IsCorotational", "Use the corotational formulation, which keeps the element honest through large rotations at the cost of a slower analysis. Leave it off for small displacements.", GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.ElementIdInput, GH_ParamAccess.item);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
 
         /// <summary>
@@ -65,6 +67,9 @@ namespace Alpaca4d.Gh
             bool isCorotational = false;
             DA.GetData(4, ref isCorotational);
 
+            string elementId = null;
+            DA.GetData(5, ref elementId);
+
             var meshes = new List<Mesh>();
 
             if (_mesh.Faces.Count > 0)
@@ -83,6 +88,10 @@ namespace Alpaca4d.Gh
                 {
                     var element = new Alpaca4d.Element.ASDShellQ4(mesh, section, localX, isCorotational);
                     element.Color = color;
+                    // Every face of the mesh takes the one identifier typed here, so a whole slab
+                    // is one group and asking for that identifier returns all of it. Give a list of
+                    // identifiers to label the faces apart instead.
+                    element.ElementId = elementId;
 
                     elements.Add(element);
                 }
@@ -90,6 +99,7 @@ namespace Alpaca4d.Gh
                 {
                     var element = new Alpaca4d.Element.ASDShellT3(mesh, section, localX, isCorotational);
                     element.Color = color;
+                    element.ElementId = elementId;
 
                     elements.Add(element);
                 }

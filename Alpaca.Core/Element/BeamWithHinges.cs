@@ -21,6 +21,7 @@ namespace Alpaca4d.Element
         }
         public ElementType Type => ElementType.Beam;
         public int? Id { get; set; }
+        public string ElementId { get; set; }
         public int? INode { get; set; }
         public int? JNode { get; set; }
         public int Ndf => 6;

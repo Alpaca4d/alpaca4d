@@ -60,6 +60,8 @@ namespace Alpaca4d
         // What the second pass builds.
         private readonly List<IElement> _elements = new List<IElement>();
         private readonly Dictionary<int, IBeam> _beamsByTag = new Dictionary<int, IBeam>();
+        private readonly Dictionary<int, IElement> _elementsByTag = new Dictionary<int, IElement>();
+        private readonly Dictionary<int, string> _elementIds = new Dictionary<int, string>();
         private readonly List<Support> _supports = new List<Support>();
         private readonly List<LoadPattern> _patterns = new List<LoadPattern>();
         private readonly List<IConstraint> _constraints = new List<IConstraint>();
@@ -123,14 +125,57 @@ namespace Alpaca4d
 
                     if (tokens.Length == 0)
                         continue;
+
                     if (tokens[0].StartsWith("#"))
+                    {
+                        // A comment is not always only a comment. Alpaca4d writes what OpenSees has
+                        // no command for - so far the element identifiers - as "# alpaca:<directive>
+                        // ..." lines, which the solver skips and this reads. Anything else beginning
+                        // with "#" is a real comment and is dropped.
+                        var directive = AlpacaDirective(tokens);
+                        if (directive != null)
+                            commands.Add(directive);
+
                         continue;
+                    }
 
                     commands.Add(tokens);
                 }
             }
 
             return commands;
+        }
+
+        /// <summary>
+        /// The tokens of an "# alpaca:elementid 3 MyBeam" line with the comment marker taken off,
+        /// so the command reads as "alpaca:elementid 3 MyBeam" and lands in the same switch as
+        /// every other command. Null when the line is an ordinary comment.
+        ///
+        /// Both "# alpaca:elementid" and "#alpaca:elementid" are read: the marker is a separate
+        /// token in the first spelling and glued to the directive in the second, and a file that
+        /// has been hand-edited can hold either.
+        /// </summary>
+        private static string[] AlpacaDirective(string[] tokens)
+        {
+            const string prefix = "alpaca:";
+
+            var head = tokens[0].TrimStart('#');
+
+            if (head.Length == 0)
+            {
+                if (tokens.Length < 2 || !tokens[1].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return null;
+
+                return tokens.Skip(1).ToArray();
+            }
+
+            if (!head.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var directive = new string[tokens.Length];
+            directive[0] = head;
+            Array.Copy(tokens, 1, directive, 1, tokens.Length - 1);
+            return directive;
         }
 
         private static bool TryNumber(string token, out double value)
@@ -199,6 +244,7 @@ namespace Alpaca4d
         {
             ReadDefinitions(commands);
             ReadTopology(commands);
+            ApplyElementIds();
 
             Model = new Model(_elements, _supports, _patterns, _constraints, new List<IRecorder>())
             {
@@ -329,6 +375,10 @@ namespace Alpaca4d
 
                         case "element":
                             ReadElement(tokens);
+                            break;
+
+                        case "alpaca:elementid":
+                            ReadElementId(tokens);
                             break;
 
                         case "mass":
@@ -618,6 +668,7 @@ namespace Alpaca4d
 
         private void ReadElement(string[] tokens)
         {
+            int before = _elements.Count;
             var type = tokens[1];
 
             if (string.Equals(type, "forceBeamColumn", StringComparison.OrdinalIgnoreCase))
@@ -634,6 +685,49 @@ namespace Alpaca4d
                 ReadBrick(tokens, 4, type);
             else
                 Warn($"element {type} is not supported and was skipped.");
+
+            // Every branch above adds at most one element, so whatever arrived is the one this
+            // command built. Kept by the tag written in the file, not by position: a hand written
+            // deck is free to number its elements however it likes, and the ElementId lines refer
+            // to those numbers.
+            if (_elements.Count > before && TryTag(tokens[2], out int tag))
+                _elementsByTag[tag] = _elements[_elements.Count - 1];
+        }
+
+        /// <summary>
+        /// Reads an "# alpaca:elementid $tag $elementId" line, the comment Alpaca4d writes to carry
+        /// an element identifier past a solver that has no command for one.
+        ///
+        /// Keyed by the element's tag rather than by the identifier itself, which is free text and
+        /// may well be shared by a whole group of elements. Only recorded here; it is applied once
+        /// the file has been walked, because the line sits in front of the element it labels when
+        /// Alpaca4d wrote the file but can sit anywhere once someone has edited it by hand.
+        /// </summary>
+        private void ReadElementId(string[] tokens)
+        {
+            if (tokens.Length < 3)
+                return;
+
+            int tag = Tag(tokens, 1);
+
+            // Joined rather than taken as one token: nothing stops a user typing "Ground Floor"
+            // into the ElementId input, and the line is written with no quoting.
+            var elementId = string.Join(" ", tokens.Skip(2)).Trim();
+
+            if (elementId.Length > 0)
+                _elementIds[tag] = elementId;
+        }
+
+        /// <summary>Hands the identifiers read from the file to the elements they belong to.</summary>
+        private void ApplyElementIds()
+        {
+            foreach (var entry in _elementIds)
+            {
+                if (_elementsByTag.TryGetValue(entry.Key, out var element))
+                    element.ElementId = entry.Value;
+                else
+                    Warn($"The ElementId \"{entry.Value}\" is given for element {entry.Key}, which is not an element Alpaca4d read.");
+            }
         }
 
         private void ReadBeam(string[] tokens)

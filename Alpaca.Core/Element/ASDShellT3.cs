@@ -12,6 +12,7 @@ namespace Alpaca4d.Element
     public partial class ASDShellT3 : ISerialize, IShell, IElement, IStructure
     {
         public int? Id { get; set; }
+        public string ElementId { get; set; }
         public Mesh Mesh { get; set; }
         public IMultiDimensionSection Section { get; set; }
         public ElementType Type => ElementType.Shell;
