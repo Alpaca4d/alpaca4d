@@ -1,150 +1,143 @@
-﻿//using Grasshopper;
-//using Grasshopper.Kernel;
-//using Rhino.Geometry;
-//using System;
-//using System.Linq;
-//using System.Collections.Generic;
+using Grasshopper;
+using Grasshopper.Kernel;
+using Grasshopper.Kernel.Data;
+using System;
+using System.Linq;
+using System.Collections.Generic;
 
-//using Alpaca4d.Generic;
-//using Alpaca4d.Result;
+using Alpaca4d.Generic;
+using Alpaca4d.Result;
 
-//namespace Alpaca4d.Gh
-//{
-//    public class ShellStresses : GH_Component
-//    {
-//        public ShellStresses()
-//          : base("Shell Stresses (Alpaca4d)", "SS",
-//            "Read the Shell Stresses",
-//            "Alpaca4d", "08_NumericalOutput")
-//        {
-//            // Draw a Description Underneath the component
-//            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
-//        }
+namespace Alpaca4d.Gh
+{
+    public class ShellStresses : GH_Component
+    {
+        public ShellStresses()
+          : base("Shell Stresses (Alpaca4d)", "Shell Stresses",
+            "Reads the true stresses through the thickness of every shell element of an analysed " +
+            "model - the in-plane components, the transverse shears and the Von Mises equivalent.\n" +
+            "Not the same as Shell Forces, which reports stress resultants - forces and moments per " +
+            "unit width, the whole thickness collapsed into eight numbers. These are stresses in " +
+            "force over area, at the top, mid and bottom of the section.\n" +
+            "A branch reads {element; layer}, layer 0 top, 1 middle, 2 bottom, holding one value " +
+            "per integration point of the element.",
+            "Alpaca4d", "08_NumericalOutput")
+        {
+            // Draw a Description Underneath the component
+            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
+        }
 
-//        /// <summary>
-//        /// Registers all the input parameters for this component.
-//        /// </summary>
-//        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
-//        {
-//            pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "", GH_ParamAccess.item);
-//            pManager.AddBooleanParameter("History", "History", "not implemented", GH_ParamAccess.item, false);
-//            pManager[pManager.ParamCount - 1].Optional = true;
-//            pManager.AddIntegerParameter("Step", "Step", "", GH_ParamAccess.item, 0);
-//            pManager[pManager.ParamCount - 1].Optional = true;
-//        }
+        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
+        {
+            pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
+            pManager.AddBooleanParameter("History", "History",
+                "Read every recorded step instead of one. The outputs then carry a step index in " +
+                "front, so a branch reads {step; element; layer}. Step is ignored.",
+                GH_ParamAccess.item, false);
+            pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
+            pManager[pManager.ParamCount - 1].Optional = true;
+            _filterInput = pManager.ParamCount;
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
+            pManager[pManager.ParamCount - 1].Optional = true;
+        }
 
-//        /// <summary>
-//        /// Registers all the output parameters for this component.
-//        /// </summary>
-//        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
-//        {
-//            pManager.Register_GenericParam("pxx", "pxx", "");
-//            pManager.Register_GenericParam("pyy", "pyy", "");
-//            pManager.Register_GenericParam("pxy", "pxy", "");
-//            pManager.Register_GenericParam("mxx", "mxx", "");
-//            pManager.Register_GenericParam("myy", "myy", "");
-//            pManager.Register_GenericParam("mxy", "mxy", "");
-//            pManager.Register_GenericParam("vxz", "vxz", "");
-//            pManager.Register_GenericParam("vyz", "vyz", "");
-//        }
+        /// <summary>Where the ElementId filter sits in the input list.</summary>
+        private int _filterInput;
 
-//        /// <summary>
-//        /// This is the method that actually does the work.
-//        /// </summary>
-//        /// <param name="DA">The DA object can be used to retrieve data from input parameters and 
-//        /// to store data in output parameters.</param>
-//        protected override void SolveInstance(IGH_DataAccess DA)
-//        {
-//            var alpacaModel = new Alpaca4d.Model();
-//            bool history = false;
-//            int step = 0;
+        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
+        {
+            pManager.Register_DoubleParam("Sigma11", "σ₁₁", $"Direct stress along the section's local 1 axis [{Units.Force}/{Units.Length}²]");
+            pManager.Register_DoubleParam("Sigma22", "σ₂₂", $"Direct stress along the section's local 2 axis [{Units.Force}/{Units.Length}²]");
+            pManager.Register_DoubleParam("Sigma12", "σ₁₂", $"In-plane shear stress [{Units.Force}/{Units.Length}²]");
+            pManager.Register_DoubleParam("Sigma23", "σ₂₃", $"Transverse shear stress in the local 2-3 plane [{Units.Force}/{Units.Length}²]");
+            pManager.Register_DoubleParam("Sigma31", "σ₃₁", $"Transverse shear stress in the local 3-1 plane [{Units.Force}/{Units.Length}²]");
+            pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, from the five components above [{Units.Force}/{Units.Length}²]");
+            pManager.Register_StringParam("Layer", "Layer", "Which layer each branch is: Top, Middle or Bottom, in that order.");
+            pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
+        }
 
-//            if (!DA.GetData(0, ref alpacaModel)) return;
-//            DA.GetData(1, ref history);
-//            DA.GetData(2, ref step);
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            var alpacaModel = new Alpaca4d.Model();
+            bool history = false;
+            int step = 0;
 
-//            var fxQuad = new List<List<double>>();
-//            var fyQuad = new List<List<double>>();
-//            var fxyQuad = new List<List<double>>();
-//            var mxQuad = new List<List<double>>();
-//            var myQuad = new List<List<double>>();
-//            var mxyQuad = new List<List<double>>();
-//            var vxzQuad = new List<List<double>>();
-//            var vyzQuad = new List<List<double>>();
+            if (!DA.GetData(0, ref alpacaModel)) return;
+            DA.GetData(1, ref history);
+            DA.GetData(2, ref step);
 
-//            var fxTri = new List<List<double>>();
-//            var fyTri = new List<List<double>>();
-//            var fxyTri = new List<List<double>>();
-//            var mxTri = new List<List<double>>();
-//            var myTri = new List<List<double>>();
-//            var mxyTri = new List<List<double>>();
-//            var vxzTri = new List<List<double>>();
-//            var vyzTri = new List<List<double>>();
+            var filter = ElementFilterInput.Read(DA, _filterInput, this);
 
+            var steps = HistorySteps.Of(alpacaModel, history, step, this);
+            if (steps == null) return;
 
-//            if (alpacaModel.HasQuadShell)
-//                (fxQuad, fyQuad, fxyQuad, mxQuad, myQuad, mxyQuad, vxzQuad, vyzQuad) = Alpaca4d.Result.Read.ASDQ4Stresses(alpacaModel, step);
-//            if(alpacaModel.HasTriShell)
-//                (fxTri, fyTri, fxyTri, mxTri, myTri, mxyTri, vxzTri, vyzTri) = Alpaca4d.Result.Read.DKGTStresses(alpacaModel, step);
+            var shells = alpacaModel.Shells;
+            var kept = ElementFilterInput.Select(filter, shells, alpacaModel, "shells", this);
+            var keptShells = kept.Select(i => shells[i]).ToList();
 
-//            var ids = alpacaModel.Shells.Select(d => d.Id).ToList();
+            var outputs = Enumerable.Range(0, 6).Select(_ => new DataTree<double>()).ToArray();
 
-//            // Convert Nested List to DataTree
-//            var quadShellId = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellQ4).Select(x => x.Id-1).ToList();
+            foreach (int current in steps)
+            {
+                List<Alpaca4d.Result.Read.ShellFibreStress> all;
+                try
+                {
+                    all = Alpaca4d.Result.Read.ShellFibreStresses(alpacaModel, current);
+                }
+                catch (Exception ex)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ex.Message);
+                    return;
+                }
 
-//            var fxQuadTree = Utils.DataTreeFromNestedList(fxQuad, quadShellId);
-//            var fyQuadTree = Utils.DataTreeFromNestedList(fyQuad, quadShellId);
-//            var fxyQuadTree = Utils.DataTreeFromNestedList(fxyQuad, quadShellId);
-//            var mxQuadTree = Utils.DataTreeFromNestedList(mxQuad, quadShellId);
-//            var myQuadTree = Utils.DataTreeFromNestedList(myQuad, quadShellId);
-//            var mxyQuadTree = Utils.DataTreeFromNestedList(mxyQuad, quadShellId);
-//            var vxzQuadTree =  Utils.DataTreeFromNestedList(vxzQuad, quadShellId);
-//            var vyzQuadTree =  Utils.DataTreeFromNestedList(vyzQuad, quadShellId);
+                // Grouped by element, then by the station through the thickness. The reader hands
+                // them back bottom to top, one set per integration point of the element.
+                var byElement = all.GroupBy(x => x.ElementId)
+                                   .ToDictionary(g => g.Key, g => g.ToList());
 
-//            // Convert Nested List to DataTree
-//            var triShellId = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ShellDKGT).Select(x => x.Id-1).ToList();
+                foreach (var shell in keptShells)
+                {
+                    if (shell.Id == null || !byElement.TryGetValue(shell.Id.Value, out var entries))
+                        continue;
 
-//            var fxTriTree = Utils.DataTreeFromNestedList(fxTri, triShellId);
-//            var fyTriTree = Utils.DataTreeFromNestedList(fyTri, triShellId);
-//            var fxyTriTree = Utils.DataTreeFromNestedList(fxyTri, triShellId);
-//            var mxTriTree = Utils.DataTreeFromNestedList(mxTri, triShellId);
-//            var myTriTree = Utils.DataTreeFromNestedList(myTri, triShellId);
-//            var mxyTriTree = Utils.DataTreeFromNestedList(mxyTri, triShellId);
-//            var vxzTriTree = Utils.DataTreeFromNestedList(vxzTri, triShellId);
-//            var vyzTriTree = Utils.DataTreeFromNestedList(vyzTri, triShellId);
-            
+                    int fibreCount = entries.Select(x => x.Fibre).Distinct().Count();
+                    if (fibreCount == 0)
+                        continue;
 
-//            fxQuadTree.MergeTree(fxTriTree);
-//            fyQuadTree.MergeTree(fyTriTree);
-//            fxyQuadTree.MergeTree(fxyTriTree);
-//            mxQuadTree.MergeTree(mxTriTree);
-//            myQuadTree.MergeTree(myTriTree);
-//            mxyQuadTree.MergeTree(mxyTriTree);
-//            vxzQuadTree.MergeTree(vxzTriTree);
-//            vyzQuadTree.MergeTree(vyzTriTree);
+                    int[] wanted = Alpaca4d.Result.Read.LayerFibres(fibreCount);
 
-//            // Finally assign the spiral to the output parameter.
-//            DA.SetDataTree(0, fxQuadTree);
-//            DA.SetDataTree(1, fyQuadTree);
-//            DA.SetDataTree(2, fxyQuadTree);
-//            DA.SetDataTree(3, mxQuadTree);
-//            DA.SetDataTree(4, myQuadTree);
-//            DA.SetDataTree(5, mxyQuadTree);
-//            DA.SetDataTree(6, vxzQuadTree);
-//            DA.SetDataTree(7, vyzQuadTree);
-//        }
+                    for (int layer = 0; layer < wanted.Length; layer++)
+                    {
+                        var atLayer = entries.Where(x => x.Fibre == wanted[layer])
+                                             .OrderBy(x => x.GaussPoint)
+                                             .ToList();
 
+                        var path = history
+                            ? new GH_Path(current, shell.Id.Value, layer)
+                            : new GH_Path(shell.Id.Value, layer);
 
-//        /// <summary>
-//        /// The Exposure property controls where in the panel a component icon 
-//        /// will appear. There are seven possible locations (primary to septenary), 
-//        /// each of which can be combined with the GH_Exposure.obscure flag, which 
-//        /// ensures the component will only be visible on panel dropdowns.
-//        /// </summary>
-//        public override GH_Exposure Exposure => GH_Exposure.tertiary;
+                        outputs[0].AddRange(atLayer.Select(x => x.S11), path);
+                        outputs[1].AddRange(atLayer.Select(x => x.S22), path);
+                        outputs[2].AddRange(atLayer.Select(x => x.S12), path);
+                        outputs[3].AddRange(atLayer.Select(x => x.S23), path);
+                        outputs[4].AddRange(atLayer.Select(x => x.S31), path);
+                        outputs[5].AddRange(atLayer.Select(x => x.VonMises), path);
+                    }
+                }
+            }
 
-//        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.shellStress;
+            for (int i = 0; i < outputs.Length; i++)
+                DA.SetDataTree(i, outputs[i]);
 
-//        public override Guid ComponentGuid => new Guid("{9B38E0D7-5A40-528F-A0E0-404AB291CE01}");
-//    }
-//}
+            DA.SetDataList(6, Alpaca4d.Result.Read.LayerNames);
+            DA.SetDataList(7, keptShells);
+        }
+
+        public override GH_Exposure Exposure => GH_Exposure.tertiary;
+
+        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.shellStress;
+
+        public override Guid ComponentGuid => new Guid("{9B38E0D7-5A40-528F-A0E0-404AB291CE01}");
+    }
+}
