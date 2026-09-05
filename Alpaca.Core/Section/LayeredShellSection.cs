@@ -46,6 +46,24 @@ namespace Alpaca4d.Section
     ///     includes the endpoints; a layered section cannot. Its outermost reported stress is half
     ///     a layer in from the face, so a thick outer layer reads low against a hand check. Thin
     ///     outer layers if the face value is what matters.
+    ///
+    /// Any nD material may be a layer, orthotropic ones included: OpenSees wraps each through
+    /// NDMaterial::getCopy("PlateFiber"), which builds itself out of the material's own 3D form, so
+    /// ElasticOrthotropic works without anything special. That is what makes cross-laminated timber
+    /// modelable - with one caveat. The section carries NO per-layer orientation, so a crossed ply
+    /// is expressed by declaring a second material with Ex and Ey exchanged rather than by rotating
+    /// the layer.
+    ///
+    /// The one thing this section CANNOT do is interlayer slip. Every layer shares a single strain
+    /// field, in-plane strain running as eps0 - z*kappa across the whole stack and transverse shear
+    /// held constant through it (LayeredShellFiberSection::setTrialSectionDeformation). Plane
+    /// sections stay plane over the full depth, so a stiff-soft-stiff laminate held together by a
+    /// compliant core - laminated glass on a PVB interlayer, a sandwich panel on a weak adhesive -
+    /// comes out very near its monolithic limit rather than somewhere between monolithic and fully
+    /// layered. Measured on a cantilever strip of 6mm glass / 1.52mm PVB / 6mm glass: this section
+    /// gives a tip deflection 21% above monolithic, where two independently bending panes would be
+    /// 5.7 times above it. Stiff by a factor of about five, and unsafe in that direction. Model
+    /// those as two shells with an explicit shear connection instead.
     /// </summary>
     public partial class LayeredShellSection : ISerialize, IMultiDimensionSection
     {

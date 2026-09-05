@@ -14,11 +14,11 @@ namespace Alpaca4d.Gh
         public LayeredShellSection()
           : base("Layered Shell Section (Alpaca4d)", "Layered Shell",
             "Construct a shell section as a stack of layers, each with its own material and " +
-            "thickness - reinforced concrete as cover/steel/core, a timber panel as crossed plies, " +
-            "a composite as its laminae.\n" +
-            "Give one material to split a thickness into equal layers, or a list of materials with " +
-            "a matching list of thicknesses to build the stack yourself, bottom face first. Feed " +
-            "the result to the Section input of an ASD Shell.",
+            "thickness - reinforced concrete, cross-laminated timber, a laminate.\n" +
+            "One material splits a thickness into equal layers; a list of materials with matching " +
+            "thicknesses builds the stack, bottom face first.\n" +
+            "Orthotropic materials work, but nothing rotates a layer: a crossed ply is a second " +
+            "material with Ex and Ey exchanged.",
             "Alpaca4d", "01_Section")
         {
             // Draw a Description Underneath the component
@@ -29,7 +29,13 @@ namespace Alpaca4d.Gh
         {
             pManager.AddTextParameter("SectionName", "SecName", "A label for the section, carried on the object and readable through Deconstruct. Nothing in the analysis reads it.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddGenericParameter("Material", "Material", "Materials the layers are made of, bottom face first. Connect nD materials. One material is used for every layer; a list gives one layer each.", GH_ParamAccess.list);
+            pManager.AddGenericParameter("Material", "Material",
+                "Materials the layers are made of, bottom face first. Any nD material, orthotropic " +
+                "included.\n" +
+                "Every layer shares one strain field, so a stiff-soft-stiff laminate held by a " +
+                "compliant core comes out near its monolithic limit: 6mm glass / 1.52mm PVB / 6mm " +
+                "glass reads about 5 times stiffer than two panes bending independently. Model that " +
+                "as two shells with a shear connection instead.", GH_ParamAccess.list);
             pManager.AddNumberParameter("Thickness", "Thickness",
                 $"[{Units.Length}] Thickness of each layer, bottom face first, matching Material.\n" +
                 "A single value against a single material is the whole section, split into Layers " +
