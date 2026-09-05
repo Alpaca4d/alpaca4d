@@ -16,13 +16,10 @@ namespace Alpaca4d.Gh
           : base("Brick Stresses (Alpaca4d)", "Brick Stresses",
             "Reads the stress state of every solid element of an analysed model - the six components " +
             "of the stress tensor plus the Von Mises equivalent stress.\n" +
-            "One value per element, in the element's local axes - an SSP Brick and a Four Node " +
-            "Tetrahedron both have a single integration point, so there is nothing to sample along. " +
-            "These are the only two element types it reads.\n" +
-            "Values come out tetrahedra first, then SSP bricks, which in a model mixing the two is " +
-            "not the order they were assembled in - the Tag output says which element each value " +
-            "belongs to. Give ElementId a tag, an identifier or a wildcard to read part of a big model " +
-            "instead of all of it.",
+            "One value per element, in its local axes. An SSP Brick and a Four Node Tetrahedron, " +
+            "the only two solid types, each have one integration point.\n" +
+            "Values come tetrahedra first, then SSP bricks - Tag says which is which. Give " +
+            "ElementId to read part of a big model.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component

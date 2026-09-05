@@ -18,10 +18,9 @@ namespace Alpaca4d.Gh
             "Reads the stress resultants of every shell element of an analysed model - membrane " +
             "forces pxx, pyy and pxy, bending moments mxx, myy and mxy, and transverse shears vxz " +
             "and vyz.\n" +
-            "All of them per unit width and in the shell's local axes. Each output is a tree with " +
-            "one branch per element, keyed by the element's tag, holding the values at the element's " +
-            "integration points.\n" +
-            "Give ElementId a tag, an identifier or a wildcard to read part of a big model instead of all of it.",
+            "All per unit width and in the shell's local axes. One branch per element, keyed by " +
+            "its tag, holding the values at the integration points.\n" +
+            "Give ElementId to read part of a big model.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component

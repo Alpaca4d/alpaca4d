@@ -16,39 +16,27 @@ namespace Alpaca4d.Gh
     {
         /// <summary>The NodeTag input on Nodal Displacements.</summary>
         public const string NodeTagFilter =
-            "Report only these nodes, by tag - the number Assemble hands each node and the number " +
-            "OpenSees knows it by. Left empty every node is reported, and then a node's tag is its " +
-            "place in the output, counting from one.\n" +
-            "Nodes are numbered by Assemble from the element geometry rather than authored, so the " +
-            "Position output is the way to find the tag of a node you are interested in: read the " +
-            "whole model once and look for the point you want.";
+            "Report only these nodes, by tag - the number OpenSees knows each node by. Left empty " +
+            "every node is reported, and then a node's tag is its place in the output, from one.";
 
         /// <summary>The PointPos input on Reaction Forces.</summary>
         public const string SupportPointFilter =
-            "Report only the supports at these points. Left empty every support is reported.\n" +
-            "Points rather than node tags because a support is something you placed yourself and " +
-            "can point at - feed it the same points you gave the Support component. A point counts " +
-            "as being at a support when it is within the model's tolerance of it, the same distance " +
-            "Assemble used to decide two points were one node.\n" +
-            "A point with no support at it is reported as a warning rather than read as zero: a " +
-            "node with nothing holding it has no reaction, and an empty output would otherwise " +
-            "look the same as one that is genuinely unrestrained.";
+            "Report only the supports at these points - the same points you gave the Support " +
+            "component. Left empty every support is reported.\n" +
+            "A point counts as being at a support when it is within the model's tolerance of it.";
 
         /// <summary>
         /// The NodeTag output on Reaction Forces. Nodal Displacements needs no such output - its
-        /// tags are either exactly what was typed into NodeTag or, unfiltered, one to the number
-        /// of nodes in order. A support's node is neither: which nodes are held is a fact about
-        /// the model that nothing else on the component gives back.
+        /// tags are either what was typed into NodeTag or, unfiltered, one to the number of nodes
+        /// in order. Which nodes carry a support is not something anything else gives back.
         /// </summary>
         public const string NodeTagOutput =
-            "The node each support reported sits on, in the same order as the results. What to " +
-            "type into NodeTag above to come back to one of them.";
+            "The node each support reported sits on, in the same order as the results.";
 
         /// <summary>The Position output on Nodal Displacements.</summary>
         public const string PositionOutput =
-            "Where each node reported sits, undeformed, in the same order as the results below.\n" +
-            "Filtered, this is the only thing tying the results to the model - the model's own " +
-            "node list no longer lines up with them.";
+            "Where each node reported sits, undeformed, in the same order as the results below. " +
+            "Filtered, this is what ties the results back to the model.";
 
         /// <summary>
         /// Reads the requested tags. An unplugged input, or one saved before this input existed,

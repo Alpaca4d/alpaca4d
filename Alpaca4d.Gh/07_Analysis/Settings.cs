@@ -40,9 +40,8 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("System", "System",
                 "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "BandSPD is the default and was the fastest of the nine on every model measured. " +
-                "UmfPack is the one to reach for if a model ever refuses to solve, being a general " +
-                "sparse solver that assumes nothing about the matrix.\n" +
+                "BandSPD is the default, fastest of the nine on every model measured. Reach for " +
+                "UmfPack if a model refuses to solve - it assumes nothing about the matrix.\n" +
                 "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral",
                 GH_ParamAccess.item, "BandSPD");
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -50,11 +49,9 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Algorithm", "Algorithm",
                 "How each step is iterated to equilibrium. Connect a 'ValueList'.\n" +
-                "Newton is the default: it re-forms the tangent every iteration, which costs about " +
-                "20% over Linear on an elastic model and is what lets a yielding one converge at all.\n" +
-                "Linear does a single solve with no iteration. On a genuinely linear model it gives " +
-                "the same answer for less work, but on a nonlinear one it reports success and returns " +
-                "the unconverged first guess - so only pick it when the model is elastic throughout.\n" +
+                "Newton is the default: about 20% slower than Linear on an elastic model, and what " +
+                "lets a yielding one converge at all. Linear does one solve with no iteration - on a " +
+                "nonlinear model it reports success and returns the unconverged first guess.\n" +
                 "Linear, Newton, NewtonLineSearch, ModifiedNewton, KrylovNewton, SecantNewton, BFGS, Broyden",
                 GH_ParamAccess.item, "Newton");
             pManager[pManager.ParamCount - 1].Optional = true;

@@ -16,10 +16,10 @@ namespace Alpaca4d.Gh
         public ReactionForce()
           : base("Reaction Forces (Alpaca4d)", "Reaction Forces",
             "Reads the force and the moment carried by every support of an analysed model.\n" +
-            "One value per support, given in the support's own axes, so a support placed on a Plane " +
-            "reports along that plane rather than along the global axes. SupportPosition gives both " +
-            "where each support sits and the frame its reactions are in.\n" +
-            "Give PointPos to read some of the supports instead of all of them.",
+            "One value per support, in the support's own axes, so a support placed on a Plane " +
+            "reports along that plane rather than the global axes. SupportPosition gives both where " +
+            "each support sits and the frame its reactions are in.\n" +
+            "Give PointPos to read only some of the supports.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -33,9 +33,9 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
-                "Read every recorded step instead of one. ReactionForce and ReactionMoment then " +
-                "become trees with one branch per step, {step}, holding that step's value per " +
-                "support. SupportPosition stays a flat list - supports do not move. Step is ignored.",
+                "Read every recorded step instead of one. ReactionForce and ReactionMoment become " +
+                "trees with one branch per step; SupportPosition stays flat, as supports do not " +
+                "move. Step is ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);

@@ -24,14 +24,8 @@ namespace Alpaca4d.Gh
             evaluationUnit.Icon = Alpaca4d.Gh.Properties.Resources.Uniform_excitation;
             mngr.RegisterUnit(evaluationUnit);
 
-            evaluationUnit.RegisterInputParam(new Param_String(), "Dof", "Dof", "Degree of freedom direction the ground motion acts\n" + 
-                "Connect a 'ValueList' component to get the list of directions\n" +
-                "x : corresponds to translation along the global X axis\n" +
-                "y : corresponds to translation along the global Y axis\n" +
-                "z : corresponds to translation along the global Z axis\n" +
-                "xx : corresponds to rotation about the global X axis\n" +
-                "yy : corresponds to rotation about the global Y axis\n" +
-                "zz : corresponds to rotation about the global Z axis", GH_ParamAccess.item, new GH_String("X"));
+            evaluationUnit.RegisterInputParam(new Param_String(), "Dof", "Dof", "Direction the ground motion acts in. Connect a 'ValueList'.\n" +
+                "x, y and z translate along the global axes; xx, yy and zz rotate about them.", GH_ParamAccess.item, new GH_String("X"));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = false;
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].EnumInput = Enum.GetNames(typeof(Alpaca4d.Loads.Direction)).ToList();;
 

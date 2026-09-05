@@ -34,7 +34,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Recorders", "Recorders", "What to write to the results file. Left empty, Run Analysis picks a recorder to suit the analysis type.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Tolerance", "Tolerance", $"Distance below which two positions are treated as the same node [{Units.Length}]. This is what welds elements together and what lands supports and point loads on a node - too small and the model falls apart into pieces that never touch, too large and separate nodes get merged.", GH_ParamAccess.item, 0.01);
+            pManager.AddNumberParameter("Tolerance", "Tolerance", $"Distance below which two positions are treated as the same node [{Units.Length}]. It welds elements together and lands supports and loads on a node - too small and the model falls into pieces, too large and separate nodes merge.", GH_ParamAccess.item, 0.01);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
