@@ -50,27 +50,22 @@ namespace Alpaca4d.Constraints
 
 
 
+        /// <summary>
+        /// This used to collect every hit of both searches into one list and then take the first
+        /// two, which is only the right pair when each point matches exactly one node. A tolerance
+        /// wide enough to catch two nodes at the master end - or a master end that matches nothing -
+        /// silently tied the wrong pair together. RTreeSearch takes the first hit per point and
+        /// says so when a point matches none.
+        /// </summary>
         public void SetTopologyRTree(Model model)
         {
-            var tol = model.Tollerance;
-            var pointAtStart = this.MasterNode;
-            var pointAtEnd = this.SlaveNode;
-            var curvePoints = new List<Rhino.Geometry.Point3d> { pointAtStart, pointAtEnd };
+            var points = new List<Rhino.Geometry.Point3d> { this.MasterNode, this.SlaveNode };
+            var found = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, points, model.Tollerance)
+                .Select(x => x + 1 + model.UniquePointsThreeNDF.Count)
+                .ToList();
 
-            var closestIndexes = new List<int>();
-
-            void SearchCallback(object sender, RTreeEventArgs e)
-            {
-                closestIndexes.Add(e.Id + 1);
-            }
-
-            foreach (var pt in curvePoints)
-            {
-                model.RTreeCloudPointSixNDF.Search(new Rhino.Geometry.Sphere(pt, tol), SearchCallback);
-            }
-
-            this.MasterNodeId = closestIndexes[0] + model.UniquePointsThreeNDF.Count;
-            this.SlaveNodeId = closestIndexes[1] + model.UniquePointsThreeNDF.Count;
+            this.MasterNodeId = found[0];
+            this.SlaveNodeId = found[1];
         }
 
         public List<bool> Dof { get; set; }

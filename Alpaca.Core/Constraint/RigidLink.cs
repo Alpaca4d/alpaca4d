@@ -25,13 +25,19 @@ namespace Alpaca4d.Constraints
         public RigidLinkType Type { get; set; }
         public ConstraintType ConstraintType => ConstraintType.RigidLink;
 
+        /// <summary>
+        /// RTreeSearch hands back the index of the point in the cloud, counting from zero, while a
+        /// node tag counts from one - and the six degree of freedom nodes are written after the
+        /// three degree of freedom ones, so their tags start past that count. Both are needed:
+        /// without the one the link lands on the node before the one it was drawn to.
+        /// </summary>
         public void SetTopologyRTree(Model model)
         {
             this.RetainedNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { this.RetainedNode }, model.Tollerance)
-                .Select(x => x + model.UniquePointsThreeNDF.Count)
+                .Select(x => x + 1 + model.UniquePointsThreeNDF.Count)
                 .First();
             this.ConstrainedNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { this.ConstrainedNode }, model.Tollerance)
-                .Select(x => x + model.UniquePointsThreeNDF.Count)
+                .Select(x => x + 1 + model.UniquePointsThreeNDF.Count)
                 .First();
         }
 

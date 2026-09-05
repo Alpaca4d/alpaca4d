@@ -23,8 +23,10 @@ namespace Alpaca4d.Constraints
         public void SetTopologyRTree(Model model)
         {
             // to add the threends start counting
-            this.SlaveNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, SlaveNodes, model.Tollerance).Select(x => x + model.UniquePointsThreeNDF.Count).ToList();
-            this.MasterNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { (Point3d)MasterNode }, model.Tollerance).Select(x => x + model.UniquePointsThreeNDF.Count).First();
+            // Counting from zero for the cloud index, from one for the node tag, and past every
+            // three degree of freedom node because those are written first.
+            this.SlaveNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, SlaveNodes, model.Tollerance).Select(x => x + 1 + model.UniquePointsThreeNDF.Count).ToList();
+            this.MasterNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { (Point3d)MasterNode }, model.Tollerance).Select(x => x + 1 + model.UniquePointsThreeNDF.Count).First();
         }
 
 
