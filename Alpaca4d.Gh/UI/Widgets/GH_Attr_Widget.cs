@@ -19,6 +19,8 @@ namespace Alpaca4d.UIWidgets
         protected GH_Palette palette;
         protected int _index;
         protected bool _enabled = true;
+
+        protected bool _visible = true;
         protected string _description;
         protected string _header;
         protected string _name;
@@ -109,6 +111,30 @@ namespace Alpaca4d.UIWidgets
             }
         }
         public virtual int Index => _index;
+        /// <summary>
+        /// Whether the control takes part in the menu at all.
+        ///
+        /// Different from <see cref="Enabled"/>, which greys a control out but keeps its space: an
+        /// invisible one is skipped by the layout, so the menu closes up around it and the
+        /// component gets shorter. That is what lets one component offer a control that only some
+        /// of its modes have any use for - a layer to read a stress at, when the result being read
+        /// is not a stress - without the menu filling up with options that do nothing.
+        ///
+        /// Not saved. Visibility follows from the state of the other controls, and a component
+        /// works it out again from those when it loads.
+        /// </summary>
+        public virtual bool Visible
+        {
+            get
+            {
+                return _visible;
+            }
+            set
+            {
+                _visible = value;
+            }
+        }
+
         public virtual bool Enabled
         {
             get

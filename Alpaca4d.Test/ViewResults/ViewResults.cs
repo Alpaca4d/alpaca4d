@@ -43,6 +43,13 @@ class ViewResultsTest
                               .GetValue(null);
     }
 
+    /// <summary>One of the rules the menu decides what to show by.</summary>
+    static bool Asks(string rule, string family)
+    {
+        var method = Field.GetMethod(rule, BindingFlags.Public | BindingFlags.Static);
+        return (bool)method.Invoke(null, new[] { Enum.Parse(Family, family) });
+    }
+
     static string[] ComponentNames(string family)
     {
         var method = Field.GetMethod("ComponentNames", BindingFlags.Public | BindingFlags.Static);
@@ -96,15 +103,37 @@ class ViewResultsTest
             Check(ComponentNames("ShellStress").SequenceEqual(expected),
                   "the five plane stress components and the equivalent");
 
-            var layers = (bool)Field.GetMethod("HasLayers", BindingFlags.Public | BindingFlags.Static)
-                                    .Invoke(null, new[] { Enum.Parse(Family, "ShellStress") });
-            Check(layers, "and it is the one family that reads through a thickness");
+            Check(Asks("HasLayers", "ShellStress"), "and it is the one family that reads through a thickness");
+        }
 
-            foreach (var other in new[] { "Displacement", "BeamForce", "ShellForce", "BrickStress", "Reaction" })
+        Section("Each control is offered only where it does something");
+        {
+            // One component covering six kinds of result has more knobs than any one of them
+            // needs. These are the rules the menu hides controls by, and a rule that drifted would
+            // put a layer dropdown on a reaction - which is what the menu looked like before.
+            var everything = Enum.GetNames(Family);
+
+            foreach (var family in everything)
             {
-                var has = (bool)Field.GetMethod("HasLayers", BindingFlags.Public | BindingFlags.Static)
-                                     .Invoke(null, new[] { Enum.Parse(Family, other) });
-                if (has) { fails++; Console.WriteLine($"  [FAIL] {other} should not ask for a layer"); }
+                bool layers = Asks("HasLayers", family);
+                Check(layers == (family == "ShellStress"),
+                      $"{family}: layer {(layers ? "offered" : "hidden")}");
+            }
+
+            foreach (var family in everything)
+            {
+                // A field painted on an element is as big as the element. A diagram and an arrow
+                // stick out into space, and how far is a choice.
+                bool scale = Asks("HasScale", family);
+                Check(scale == (family == "BeamForce" || family == "Reaction"),
+                      $"{family}: diagram scale {(scale ? "offered" : "hidden")}");
+            }
+
+            foreach (var family in everything)
+            {
+                bool style = Asks("HasReactionStyle", family);
+                Check(style == (family == "Reaction"),
+                      $"{family}: reaction style {(style ? "offered" : "hidden")}");
             }
         }
 

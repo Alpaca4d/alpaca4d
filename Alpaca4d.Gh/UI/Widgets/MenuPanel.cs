@@ -74,6 +74,10 @@ namespace Alpaca4d.UIWidgets
             int num5 = 0;
             foreach (GH_Attr_Widget control in _controls)
             {
+                if (!control.Visible)
+                {
+                    continue;
+                }
                 SizeF sizeF = control.ComputeMinSize();
                 num3 = Math.Max(sizeF.Width + num, num3);
                 if (num5++ > 0)
@@ -93,6 +97,10 @@ namespace Alpaca4d.UIWidgets
             int num2 = 0;
             foreach (GH_Attr_Widget control in _controls)
             {
+                if (!control.Visible)
+                {
+                    continue;
+                }
                 if (num2++ > 0)
                 {
                     num += (float)Space;
@@ -138,7 +146,10 @@ namespace Alpaca4d.UIWidgets
             _menu.Render(canvas.Graphics, val);
             for (int i = 0; i < _controls.Count; i++)
             {
-                _controls[i].OnRender(args);
+                if (_controls[i].Visible)
+                {
+                    _controls[i].OnRender(args);
+                }
             }
         }
         public override GH_ObjectResponse RespondToMouseUp(GH_Canvas sender, GH_CanvasMouseEvent e)
@@ -165,7 +176,7 @@ namespace Alpaca4d.UIWidgets
             {
                 foreach (GH_Attr_Widget control in _controls)
                 {
-                    if (control.Contains(e.CanvasLocation) && control.Enabled)
+                    if (control.Visible && control.Contains(e.CanvasLocation) && control.Enabled)
                     {
                         GH_ObjectResponse val = control.RespondToMouseDown(sender, e);
                         if ((int)val != 0)
@@ -199,7 +210,7 @@ namespace Alpaca4d.UIWidgets
                 int count = _controls.Count;
                 for (int i = 0; i < count; i++)
                 {
-                    if (_controls[i].Contains(e.CanvasLocation) && _controls[i].Enabled)
+                    if (_controls[i].Visible && _controls[i].Contains(e.CanvasLocation) && _controls[i].Enabled)
                     {
                         return _controls[i].RespondToMouseDoubleClick(sender, e);
                     }
@@ -214,6 +225,10 @@ namespace Alpaca4d.UIWidgets
                 int count = _controls.Count;
                 for (int i = 0; i < count; i++)
                 {
+                    if (!_controls[i].Visible)
+                    {
+                        continue;
+                    }
                     GH_Attr_Widget gH_Attr_Widget = _controls[i].IsTtipPoint(pt);
                     if (gH_Attr_Widget != null)
                     {

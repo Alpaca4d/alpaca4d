@@ -96,6 +96,24 @@ namespace Alpaca4d.Gh
             return family == ResultFamily.ShellStress;
         }
 
+        /// <summary>
+        /// Whether the family draws something standing off the model that has to be sized by hand.
+        ///
+        /// A field painted on an element is as big as the element. A force diagram and a reaction
+        /// arrow are not: they stick out into space, and how far is a choice. Only those two get
+        /// the scale, and the control for it is put away for the rest.
+        /// </summary>
+        public static bool HasScale(ResultFamily family)
+        {
+            return family == ResultFamily.BeamForce || family == ResultFamily.Reaction;
+        }
+
+        /// <summary>Whether the family draws reactions, which have a style of their own to pick.</summary>
+        public static bool HasReactionStyle(ResultFamily family)
+        {
+            return family == ResultFamily.Reaction;
+        }
+
         /// <summary>Displacement at every node, by node tag. Null for the other families.</summary>
         public Dictionary<int, double> ByNode;
 

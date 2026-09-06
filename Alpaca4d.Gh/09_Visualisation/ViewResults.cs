@@ -60,6 +60,13 @@ namespace Alpaca4d.Gh
         private MenuCheckBox _ckValues;
         private MenuSlider _slTextSize;
 
+        // A caption is hidden with the control it names, so both are held.
+        private MenuStaticText _txLayer;
+        private MenuStaticText _txReaction;
+        private MenuStaticText _txDeformScale;
+        private MenuStaticText _txDiagramScale;
+        private MenuStaticText _txTextSize;
+
         /// <summary>The colour everything outside the filter is drawn in.</summary>
         private static readonly Color GhostColour = Color.FromArgb(150, 150, 150);
 
@@ -130,13 +137,16 @@ namespace Alpaca4d.Gh
                 _ddReaction.AddItem(name, name);
             _ddReaction.ValueChanged += OnWidgetChanged;
 
+            _txLayer = Caption("Layer through the thickness");
+            _txReaction = Caption("Reactions drawn as");
+
             resultPanel.AddControl(Caption("Result"));
             resultPanel.AddControl(_ddFamily);
             resultPanel.AddControl(Caption("Component"));
             resultPanel.AddControl(_ddComponent);
-            resultPanel.AddControl(Caption("Layer (shell stresses only)"));
+            resultPanel.AddControl(_txLayer);
             resultPanel.AddControl(_ddLayer);
-            resultPanel.AddControl(Caption("Reactions drawn as"));
+            resultPanel.AddControl(_txReaction);
             resultPanel.AddControl(_ddReaction);
             resultMenu.AddControl(resultPanel);
             resultMenu.Expand();
@@ -166,15 +176,19 @@ namespace Alpaca4d.Gh
             _slTextSize = new MenuSlider(2, "TextSize", 0.05, 5.0, 0.5, 2);
             _slTextSize.ValueChanged += OnWidgetChanged;
 
+            _txDeformScale = Caption("Deformation scale");
+            _txDiagramScale = Caption("Diagram and arrow scale");
+            _txTextSize = Caption("Value text size");
+
             displayPanel.AddControl(_ckDeformed);
-            displayPanel.AddControl(Caption("Deformation scale"));
+            displayPanel.AddControl(_txDeformScale);
             displayPanel.AddControl(_slDeformScale);
             displayPanel.AddControl(_ckAnimate);
-            displayPanel.AddControl(Caption("Diagram and arrow scale"));
+            displayPanel.AddControl(_txDiagramScale);
             displayPanel.AddControl(_slDiagramScale);
             displayPanel.AddControl(_ckWires);
             displayPanel.AddControl(_ckValues);
-            displayPanel.AddControl(Caption("Value text size"));
+            displayPanel.AddControl(_txTextSize);
             displayPanel.AddControl(_slTextSize);
             displayMenu.AddControl(displayPanel);
             attr.AddMenu(displayMenu);
@@ -182,6 +196,7 @@ namespace Alpaca4d.Gh
             attr.MinWidth = 230f;
 
             SyncComponentList();
+            UpdateVisibility();
         }
 
         protected override void OnComponentLoaded()
@@ -207,16 +222,71 @@ namespace Alpaca4d.Gh
 
             // The dropdown remembers which entry was chosen but not what the entries were, and the
             // Component list depends on the family - so it is rebuilt before the saved index is
-            // applied to it.
+            // applied to it. Visibility is not saved either: it follows from the rest.
             SyncComponentList();
+            UpdateVisibility();
         }
 
-        private void OnWidgetChanged(object sender, EventArgs e) => ExpireSolution(true);
+        private void OnWidgetChanged(object sender, EventArgs e)
+        {
+            UpdateVisibility();
+            ExpireSolution(true);
+        }
 
         private void OnFamilyChanged(object sender, EventArgs e)
         {
             SyncComponentList();
+            UpdateVisibility();
             ExpireSolution(true);
+        }
+
+        /// <summary>
+        /// Puts away every control the current result has no use for.
+        ///
+        /// One component covering six kinds of result has more knobs than any one of them needs,
+        /// and a menu that shows all of them at once asks the reader to work out which ones are
+        /// live - a layer to read a stress at, when the result is a reaction. Hidden rather than
+        /// greyed, so the menu closes up and the component is as short as the question is.
+        /// </summary>
+        private void UpdateVisibility()
+        {
+            if (_ddLayer == null) return;
+
+            var family = Family;
+
+            Show(ResultField.HasLayers(family), _txLayer, _ddLayer);
+            Show(ResultField.HasReactionStyle(family), _txReaction, _ddReaction);
+            Show(ResultField.HasScale(family), _txDiagramScale, _slDiagramScale);
+
+            // A scale and an animation over a shape that is not being deformed do nothing.
+            bool deformed = _ckDeformed?.Active ?? false;
+            Show(deformed, _txDeformScale, _slDeformScale, _ckAnimate);
+
+            Show(_ckValues?.Active ?? false, _txTextSize, _slTextSize);
+
+            // Nothing is animating a shape that is no longer being deformed.
+            if (!deformed && (_ckAnimate?.Active ?? false))
+                StopAnimation();
+
+            Attributes?.ExpireLayout();
+            Grasshopper.Instances.ActiveCanvas?.Refresh();
+        }
+
+        /// <summary>
+        /// An invisible dropdown keeps whatever bounds it last had, and an expanded one would go on
+        /// drawing its list over the canvas, so it is closed on the way out.
+        /// </summary>
+        private static void Show(bool visible, params GH_Attr_Widget[] widgets)
+        {
+            foreach (var widget in widgets)
+            {
+                if (widget == null) continue;
+
+                widget.Visible = visible;
+
+                var dropdown = widget as MenuDropDown;
+                if (!visible && dropdown != null) dropdown.expanded = false;
+            }
         }
 
         /// <summary>
@@ -264,6 +334,8 @@ namespace Alpaca4d.Gh
         {
             if (_ckAnimate.Active) StartAnimation();
             else StopAnimation();
+
+            UpdateVisibility();
         }
 
         private void StartAnimation()
@@ -430,13 +502,6 @@ namespace Alpaca4d.Gh
             }
 
             Build(filter, family, component, displacement);
-
-            // The dropdowns cannot be hidden one at a time, so a Layer left on something other
-            // than the top of the list is worth a word - otherwise it reads as being in force.
-            if (!ResultField.HasLayers(family) && layer != 0)
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    $"Layer is set to {Alpaca4d.Result.Read.LayerNames[layer]}, which only applies " +
-                    "to Shell stresses. It is ignored here.");
 
             DA.SetData(0, $"{ResultField.FamilyNames[(int)family]} - {_field.Label}, " +
                           $"step {step}, min {_min:G4}, max {_max:G4}");

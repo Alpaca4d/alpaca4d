@@ -32,12 +32,30 @@ to be looked at in Rhino:
 * the reaction arrows, their direction and their scaling
 * that the dropdown selections survive a save and a reload
 
+## The menu shows only what is live
+
+One component covering six kinds of result has more knobs than any one of them needs, and a menu
+showing all of them at once asks the reader to work out which ones are doing anything - a layer to
+read a stress at, when the result being read is a reaction.
+
+`GH_Attr_Widget` grew a `Visible` flag for this, and `MenuPanel` skips what is invisible in its
+layout, its rendering and its hit testing. Hidden rather than greyed, so the menu closes up and the
+component is only as tall as the question is:
+
+| control | appears when |
+|---|---|
+| Layer through the thickness | Shell stresses |
+| Reactions drawn as | Reactions |
+| Diagram and arrow scale | Beam forces, Reactions |
+| Deformation scale, Animate | Deformed shape is ticked |
+| Value text size | Show values is ticked |
+
+The three that depend on the result are `HasLayers`, `HasScale` and `HasReactionStyle` on
+`ResultField`, so they are rules rather than conditions buried in the layout - and they are checked
+here for all six families. A rule that drifted would put a layer dropdown on a reaction.
+
 ## Notes
 
-* **The Layer dropdown cannot be hidden.** The widget library has no per-control visibility, so
-  Layer is on screen for all six families and only means anything for Shell stresses. A Layer left
-  on something other than Top puts a remark on the component when it is being ignored, rather than
-  letting it read as being in force.
 * **The range fits what is on screen, not the model.** A filter narrowed to one beam is a question
   about that beam, and a gradient stretched over a maximum somewhere else would paint it flat.
 * **Diagrams take the colour that belongs to the force**, not the gradient. A diagram is read by
