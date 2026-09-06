@@ -137,6 +137,39 @@ class ViewResultsTest
                   "magnitude first, so the default shows the whole movement");
         }
 
+        Section("Beam diagrams take the colour that belongs to the force");
+        {
+            // A diagram is read by its sign before its size, and two diagrams on one screen have
+            // to be tellable apart - which the displacement gradient cannot do. The palette pairs
+            // a force with its moment (N with Torsion, Vy with My, Vz with Mz), so the three that
+            // have to differ are the three forces.
+            var colour = Field.GetMethod("BeamForceColour", BindingFlags.Public | BindingFlags.Static);
+
+            Func<int, double, object> Of = (component, value) => colour.Invoke(null, new object[] { component, value });
+
+            var names = new[] { "N", "Vy", "Vz", "Torsion", "My", "Mz" };
+            for (int i = 0; i < 6; i++)
+            {
+                Check(!Of(i, 1.0).Equals(Of(i, -1.0)),
+                      $"{names[i]} reads one colour in tension and another in compression");
+            }
+
+            Check(!Of(0, 1.0).Equals(Of(1, 1.0)) && !Of(1, 1.0).Equals(Of(2, 1.0)) && !Of(0, 1.0).Equals(Of(2, 1.0)),
+                  "N, Vy and Vz are three different colours");
+
+            // The old behaviour: one gradient for everything, so every diagram came out the same.
+            Check(!Of(0, 1.0).Equals(System.Drawing.Color.Gray), "and none of them is the fallback grey");
+        }
+
+        Section("Reactions can be drawn more than one way");
+        {
+            var styles = Names("ReactionStyles");
+
+            Check(styles.Length == 3, $"three ways to draw one ({styles.Length})");
+            Check(styles[0] == "Selected component",
+                  "and the first is the one the Component dropdown names, which is what was wrong before");
+        }
+
         Section("Every family offers something");
         {
             foreach (var family in Enum.GetNames(Family))

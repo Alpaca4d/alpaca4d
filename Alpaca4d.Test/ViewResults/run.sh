@@ -21,5 +21,5 @@ cp "$(dirname "$GHA")"/*.dll "$(dirname "$GHA")"/*.gha "$work/" 2>/dev/null || t
 cp "$RHINO" "$work/" 2>/dev/null || true
 
 ( cd "$work"
-  mcs -target:exe -out:ViewResults.exe -r:RhinoCommon.dll ViewResults.cs
+  mcs -target:exe -out:ViewResults.exe -r:RhinoCommon.dll -r:System.Drawing.dll ViewResults.cs
   mono ViewResults.exe Alpaca4d.Gh.gha )

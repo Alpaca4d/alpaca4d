@@ -9,6 +9,7 @@ using Rhino.Geometry;
 
 using Alpaca4d.Generic;
 using Alpaca4d.Result;
+using Alpaca4d.UI;
 using Alpaca4d.UIWidgets;
 
 namespace Alpaca4d.Gh
@@ -24,10 +25,9 @@ namespace Alpaca4d.Gh
     ///
     /// Two things it does that none of them do. Elements can be filtered in the same language the
     /// numerical components already use - an ElementId, a wildcard over them, a tag, a regular
-    /// expression - and what is filtered out is not hidden but ghosted, so the part being looked at
-    /// stays in the model it belongs to rather than floating on its own. And the deformed shape is
-    /// a toggle over any of it rather than a component of its own, so a stress can be read on the
-    /// shape it belongs to.
+    /// expression - and what is filtered out is ghosted rather than hidden, so the part being looked
+    /// at stays in the model it belongs to. And the deformed shape is a toggle over any of it rather
+    /// than a component of its own, so a stress can be read on the shape it belongs to.
     ///
     /// WIP, and named so: it is meant to grow into the replacement for the others, and until it has
     /// been used in anger on real models they should stay where they are.
@@ -38,7 +38,6 @@ namespace Alpaca4d.Gh
         private ResultField _field;
         private SortedDictionary<double, Color> _gradient;
         private double _min, _max;
-        private string _info = "";
 
         // What gets drawn, worked out in SolveInstance and held for the viewport.
         private readonly List<Mesh> _shaded = new List<Mesh>();
@@ -47,19 +46,19 @@ namespace Alpaca4d.Gh
         private readonly List<Tuple<Curve, Color>> _curves = new List<Tuple<Curve, Color>>();
         private readonly List<Mesh> _diagrams = new List<Mesh>();
         private readonly List<Tuple<Line, Color>> _arrows = new List<Tuple<Line, Color>>();
-
-        private GH_ExtendableMenu _resultMenu;
-        private GH_ExtendableMenu _filterMenu;
-        private GH_ExtendableMenu _colourMenu;
+        private readonly List<Tuple<Point3d, string, Color>> _labels = new List<Tuple<Point3d, string, Color>>();
 
         private MenuDropDown _ddFamily;
         private MenuDropDown _ddComponent;
         private MenuDropDown _ddLayer;
+        private MenuDropDown _ddReaction;
         private MenuCheckBox _ckDeformed;
         private MenuSlider _slDeformScale;
+        private MenuCheckBox _ckAnimate;
         private MenuSlider _slDiagramScale;
-        private MenuCheckBox _ckGhost;
         private MenuCheckBox _ckWires;
+        private MenuCheckBox _ckValues;
+        private MenuSlider _slTextSize;
 
         /// <summary>The colour everything outside the filter is drawn in.</summary>
         private static readonly Color GhostColour = Color.FromArgb(150, 150, 150);
@@ -76,33 +75,14 @@ namespace Alpaca4d.Gh
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
         }
 
-        public override void CreateAttributes()
-        {
-            base.CreateAttributes();
-
-            // The parameters become plugs inside the menus they belong to, so the component reads
-            // as three questions rather than one row of six inputs. Registered here rather than in
-            // Setup because that is the first point at which Params is populated, both for a new
-            // component and for one restored from a file.
-            if (_resultMenu != null && Params.Input.Count > 1)
-                _resultMenu.RegisterInputPlug(new ExtendedPlug(Params.Input[1]));
-            if (_filterMenu != null && Params.Input.Count > 2)
-                _filterMenu.RegisterInputPlug(new ExtendedPlug(Params.Input[2]));
-            if (_colourMenu != null && Params.Input.Count > 4)
-            {
-                _colourMenu.RegisterInputPlug(new ExtendedPlug(Params.Input[3]));
-                _colourMenu.RegisterInputPlug(new ExtendedPlug(Params.Input[4]));
-            }
-        }
-
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to draw, or which mode after a natural vibration analysis.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
+            pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter + "\nWhatever is left out is greyed rather than hidden.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddColourParameter("Colors", "Colors", "Gradient to colour with, from the low end to the high. Connect the Colors component for a ready-made one.", GH_ParamAccess.list);
+            pManager.AddColourParameter("Colors", "Colors", "Gradient to colour with, from the low end to the high. Connect the Colors component for a ready-made one.\nBeam force diagrams ignore it and use the colour that belongs to the force.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntervalParameter("Range", "Range", "Range the gradient is stretched over. Left empty it fits what is drawn, which is what makes two steps impossible to compare - set it to compare them.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -117,8 +97,18 @@ namespace Alpaca4d.Gh
 
         #region UI
 
+        /// <summary>A caption above a slider, because a slider on its own shows a number and no name.</summary>
+        private static MenuStaticText Caption(string text)
+        {
+            return new MenuStaticText { Text = text };
+        }
+
         protected override void Setup(GH_ExtendableComponentAttributes attr)
         {
+            // Only the menus that hold controls of their own. A menu carrying nothing but an input
+            // plug reads as a heading that does nothing when it is collapsed, which is exactly what
+            // the first cut of this component did with its Colour menu - so Colors, Range, Step and
+            // ElementId are ordinary inputs on the body, where a Grasshopper user looks for inputs.
             var resultMenu = new GH_ExtendableMenu(0, "Result") { Name = "Result", Header = "What to draw" };
             var resultPanel = new MenuPanel(0, "result_panel");
 
@@ -135,52 +125,61 @@ namespace Alpaca4d.Gh
                 _ddLayer.AddItem(name, name);
             _ddLayer.ValueChanged += OnWidgetChanged;
 
+            _ddReaction = new MenuDropDown(3, "ReactionStyle", "ReactionStyle") { VisibleItemCount = 3 };
+            foreach (var name in ResultField.ReactionStyles)
+                _ddReaction.AddItem(name, name);
+            _ddReaction.ValueChanged += OnWidgetChanged;
+
+            resultPanel.AddControl(Caption("Result"));
             resultPanel.AddControl(_ddFamily);
+            resultPanel.AddControl(Caption("Component"));
             resultPanel.AddControl(_ddComponent);
+            resultPanel.AddControl(Caption("Layer (shell stresses only)"));
             resultPanel.AddControl(_ddLayer);
+            resultPanel.AddControl(Caption("Reactions drawn as"));
+            resultPanel.AddControl(_ddReaction);
             resultMenu.AddControl(resultPanel);
             resultMenu.Expand();
-            _resultMenu = resultMenu;
             attr.AddMenu(resultMenu);
 
-            var shapeMenu = new GH_ExtendableMenu(1, "Shape") { Name = "Shape", Header = "How to draw it" };
-            var shapePanel = new MenuPanel(1, "shape_panel");
+            var displayMenu = new GH_ExtendableMenu(1, "Display") { Name = "Display", Header = "How to draw it" };
+            var displayPanel = new MenuPanel(1, "display_panel");
 
-            _ckDeformed = new MenuCheckBox(0, "Deformed", "Deformed");
+            _ckDeformed = new MenuCheckBox(0, "Deformed", "Deformed shape");
             _ckDeformed.ValueChanged += OnWidgetChanged;
 
-            _slDeformScale = new MenuSlider(0, "DeformScale", 0.0, 500.0, 1.0, 1) { Name = "Deformation" };
+            _slDeformScale = new MenuSlider(0, "DeformScale", 0.0, 200.0, 1.0, 1);
             _slDeformScale.ValueChanged += OnWidgetChanged;
 
-            _slDiagramScale = new MenuSlider(1, "DiagramScale", 0.0, 20.0, 1.0, 2) { Name = "Diagram" };
+            _ckAnimate = new MenuCheckBox(1, "Animate", AnimateLabel);
+            _ckAnimate.ValueChanged += OnAnimateChanged;
+
+            _slDiagramScale = new MenuSlider(1, "DiagramScale", 0.0, 20.0, 1.0, 2);
             _slDiagramScale.ValueChanged += OnWidgetChanged;
 
-            _ckWires = new MenuCheckBox(1, "Wires", "Element edges") { Active = true };
+            _ckWires = new MenuCheckBox(2, "Wires", "Element edges") { Active = true };
             _ckWires.ValueChanged += OnWidgetChanged;
 
-            shapePanel.AddControl(_ckDeformed);
-            shapePanel.AddControl(_slDeformScale);
-            shapePanel.AddControl(_slDiagramScale);
-            shapePanel.AddControl(_ckWires);
-            shapeMenu.AddControl(shapePanel);
-            attr.AddMenu(shapeMenu);
+            _ckValues = new MenuCheckBox(3, "Values", "Show values");
+            _ckValues.ValueChanged += OnWidgetChanged;
 
-            var filterMenu = new GH_ExtendableMenu(2, "Filter") { Name = "Filter", Header = "Which elements" };
-            var filterPanel = new MenuPanel(2, "filter_panel");
+            _slTextSize = new MenuSlider(2, "TextSize", 0.05, 5.0, 0.5, 2);
+            _slTextSize.ValueChanged += OnWidgetChanged;
 
-            _ckGhost = new MenuCheckBox(0, "Ghost", "Ghost the rest") { Active = true };
-            _ckGhost.ValueChanged += OnWidgetChanged;
+            displayPanel.AddControl(_ckDeformed);
+            displayPanel.AddControl(Caption("Deformation scale"));
+            displayPanel.AddControl(_slDeformScale);
+            displayPanel.AddControl(_ckAnimate);
+            displayPanel.AddControl(Caption("Diagram and arrow scale"));
+            displayPanel.AddControl(_slDiagramScale);
+            displayPanel.AddControl(_ckWires);
+            displayPanel.AddControl(_ckValues);
+            displayPanel.AddControl(Caption("Value text size"));
+            displayPanel.AddControl(_slTextSize);
+            displayMenu.AddControl(displayPanel);
+            attr.AddMenu(displayMenu);
 
-            filterPanel.AddControl(_ckGhost);
-            filterMenu.AddControl(filterPanel);
-            _filterMenu = filterMenu;
-            attr.AddMenu(filterMenu);
-
-            var colourMenu = new GH_ExtendableMenu(3, "Colour") { Name = "Colour", Header = "Gradient and range" };
-            _colourMenu = colourMenu;
-            attr.AddMenu(colourMenu);
-
-            attr.MinWidth = 210f;
+            attr.MinWidth = 230f;
 
             SyncComponentList();
         }
@@ -193,11 +192,18 @@ namespace Alpaca4d.Gh
             _ddFamily.ValueChanged += OnFamilyChanged;
             _ddComponent.ValueChanged += OnWidgetChanged;
             _ddLayer.ValueChanged += OnWidgetChanged;
+            _ddReaction.ValueChanged += OnWidgetChanged;
             _ckDeformed.ValueChanged += OnWidgetChanged;
             _slDeformScale.ValueChanged += OnWidgetChanged;
+            _ckAnimate.ValueChanged += OnAnimateChanged;
             _slDiagramScale.ValueChanged += OnWidgetChanged;
-            _ckGhost.ValueChanged += OnWidgetChanged;
             _ckWires.ValueChanged += OnWidgetChanged;
+            _ckValues.ValueChanged += OnWidgetChanged;
+            _slTextSize.ValueChanged += OnWidgetChanged;
+
+            // A file never reopens mid-animation: the checkbox is saved, the timer is not.
+            _ckAnimate.Active = false;
+            _ckAnimate.Tag = AnimateLabel;
 
             // The dropdown remembers which entry was chosen but not what the entries were, and the
             // Component list depends on the family - so it is rebuilt before the saved index is
@@ -243,6 +249,95 @@ namespace Alpaca4d.Gh
 
         #endregion
 
+        #region Animation
+
+        private const string AnimateLabel = "Animate";
+        private const string StopLabel = "Stop animation";
+
+        /// <summary>How many stops the deformation scale makes on its way across and back.</summary>
+        private const int AnimationSteps = 20;
+
+        private System.Windows.Forms.Timer _timer;
+        private int _frame;
+
+        private void OnAnimateChanged(object sender, EventArgs e)
+        {
+            if (_ckAnimate.Active) StartAnimation();
+            else StopAnimation();
+        }
+
+        private void StartAnimation()
+        {
+            _ckAnimate.Tag = StopLabel;
+
+            // Nothing to watch otherwise - the scale would sweep over a shape that is not moving.
+            if (_ckDeformed != null) _ckDeformed.Active = true;
+
+            _frame = 0;
+
+            if (_timer == null)
+            {
+                // A WinForms timer ticks on the UI thread, which is the only thread a Grasshopper
+                // solution may be expired from.
+                _timer = new System.Windows.Forms.Timer { Interval = 60 };
+                _timer.Tick += OnTick;
+            }
+
+            _timer.Start();
+        }
+
+        private void StopAnimation()
+        {
+            _timer?.Stop();
+
+            if (_ckAnimate != null)
+            {
+                _ckAnimate.Active = false;
+                _ckAnimate.Tag = AnimateLabel;
+            }
+
+            Grasshopper.Instances.ActiveCanvas?.Invalidate();
+        }
+
+        /// <summary>
+        /// One frame: the scale walks from the slider's own minimum to its maximum and back, so
+        /// setting the slider to 0-100 sweeps 0 to 100 to 0. The slider moves with it, which is
+        /// what makes it obvious where in the sweep the picture is.
+        /// </summary>
+        private void OnTick(object sender, EventArgs e)
+        {
+            if (_slDeformScale == null) { StopAnimation(); return; }
+
+            _frame = (_frame + 1) % (2 * AnimationSteps);
+
+            // Out on the first half, back on the second.
+            int position = _frame <= AnimationSteps ? _frame : 2 * AnimationSteps - _frame;
+
+            double low = _slDeformScale.MinValue;
+            double high = _slDeformScale.MaxValue;
+            _slDeformScale.Value = low + (high - low) * position / (double)AnimationSteps;
+
+            ExpireSolution(true);
+        }
+
+        public override void RemovedFromDocument(GH_Document document)
+        {
+            StopAnimation();
+            base.RemovedFromDocument(document);
+        }
+
+        public override void DocumentContextChanged(GH_Document document, GH_DocumentContext context)
+        {
+            if (context == GH_DocumentContext.Close || context == GH_DocumentContext.Unloaded)
+                StopAnimation();
+
+            base.DocumentContextChanged(document, context);
+        }
+
+        #endregion
+
+        #region Solving
+
         protected override void BeforeSolveInstance()
         {
             base.BeforeSolveInstance();
@@ -257,7 +352,15 @@ namespace Alpaca4d.Gh
             _curves.Clear();
             _diagrams.Clear();
             _arrows.Clear();
+            _labels.Clear();
         }
+
+        // Animating re-solves twenty times a second, and every solve would otherwise reopen the
+        // recorder file twice. Only the scale changes between frames, so the two reads are kept
+        // against the question that produced them.
+        private string _cacheKey;
+        private ResultField _cachedField;
+        private Dictionary<int, Vector3d> _cachedDisplacement;
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
@@ -277,21 +380,33 @@ namespace Alpaca4d.Gh
                 palette = Alpaca4d.Colors.Gradient(0);
 
             var family = Family;
+            int component = _ddComponent?.Value ?? 0;
+            int layer = _ddLayer?.Value ?? 0;
 
-            try
+            var key = $"{_model.GetHashCode()}|{family}|{component}|{layer}|{step}";
+            if (key != _cacheKey)
             {
-                _field = ResultField.Read(_model, family, _ddComponent?.Value ?? 0, _ddLayer?.Value ?? 0, step);
+                try
+                {
+                    _cachedField = ResultField.Read(_model, family, component, layer, step);
+                    _cachedDisplacement = NodalOffsets(step);
+                }
+                catch (Exception ex)
+                {
+                    _cacheKey = null;
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ex.Message);
+                    return;
+                }
+
+                _cacheKey = key;
             }
-            catch (Exception ex)
-            {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ex.Message);
-                return;
-            }
+
+            _field = _cachedField;
 
             // The range is fitted to what is on screen, not to the whole model: a filter narrowed
             // to one beam is asking about that beam, and a gradient stretched over a maximum
             // somewhere else would paint it all one colour.
-            var shown = ShownValues(filter, family).ToList();
+            var shown = ShownValues(filter).ToList();
 
             var range = new Interval();
             if (DA.GetData(4, ref range))
@@ -307,31 +422,46 @@ namespace Alpaca4d.Gh
 
             _gradient = BuildGradient(palette, _min, _max);
 
-            var displacement = (_ckDeformed?.Active ?? false)
-                ? Displaced(step, _slDeformScale?.Value ?? 1.0)
-                : null;
+            Dictionary<int, Vector3d> displacement = null;
+            if (_ckDeformed?.Active ?? false)
+            {
+                double scale = _slDeformScale?.Value ?? 1.0;
+                displacement = _cachedDisplacement.ToDictionary(x => x.Key, x => x.Value * scale);
+            }
 
-            Build(filter, family, displacement);
-
-            _info = $"{ResultField.FamilyNames[(int)family]} - {_field.Label}, " +
-                    $"step {step}, min {_min:G4}, max {_max:G4}";
+            Build(filter, family, component, displacement);
 
             // The dropdowns cannot be hidden one at a time, so a Layer left on something other
             // than the top of the list is worth a word - otherwise it reads as being in force.
-            if (!ResultField.HasLayers(family) && (_ddLayer?.Value ?? 0) != 0)
+            if (!ResultField.HasLayers(family) && layer != 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    $"Layer is set to {Alpaca4d.Result.Read.LayerNames[_ddLayer.Value]}, which only " +
-                    "applies to Shell stresses. It is ignored here.");
+                    $"Layer is set to {Alpaca4d.Result.Read.LayerNames[layer]}, which only applies " +
+                    "to Shell stresses. It is ignored here.");
 
-            DA.SetData(0, _info);
+            DA.SetData(0, $"{ResultField.FamilyNames[(int)family]} - {_field.Label}, " +
+                          $"step {step}, min {_min:G4}, max {_max:G4}");
             DA.SetDataList(1, shown);
             DA.SetDataList(2, palette);
 
             Rhino.RhinoDoc.ActiveDoc?.Views?.Redraw();
         }
 
+        /// <summary>Displacement at every node, at true size. Scaled when it is used, not here.</summary>
+        private Dictionary<int, Vector3d> NodalOffsets(int step)
+        {
+            var offsets = new Dictionary<int, Vector3d>();
+
+            foreach (var entry in _model.NodalDisplacements(step))
+            {
+                if (entry.Key.HasValue)
+                    offsets[entry.Key.Value] = entry.Value;
+            }
+
+            return offsets;
+        }
+
         /// <summary>The values on the elements that passed the filter, which is what the range fits.</summary>
-        private IEnumerable<double> ShownValues(ElementFilter filter, ResultFamily family)
+        private IEnumerable<double> ShownValues(ElementFilter filter)
         {
             if (filter.MatchesEverything || _field.Reactions != null)
                 return _field.Values;
@@ -401,19 +531,6 @@ namespace Alpaca4d.Gh
             return gradient;
         }
 
-        private Dictionary<int, Vector3d> Displaced(int step, double scale)
-        {
-            var displaced = new Dictionary<int, Vector3d>();
-
-            foreach (var entry in _model.NodalDisplacements(step))
-            {
-                if (entry.Key.HasValue)
-                    displaced[entry.Key.Value] = entry.Value * scale;
-            }
-
-            return displaced;
-        }
-
         private Point3d Move(Point3d point, int? node, Dictionary<int, Vector3d> displacement)
         {
             Vector3d offset;
@@ -423,34 +540,39 @@ namespace Alpaca4d.Gh
             return point;
         }
 
+        #endregion
+
         #region Building what gets drawn
 
         /// <summary>
         /// Sorts every element into one of three piles: drawn in colour because it passed the
         /// filter and the result has a value for it, drawn plain because it passed but this result
         /// says nothing about it, or ghosted.
+        ///
+        /// Ghosting is not optional. The whole point of filtering here rather than upstream is that
+        /// the part being read stays in the model around it, and a filter that simply hid the rest
+        /// would be the same as wiring a smaller model in.
         /// </summary>
-        private void Build(ElementFilter filter, ResultFamily family, Dictionary<int, Vector3d> displacement)
+        private void Build(ElementFilter filter, ResultFamily family, int component,
+                           Dictionary<int, Vector3d> displacement)
         {
-            bool ghost = _ckGhost?.Active ?? true;
-
             foreach (var beam in _model.Beams)
-                BuildBeam(beam, filter.Matches(beam), family, displacement, ghost);
+                BuildBeam(beam, filter.Matches(beam), family, component, displacement);
 
             foreach (var shell in _model.Shells)
-                BuildFace(shell.Mesh, shell.Id, shell.IndexNodes, filter.Matches(shell), family, displacement, ghost,
+                BuildFace(shell.Mesh, shell.Id, shell.IndexNodes, filter.Matches(shell), family, displacement,
                           family == ResultFamily.ShellForce || family == ResultFamily.ShellStress);
 
             foreach (var brick in _model.Bricks)
-                BuildFace(brick.Mesh, brick.Id, brick.IndexNodes, filter.Matches(brick), family, displacement, ghost,
+                BuildFace(brick.Mesh, brick.Id, brick.IndexNodes, filter.Matches(brick), family, displacement,
                           family == ResultFamily.BrickStress);
 
             if (family == ResultFamily.Reaction)
-                BuildReactions();
+                BuildReactions(component);
         }
 
-        private void BuildBeam(IBeam beam, bool kept, ResultFamily family,
-                               Dictionary<int, Vector3d> displacement, bool ghost)
+        private void BuildBeam(IBeam beam, bool kept, ResultFamily family, int component,
+                               Dictionary<int, Vector3d> displacement)
         {
             var start = Move(beam.Curve.PointAtStart, beam.INode, displacement);
             var end = Move(beam.Curve.PointAtEnd, beam.JNode, displacement);
@@ -458,7 +580,7 @@ namespace Alpaca4d.Gh
 
             if (!kept)
             {
-                if (ghost) _ghostCurves.Add(line);
+                _ghostCurves.Add(line);
                 return;
             }
 
@@ -479,6 +601,7 @@ namespace Alpaca4d.Gh
                     _curves.Add(Tuple.Create((Curve)segment, Colour(from + (to - from) * (a + b) * 0.5)));
                 }
 
+                Label((start + end) * 0.5, Math.Max(from, to), Color.Black);
                 return;
             }
 
@@ -489,8 +612,20 @@ namespace Alpaca4d.Gh
                 List<double> forces;
                 if (beam.Id.HasValue && _field.ByElement != null && _field.ByElement.TryGetValue(beam.Id.Value, out forces))
                 {
-                    var diagram = Diagram(beam, start, end, forces, _slDiagramScale?.Value ?? 1.0);
+                    var diagram = Diagram(beam, start, end, forces, component, _slDiagramScale?.Value ?? 1.0);
                     if (diagram != null) _diagrams.Add(diagram);
+
+                    // One label per beam, at whichever station carries the most. Every station
+                    // labelled is unreadable on anything but a single member.
+                    if (forces != null && forces.Count > 0)
+                    {
+                        int worst = 0;
+                        for (int i = 1; i < forces.Count; i++)
+                            if (Math.Abs(forces[i]) > Math.Abs(forces[worst])) worst = i;
+
+                        double along = forces.Count > 1 ? worst / (double)(forces.Count - 1) : 0.5;
+                        Label(start + (end - start) * along, forces[worst], Color.Black);
+                    }
                 }
 
                 return;
@@ -502,7 +637,7 @@ namespace Alpaca4d.Gh
         }
 
         private void BuildFace(Mesh source, int? tag, List<int?> nodes, bool kept, ResultFamily family,
-                               Dictionary<int, Vector3d> displacement, bool ghost, bool coloured)
+                               Dictionary<int, Vector3d> displacement, bool coloured)
         {
             if (source == null) return;
 
@@ -516,16 +651,24 @@ namespace Alpaca4d.Gh
 
             if (!kept)
             {
-                if (ghost) _ghostMeshes.Add(mesh);
+                _ghostMeshes.Add(mesh);
                 return;
             }
 
             mesh.VertexColors.Clear();
+            double label = 0.0;
+            bool hasLabel = false;
 
             if (family == ResultFamily.Displacement && _field.ByNode != null && nodes != null)
             {
                 for (int i = 0; i < mesh.Vertices.Count; i++)
-                    mesh.VertexColors.Add(Colour(ValueAtNode(i < nodes.Count ? nodes[i] : null)));
+                {
+                    double value = ValueAtNode(i < nodes.Count ? nodes[i] : null);
+                    mesh.VertexColors.Add(Colour(value));
+                    if (Math.Abs(value) > Math.Abs(label)) label = value;
+                }
+
+                hasLabel = true;
             }
             else if (coloured && tag.HasValue && _field.ByElement != null && _field.ByElement.ContainsKey(tag.Value))
             {
@@ -534,7 +677,13 @@ namespace Alpaca4d.Gh
                 // four vertices needs.
                 var values = _field.ByElement[tag.Value];
                 for (int i = 0; i < mesh.Vertices.Count; i++)
-                    mesh.VertexColors.Add(Colour(values[Math.Min(i, values.Count - 1)]));
+                {
+                    double value = values[Math.Min(i, values.Count - 1)];
+                    mesh.VertexColors.Add(Colour(value));
+                    if (Math.Abs(value) > Math.Abs(label)) label = value;
+                }
+
+                hasLabel = true;
             }
             else
             {
@@ -543,11 +692,24 @@ namespace Alpaca4d.Gh
             }
 
             _shaded.Add(mesh);
+
+            if (hasLabel)
+                Label(mesh.GetBoundingBox(false).Center, label, Color.Black);
         }
 
-        private void BuildReactions()
+        /// <summary>
+        /// The reaction at every support, drawn the way the Reactions dropdown asks for.
+        ///
+        /// The first cut always drew the resultant, whichever component was chosen. On a model with
+        /// any horizontal reaction that means picking Fz and getting an arrow pointing off at an
+        /// angle - right magnitude in the Values output, wrong picture. An arrow that says Fz now
+        /// runs along z and nowhere else, and carries the sign, so a downward reaction points down.
+        /// </summary>
+        private void BuildReactions(int component)
         {
             if (_field.Reactions == null || _field.Reactions.Count == 0) return;
+
+            int style = _ddReaction?.Value ?? 0;
 
             // Scaled so the largest reaction is a fixed fraction of the model, which keeps the
             // arrows readable whether the model is a bracket or a bridge.
@@ -557,23 +719,65 @@ namespace Alpaca4d.Gh
             var box = _model.UniquePoints != null && _model.UniquePoints.Count > 0
                 ? new BoundingBox(_model.UniquePoints)
                 : BoundingBox.Unset;
-            double reach = box.IsValid ? box.Diagonal.Length * 0.08 : 1.0;
+            double reach = box.IsValid && box.Diagonal.Length > 0.0 ? box.Diagonal.Length * 0.08 : 1.0;
             double scale = reach / largest * (_slDiagramScale?.Value ?? 1.0);
+
+            // A moment is not a force, and pointing an arrow along one is already a convention
+            // rather than a picture. It is at least drawn from the same axes.
+            bool moment = component >= 4;
 
             foreach (var reaction in _field.Reactions)
             {
                 var plane = reaction.Item1;
                 var local = reaction.Item2;
+                var axes = new[] { plane.XAxis, plane.YAxis, plane.ZAxis };
+                var parts = new[] { local.X, local.Y, local.Z };
 
-                // Back into world axes to draw it, having been resolved onto the support's own to
-                // read it. Drawn from the support outwards, so the arrow points the way the
-                // support pushes on the structure.
-                var world = plane.XAxis * local.X + plane.YAxis * local.Y + plane.ZAxis * local.Z;
-                if (world.Length <= 0.0) continue;
-
-                _arrows.Add(Tuple.Create(new Line(plane.Origin, plane.Origin + world * scale),
-                                         Colour(reaction.Item3)));
+                if (style == 2)
+                {
+                    // One arrow per axis, so a support carrying load three ways shows all three.
+                    for (int i = 0; i < 3; i++)
+                        Arrow(plane.Origin, axes[i] * parts[i] * scale, parts[i], moment);
+                }
+                else if (style == 1 || component % 4 == 0)
+                {
+                    // The resultant, which is also what "Force" and "Moment" mean.
+                    var world = axes[0] * local.X + axes[1] * local.Y + axes[2] * local.Z;
+                    Arrow(plane.Origin, world * scale, world.Length, moment);
+                }
+                else
+                {
+                    // The one component the dropdown names, along its own axis and with its sign.
+                    int axis = component % 4 - 1;
+                    Arrow(plane.Origin, axes[axis] * parts[axis] * scale, parts[axis], moment);
+                }
             }
+        }
+
+        /// <summary>
+        /// One arrow from a support. Drawn outwards along the reaction, which OpenSees reports as
+        /// the support's action on the structure - a downward load on a cantilever gives an upward
+        /// reaction, measured, so an upward arrow is the picture an engineer expects.
+        /// </summary>
+        private void Arrow(Point3d at, Vector3d offset, double value, bool moment)
+        {
+            if (offset.Length <= 0.0) return;
+
+            var line = new Line(at, at + offset);
+            _arrows.Add(Tuple.Create(line, Colour(Math.Abs(value))));
+
+            // A double head marks a moment, the usual way of telling one from a force.
+            if (moment)
+                _arrows.Add(Tuple.Create(new Line(at + offset * 0.75, at + offset * 0.95), Colour(Math.Abs(value))));
+
+            Label(line.To, value, Color.Black);
+        }
+
+        private void Label(Point3d at, double value, Color colour)
+        {
+            if (!(_ckValues?.Active ?? false)) return;
+
+            _labels.Add(Tuple.Create(at, value.ToString("G4"), colour));
         }
 
         private double ValueAtNode(int? node)
@@ -596,7 +800,8 @@ namespace Alpaca4d.Gh
         /// A force diagram: the values stood off the beam along its local z, closed back onto it at
         /// both ends so the area reads as the diagram it is.
         /// </summary>
-        private Mesh Diagram(IBeam beam, Point3d start, Point3d end, List<double> forces, double scale)
+        private static Mesh Diagram(IBeam beam, Point3d start, Point3d end, List<double> forces,
+                                    int component, double scale)
         {
             if (forces == null || forces.Count < 2 || scale <= 0.0) return null;
 
@@ -625,10 +830,11 @@ namespace Alpaca4d.Gh
                 mesh.Faces.AddFace(a, a + 2, a + 3, a + 1);
             }
 
-            // Coloured from the same gradient as everything else rather than from a fixed pair
-            // for positive and negative, so that one Legend reads for whatever is on screen and a
-            // diagram can be compared against a shell beside it.
-            var colours = forces.SelectMany(value => new[] { Colour(value), Colour(value) }).ToArray();
+            var colours = forces.SelectMany(value => new[]
+            {
+                ResultField.BeamForceColour(component, value),
+                ResultField.BeamForceColour(component, value)
+            }).ToArray();
 
             mesh.VertexColors.SetColors(colours);
             mesh.Normals.ComputeNormals();
@@ -686,6 +892,18 @@ namespace Alpaca4d.Gh
 
             foreach (var arrow in _arrows)
                 args.Display.DrawArrow(arrow.Item1, arrow.Item2);
+
+            if (_labels.Count > 0)
+            {
+                double height = _slTextSize?.Value ?? 0.5;
+
+                foreach (var label in _labels)
+                {
+                    // Squared to the camera, so a number reads from wherever the model is spun to.
+                    var plane = new Plane(label.Item1, args.Viewport.CameraX, args.Viewport.CameraY);
+                    args.Display.Draw3dText(label.Item2, label.Item3, plane, height, "Arial", false, false);
+                }
+            }
         }
 
         public override bool IsPreviewCapable => true;

@@ -64,6 +64,32 @@ namespace Alpaca4d.Gh
             }
         }
 
+        /// <summary>The ways a reaction can be drawn at a support.</summary>
+        public static readonly string[] ReactionStyles = { "Selected component", "Resultant", "All three" };
+
+        /// <summary>
+        /// The pair of colours that belongs to a beam force, positive and negative.
+        ///
+        /// A force diagram is read by its sign before it is read by its size, and every other tool
+        /// draws N one colour and Vy another so that two diagrams on one screen can be told apart.
+        /// The gradient is for fields painted on geometry; a diagram is not one.
+        ///
+        /// The palette pairs a force with its moment - N with Torsion, Vy with My, Vz with Mz -
+        /// which is fine, because those two never share a diagram.
+        /// </summary>
+        public static System.Drawing.Color BeamForceColour(int component, double value)
+        {
+            switch (component)
+            {
+                case 1: return value >= 0.0 ? Alpaca4d.UI.Palette.Vy_Positive : Alpaca4d.UI.Palette.Vy_Negative;
+                case 2: return value >= 0.0 ? Alpaca4d.UI.Palette.Vz_Positive : Alpaca4d.UI.Palette.Vz_Negative;
+                case 3: return value >= 0.0 ? Alpaca4d.UI.Palette.Torsion_Positive : Alpaca4d.UI.Palette.Torsion_Negative;
+                case 4: return value >= 0.0 ? Alpaca4d.UI.Palette.My_Positive : Alpaca4d.UI.Palette.My_Negative;
+                case 5: return value >= 0.0 ? Alpaca4d.UI.Palette.Mz_Positive : Alpaca4d.UI.Palette.Mz_Negative;
+                default: return value >= 0.0 ? Alpaca4d.UI.Palette.N_Positive : Alpaca4d.UI.Palette.N_Negative;
+            }
+        }
+
         /// <summary>Whether the family needs the Layer dropdown - only stress through a thickness does.</summary>
         public static bool HasLayers(ResultFamily family)
         {

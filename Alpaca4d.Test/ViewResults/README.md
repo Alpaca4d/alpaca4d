@@ -40,5 +40,28 @@ to be looked at in Rhino:
   letting it read as being in force.
 * **The range fits what is on screen, not the model.** A filter narrowed to one beam is a question
   about that beam, and a gradient stretched over a maximum somewhere else would paint it flat.
-* **Diagrams take the same gradient as everything else** rather than a fixed pair for positive and
-  negative, so one Legend reads for whatever is drawn.
+* **Diagrams take the colour that belongs to the force**, not the gradient. A diagram is read by
+  its sign before its size, and two diagrams on one screen have to be tellable apart. The palette
+  pairs a force with its moment - N with Torsion, Vy with My, Vz with Mz - which is fine, because
+  those two never share a diagram.
+* **Ghosting is not optional.** The point of filtering here rather than upstream is that the part
+  being read stays in the model around it; a filter that hid the rest would be the same as wiring
+  a smaller model in.
+* **Only menus with controls of their own.** A menu carrying nothing but an input plug reads as a
+  heading that does nothing, which is what the first cut did with its Colour menu - so Step,
+  ElementId, Colors and Range are ordinary inputs on the body.
+* **Animating re-solves twenty times a second**, so the recorder read is cached against the
+  question that produced it - family, component, layer and step. Only the scale changes between
+  frames.
+
+## The reaction direction
+
+The first cut always drew the resultant, whichever component was chosen. On a model with any
+horizontal reaction that means picking Fz and getting an arrow off at an angle: the right number in
+the Values output and the wrong picture. An arrow that says Fz now runs along z and nowhere else,
+and carries the sign.
+
+The sense was checked against OpenSees rather than assumed. A cantilever pushed down with 1000
+reports `nodeReaction` = `(0, 0, +1000, 0, -1000, 0)` - the support's action on the structure - so
+an arrow drawn outwards from the support points up under a downward load, which is the picture an
+engineer expects.
