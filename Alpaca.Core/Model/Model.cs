@@ -705,6 +705,18 @@ namespace Alpaca4d
                         Environment.NewLine + errorBuilder.ToString().Trim());
                 }
 
+                // A Gatekeeper kill looks like nothing at all from here. macOS SIGKILLs the
+                // solver before it runs, so there is no output, nothing on stderr, and no
+                // hint that the model was never read - and "the analysis produced nothing"
+                // sends people looking at their model instead of at the executable. The
+                // quarantine check is what separates this from an ordinary SIGKILL.
+                if (process.ExitCode == Application.GatekeeperKillExitCode &&
+                    outputBuilder.Length == 0 &&
+                    Application.IsQuarantined(openSeesPath))
+                {
+                    throw new InvalidOperationException(Application.QuarantineHelp(openSeesPath));
+                }
+
                 this.IsAnalysed = true;
                 return (outputBuilder.ToString().Trim(), errorBuilder.ToString().Trim(), process.ExitCode);
             }

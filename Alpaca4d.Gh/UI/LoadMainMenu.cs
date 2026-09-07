@@ -162,6 +162,19 @@ namespace Alpaca4d.Menu
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
                     AlpacaSettings.OpenSeesPath = dialog.FileName;
+
+                    // Clear the execute bit and macOS quarantine now rather than at the
+                    // first analysis. This is the one moment we can say something useful
+                    // about a solver we cannot unblock: the user is here, they just chose
+                    // the file, and the alternative is an analysis that dies with no
+                    // output whenever they next hit Run.
+                    if (!Alpaca4d.Application.PrepareSolver(dialog.FileName, out string problem))
+                    {
+                        MessageBox.Show(problem, "Alpaca4d - OpenSees is blocked",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+
                     MessageBox.Show($"OpenSees path set to:\n{dialog.FileName}", "Alpaca4d Settings",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
