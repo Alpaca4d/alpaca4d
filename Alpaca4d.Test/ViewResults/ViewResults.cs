@@ -135,15 +135,25 @@ class ViewResultsTest
                 Check(style == (family == "Reaction"),
                       $"{family}: reaction style {(style ? "offered" : "hidden")}");
             }
+
+            foreach (var family in everything)
+            {
+                // Only a solid stress can be read in a frame other than the global one. A beam
+                // force is already in the beam's axes and a shell stress in the shell's, and a
+                // displacement and a reaction are vectors with nowhere else to go.
+                bool axes = Asks("HasAxes", family);
+                Check(axes == (family == "BrickStress"),
+                      $"{family}: axes choice {(axes ? "offered" : "hidden")}");
+            }
         }
 
         Section("Solid stresses, against what Brick Stresses View offers");
         {
-            // The global axes, which is what the reader reports: neither SSPbrick nor
-            // FourNodeTetrahedron takes a local axis, and neither does an nD material, so a
-            // solid's stress is in world X, Y and Z. This used to expect index notation, on the
-            // reading that the numbers were the element's own axes - they never were.
-            var expected = new[] { "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "VonMises" };
+            // Index notation, because the frame is the Axes dropdown's to choose: the solver
+            // reports in the global axes, and Axes can turn the six components into the element's
+            // own, taken from its node numbering. Naming them sigma-xx would be right for only one
+            // of the two settings.
+            var expected = new[] { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
             Check(ComponentNames("BrickStress").SequenceEqual(expected),
                   "three direct, three shear, then the equivalent computed from them");
         }

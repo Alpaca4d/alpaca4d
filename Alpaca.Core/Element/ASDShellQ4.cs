@@ -35,6 +35,9 @@ namespace Alpaca4d.Element
         {
 
         }
+        /// <summary>The axes this shell's forces and stresses are reported in.</summary>
+        public Plane LocalPlane => Alpaca4d.Utils.ShellAxes(this.Mesh.Vertices.ToPoint3dArray(), this.LocalX);
+
         public void SetTopologyRTree(Alpaca4d.Model model)
         {
             var tol = model.Tollerance;

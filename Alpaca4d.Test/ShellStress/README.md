@@ -33,9 +33,55 @@ The reader takes the layout from the file's own `META/MULTIPLICITY` and `META/NU
 rather than assuming five, which is why a layered section of any depth reads with no special
 case. Columns run gauss-major: gauss, then fibre, then component.
 
+## Which way a shell's axis 1 points
+
+Not along its first edge, and this is measured rather than assumed — `frame.tcl` imposes a known
+uniform strain and reads the direction back out of the components the element reports.
+
+Every shell element builds a reference frame from its node coordinates and then turns the
+**section** within that plane by an angle of its own. It is the section that answers a recorder —
+`getResponse` case 2 returns `getStressResultant()` without rotating it back — so the section's
+frame is the one the numbers are in.
+
+| element | axis 1, with no `-local` given |
+| --- | --- |
+| `ShellDKGT`, `ShellNLDKGT` | node 1 → 2 |
+| `ASDShellT3` | node 1 → 2, because its default section direction is the very vector its reference frame is built on, so the angle between them is zero |
+| `ASDShellQ4` | the line joining the midpoints of sides 2-3 and 4-1 — **not** node 1 → 2 |
+
+The quad is the one that catches people out. Measured on a skewed quad whose first edge lies along
+global X:
+
+```
+RECT  fxx= 0.100000 fyy=-0.000000 fxy= 0.000000  axis1 at  -0.000 deg from global X
+SKEW  fxx= 0.099675 fyy= 0.000325 fxy= 0.005696  axis1 at  -3.270 deg from global X
+```
+
+−3.270° is the mid-edge direction to three decimals; the first edge is 0.000°. A rectangle cannot
+tell the two apart, which is why the second case exists. `Utils.ShellFrame` reproduces both, and
+Model View draws them when Local Axes is on.
+
+## `-local` is ignored by OpenSees 3.5.x
+
+The `-local` option on the ASD shells is parsed only by newer builds. **3.5.1 skips the token
+without a word**: the deck runs, and the element quietly keeps its default orientation. Measured —
+`-local` at 30°, 45° and even 90° all give bit-identical results to no `-local` at all:
+
+```
+RECT  no-local      fxx=10.000000 fyy=0.000000 fxy=-0.000000
+RECT  local 90deg   fxx=10.000000 fyy=0.000000 fxy=-0.000000
+```
+
+Alpaca4d takes its solver path from `settings.json`, so whether the input does anything depends on
+which build the user pointed it at. The component input says so; there is nothing Alpaca4d can do
+about it beyond that, because the option leaves no trace in the output to check against.
+
 ## What the checks establish
 
 Run against recorder files this suite solves itself, so the numbers are the solver's own:
+
+- a shell's axis 1 is where `Utils.ShellFrame` says it is, checked against the direction the solver
+  was measured to report in - including the skewed quad, where it is not the first edge;
 
 - A cantilever plate in pure bending reads **equal and opposite on its two faces and zero at
   mid-depth**. That single fact is why the layer has to be chosen rather than assumed.

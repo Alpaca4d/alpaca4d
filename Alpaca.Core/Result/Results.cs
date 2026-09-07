@@ -795,8 +795,13 @@ namespace Alpaca4d.Result
         /// </summary>
         /// <param name="className">The element's OpenSees class name, as it appears in the group name.</param>
         /// <param name="elements">The elements to report on, in the order they are to be reported.</param>
+        /// <param name="local">
+        /// Report in each element's own axes rather than the global ones. The frame comes from the
+        /// node numbering - see Utils.SolidAxes - and exists only for reading: the analysis itself
+        /// is run in the global axes whatever this says.
+        /// </param>
         private static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>)
-            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements)
+            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local)
         {
             const string BASE = ON_ELEMENTS + "/stresses";
             const int COMPONENTS = 6;
@@ -855,8 +860,19 @@ namespace Alpaca4d.Result
                         $"The recorder file holds no stresses for {className} {element.Id}. The file was " +
                         "written by a different model from the one being read - re-run the analysis.");
 
+                // The solver works in the global axes and so does the file. Turning the tensor into
+                // the element's own frame is done here rather than by the caller because the six
+                // numbers only mean anything together, and a caller holding six separate lists has
+                // already lost the tensor.
+                var values = row;
+                if (local)
+                {
+                    var frame = Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray());
+                    values = Utils.StressInFrame(row, frame.X, frame.Y, frame.Z);
+                }
+
                 for (int c = 0; c < COMPONENTS; c++)
-                    sigma[c].Add(row[c]);
+                    sigma[c].Add(values[c]);
             }
 
             return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
@@ -867,17 +883,18 @@ namespace Alpaca4d.Result
         /// lists them.
         ///
         /// The six components are sigma11, sigma22, sigma33, sigma12, sigma23 and sigma13, which is
-        /// the order FourNodeTetrahedron::setResponse names them in. They are the global axes: the
-        /// element builds its strain from global nodal displacements and hands it straight to the
-        /// nD material, and neither the element nor the material has a frame of its own.
+        /// the order FourNodeTetrahedron::setResponse names them in. They come out of the solver in
+        /// the global axes - the element builds its strain from global nodal displacements and hands
+        /// it straight to the nD material, and neither the element nor the material has a frame of
+        /// its own - and <paramref name="local"/> turns them into the element's own.
         /// </summary>
-        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TetrahedronStress(Model alpacaModel, int step, string resultType = null)
+        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TetrahedronStress(Model alpacaModel, int step, string resultType = null, bool local = false)
         {
             var tetrahedra = alpacaModel.Bricks
                 .Where(x => x.ElementClass == Element.ElementClass.FourNodeTetrahedron)
                 .ToList();
 
-            return SolidStress(alpacaModel, step, "FourNodeTetrahedron", tetrahedra);
+            return SolidStress(alpacaModel, step, "FourNodeTetrahedron", tetrahedra, local);
         }
 
         /// <summary>
@@ -886,13 +903,13 @@ namespace Alpaca4d.Result
         /// "stresses" response of its own and passes the request to its material, which answers in
         /// the three dimensional order sigma11, sigma22, sigma33, sigma12, sigma23, sigma31.
         /// </summary>
-        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) SSPBrickStress(Model alpacaModel, int step, string resultType = null)
+        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) SSPBrickStress(Model alpacaModel, int step, string resultType = null, bool local = false)
         {
             var bricks = alpacaModel.Bricks
                 .Where(x => x.ElementClass == Element.ElementClass.SSPBrick)
                 .ToList();
 
-            return SolidStress(alpacaModel, step, "SSPbrick", bricks);
+            return SolidStress(alpacaModel, step, "SSPbrick", bricks, local);
         }
 
 

@@ -824,6 +824,247 @@ namespace Alpaca4d
         }
 
         /// <summary>
+        /// The local frame of a solid, read off the order its nodes are numbered in.
+        ///
+        /// Both solids are numbered so that the first node is the origin of the isoparametric
+        /// frame and the next few walk its axes, so the frame is already there in the numbering
+        /// and only needs squaring up:
+        ///
+        ///   hexahedron   1 to 2 is local x, 1 to 4 is roughly local y, and z comes out along 1 to 5
+        ///   tetrahedron  1 to 2 is local x, 1 to 3 is roughly local y, and z comes out along 1 to 4
+        ///
+        /// Roughly, because the second edge is only a guide: y is the part of it square to x, and z
+        /// is x cross y. So x lies exactly along an edge of the element, and the frame stays
+        /// right-handed however distorted the element is.
+        ///
+        /// z landing near the third edge rather than away from it is not a convention, it is the
+        /// positive Jacobian: 1 to 2, 1 to 4 and 1 to 5 are the +xi, +eta and +zeta directions, and
+        /// xi cross eta is +zeta exactly when the determinant is positive, which
+        /// <see cref="CleanHexahedron"/> and <see cref="CleanTetrahedron"/> guarantee. The same
+        /// argument gives 1 to 4 for the tetrahedron, whose Jacobian is the triple product of its
+        /// three edges from node 1.
+        ///
+        /// This is a frame to report in, and nothing more. It does not reach the solver: OpenSees
+        /// gives neither solid an orientation argument, so the analysis is run in the global axes
+        /// whatever this says, and an orthotropic material still lines up with the world.
+        /// </summary>
+        public static (Vector3d X, Vector3d Y, Vector3d Z) SolidFrame(IList<Point3d> nodes)
+        {
+            if (nodes.Count != 4 && nodes.Count != 8)
+                throw new Exception($"A solid has four nodes or eight, not {nodes.Count}.");
+
+            // Node 4 of a hexahedron and node 3 of a tetrahedron: in both cases the far end of the
+            // second edge leaving node 1 within the first face.
+            var guide = nodes[nodes.Count == 8 ? 3 : 2] - nodes[0];
+
+            var x = Unit(nodes[1] - nodes[0],
+                         "This solid has its first two nodes at the same point, so it has no local 1 axis.");
+
+            var z = Unit(Vector3d.CrossProduct(x, guide),
+                         "This solid has its first three nodes on one line, so it has no local plane.");
+
+            // Square to x and in the x-guide plane, which is what makes local 1 exactly an edge and
+            // local 2 only roughly one.
+            var y = Unit(Vector3d.CrossProduct(z, x), "This solid has no local 2 axis.");
+
+            return (x, y, z);
+        }
+
+        /// <summary>
+        /// A vector scaled to unit length, or the given complaint if it has no length to scale.
+        ///
+        /// The arithmetic rather than Vector3d.Unitize because that one is a call into Rhino's
+        /// native library, and a frame worked out from eight points has no business needing one.
+        /// </summary>
+        private static Vector3d Unit(Vector3d v, string ifDegenerate)
+        {
+            double length = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+
+            if (length <= Rhino.RhinoMath.ZeroTolerance)
+                throw new Exception(ifDegenerate);
+
+            return new Vector3d(v.X / length, v.Y / length, v.Z / length);
+        }
+
+        /// <summary>
+        /// <see cref="SolidFrame"/> as a plane, for drawing and for the Plane output of the result
+        /// components. Its origin is the centre of the element rather than node 1, because that is
+        /// where a set of element axes is worth looking at.
+        ///
+        /// The three axes are written onto the plane rather than handed to Plane(origin, x, y),
+        /// which squares up whatever it is given inside Rhino's native library. The frame is
+        /// already square, so there is nothing for it to do - but this way the plane provably
+        /// carries the same three vectors the stress is rotated by, rather than three that ought
+        /// to be the same.
+        /// </summary>
+        public static Plane SolidAxes(IList<Point3d> nodes)
+        {
+            var frame = SolidFrame(nodes);
+
+            var centre = Point3d.Origin;
+            foreach (var node in nodes)
+                centre += node;
+            centre /= nodes.Count;
+
+            var plane = default(Plane);
+            plane.Origin = centre;
+            plane.XAxis = frame.X;
+            plane.YAxis = frame.Y;
+            plane.ZAxis = frame.Z;
+
+            return plane;
+        }
+
+        /// <summary>
+        /// The local frame of a shell: the axes its section forces and stresses are reported in.
+        ///
+        /// Not simply the first edge, the way a solid's is. Every shell element in OpenSees builds
+        /// a reference frame from its node coordinates and then turns the *section* within that
+        /// plane by an angle of its own, and it is the section that answers a recorder - a
+        /// "section.force" request returns getStressResultant() without rotating it back. So the
+        /// frame worth drawing is the section's, and that is what this returns.
+        ///
+        ///   ShellDKGT, ShellNLDKGT  the reference frame, and no section angle: x along node 1 to 2,
+        ///                           y the part of 1 to 3 square to it, z their cross product
+        ///   ASDShellT3              the same, because its default section direction is 1 to 2 -
+        ///                           the very vector the reference frame already uses, so the angle
+        ///                           between them is zero
+        ///   ASDShellQ4              not the same. Its reference x is side 1-2 flattened onto the
+        ///                           element plane, but its default section x is the line joining
+        ///                           the midpoints of sides 2-3 and 4-1 - so on any quad that is not
+        ///                           a parallelogram the two differ, and the section is turned
+        ///
+        /// <paramref name="localX"/> is the "-local" vector when one was given. OpenSees does not
+        /// take it as the axis outright: it flattens it onto the element plane first, so a vector
+        /// that only roughly points the right way still lands square with the shell.
+        /// </summary>
+        public static (Vector3d X, Vector3d Y, Vector3d Z) ShellFrame(IList<Point3d> nodes, Vector3d localX)
+        {
+            if (nodes.Count != 3 && nodes.Count != 4)
+                throw new Exception($"A shell face has three corners or four, not {nodes.Count}.");
+
+            Vector3d normal, referenceX, target;
+
+            if (nodes.Count == 3)
+            {
+                // ASDShellT3LocalCoordinateSystem, and ShellNLDKGT::updateBasis, which agree.
+                var side12 = nodes[1] - nodes[0];
+                normal = Unit(Vector3d.CrossProduct(side12, nodes[2] - nodes[0]),
+                              "This shell face has its three corners on one line, so it has no normal.");
+                referenceX = Unit(side12, "This shell face has its first two corners at the same point.");
+                target = referenceX;
+            }
+            else
+            {
+                // ASDShellQ4LocalCoordinateSystem: the normal from the two diagonals, and x from
+                // side 1-2 with whatever part of it stands out of the plane taken off.
+                normal = Unit(Vector3d.CrossProduct(nodes[2] - nodes[0], nodes[3] - nodes[1]),
+                              "This shell face is degenerate, so it has no normal.");
+
+                var side12 = nodes[1] - nodes[0];
+                referenceX = Unit(side12 - (side12 * normal) * normal,
+                                  "This shell face has side 1-2 along its own normal.");
+
+                // ASDShellQ4::setDomain, the branch with no -local given.
+                target = Unit((nodes[1] + (nodes[2] - Point3d.Origin)) / 2.0
+                              - (nodes[0] + (nodes[3] - Point3d.Origin)) / 2.0,
+                              "This shell face has both pairs of opposite sides meeting at a point.");
+            }
+
+            var referenceY = Unit(Vector3d.CrossProduct(normal, referenceX), "This shell face has no local 2 axis.");
+
+            if (localX.IsValid && localX.SquareLength > 0.0)
+            {
+                // Flattened onto the element plane exactly the way OpenSees flattens it: square to
+                // the normal first, then square to that.
+                var acrossX = Unit(Vector3d.CrossProduct(normal, localX),
+                                   "The local X given for this shell lies along its normal, so it cannot be an axis in it.");
+                target = Unit(Vector3d.CrossProduct(acrossX, normal), "The local X given for this shell has no direction.");
+            }
+
+            // The section angle, formed the way ASDShellQ4::setDomain forms it: the angle from the
+            // reference x to the target, signed by which side of the reference x the target is on.
+            // Written as a cosine and a sine rather than an angle, because turning the reference x
+            // about the normal by that angle is just cos, sin against the two reference axes - and
+            // for a target already in the plane it hands back the target itself.
+            double cos = target * referenceX;
+            double sin = target * referenceY;
+
+            double norm = Math.Sqrt(cos * cos + sin * sin);
+            if (norm <= Rhino.RhinoMath.ZeroTolerance)
+                throw new Exception("This shell's section direction stands square to its own plane.");
+
+            cos /= norm;
+            sin /= norm;
+
+            var x = Unit(cos * referenceX + sin * referenceY, "This shell has no local 1 axis.");
+            var y = Unit(Vector3d.CrossProduct(normal, x), "This shell has no local 2 axis.");
+
+            return (x, y, normal);
+        }
+
+        /// <summary>
+        /// <see cref="ShellFrame"/> as a plane at the centre of the face. Built the same way
+        /// <see cref="SolidAxes"/> is, and for the same reason.
+        /// </summary>
+        public static Plane ShellAxes(IList<Point3d> nodes, Vector3d localX)
+        {
+            var frame = ShellFrame(nodes, localX);
+
+            var centre = Point3d.Origin;
+            foreach (var node in nodes)
+                centre += node;
+            centre /= nodes.Count;
+
+            var plane = default(Plane);
+            plane.Origin = centre;
+            plane.XAxis = frame.X;
+            plane.YAxis = frame.Y;
+            plane.ZAxis = frame.Z;
+
+            return plane;
+        }
+
+        /// <summary>
+        /// The six components of a stress tensor read in a different frame.
+        ///
+        /// In and out both run sigma11, sigma22, sigma33, sigma12, sigma23, sigma13, which is the
+        /// order OpenSees names them in and the order the solid readers hand them back. The
+        /// arithmetic is the ordinary sigma' = R^T sigma R, written out rather than assembled into
+        /// matrices because six numbers do not justify a matrix class.
+        /// </summary>
+        public static double[] StressInFrame(IList<double> global, Vector3d x, Vector3d y, Vector3d z)
+        {
+            var s = new[,]
+            {
+                { global[0], global[3], global[5] },
+                { global[3], global[1], global[4] },
+                { global[5], global[4], global[2] },
+            };
+
+            var axes = new[] { x, y, z };
+
+            double Component(int a, int b)
+            {
+                var u = new[] { axes[a].X, axes[a].Y, axes[a].Z };
+                var v = new[] { axes[b].X, axes[b].Y, axes[b].Z };
+
+                double total = 0.0;
+                for (int i = 0; i < 3; i++)
+                    for (int j = 0; j < 3; j++)
+                        total += u[i] * s[i, j] * v[j];
+
+                return total;
+            }
+
+            return new[]
+            {
+                Component(0, 0), Component(1, 1), Component(2, 2),
+                Component(0, 1), Component(1, 2), Component(0, 2),
+            };
+        }
+
+        /// <summary>
         /// A closed solid mesh built straight from nodes already in OpenSees order - four for a
         /// tetrahedron, eight for a brick - without reordering them.
         ///

@@ -12,7 +12,7 @@ RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.d
 [ -f "$RHINO" ] || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp ShellStress.cs plate.tcl layered.tcl "$work/"
+cp ShellStress.cs plate.tcl layered.tcl frame.tcl "$work/"
 # PureHDF and its dependencies come from the build output; the reader needs them at run time.
 cp "$COREDIR"/*.dll "$work/" 2>/dev/null || true
 cp "$RHINO" "$work/"
@@ -22,6 +22,7 @@ cp "$RHINO" "$work/"
   if [ -x "$OPENSEES" ]; then
     "$OPENSEES" plate.tcl   > /dev/null 2>&1 || echo "warning: plate.tcl did not solve"
     "$OPENSEES" layered.tcl > /dev/null 2>&1 || echo "warning: layered.tcl did not solve"
+    "$OPENSEES" frame.tcl   > /dev/null 2>&1 || echo "warning: frame.tcl did not solve"
   else
     echo "note: OpenSees not found, the reader checks will be skipped"
   fi
@@ -31,4 +32,4 @@ cp "$RHINO" "$work/"
   NETSTD_REF=""
   [ -n "$NETSTD" ] && NETSTD_REF="-r:$NETSTD"
   mcs -target:exe -out:ShellStress.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:PureHDF.dll $NETSTD_REF ShellStress.cs
-  mono ShellStress.exe plate.mpco layered.mpco )
+  mono ShellStress.exe plate.mpco layered.mpco frame.txt )

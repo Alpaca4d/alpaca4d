@@ -15,5 +15,11 @@ namespace Alpaca4d.Generic
         public IMultiDimensionSection Section { get; set; }
         public System.Drawing.Color Color { get; set; }
         public ElementClass ElementClass { get; }
+
+        /// <summary>
+        /// The axes this shell's section forces and stresses are reported in - see
+        /// Utils.ShellFrame, which is where the convention and its per element differences live.
+        /// </summary>
+        public Plane LocalPlane { get; }
     }
 }

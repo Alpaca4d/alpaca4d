@@ -60,10 +60,54 @@ The group name is scanned for rather than spelled out. `121-SSPbrick[400:0:0]` e
 index that counts up when one class produces two different response layouts, so hard-coding it
 silently drops every element that lands in `[400:0:1]`.
 
-## The stresses are in the global axes
+## The local frame, and where it comes from
 
-There is no local axis to set, and this is worth stating plainly because the component used to
-say the opposite:
+The solver has no frame of its own, but the node numbering does, and `Utils.SolidAxes` reads it off:
+
+| | local 1 | local 2 guide | local 3 comes out along |
+| --- | --- | --- | --- |
+| hexahedron | node 1 → 2 | node 1 → 4 | node 1 → 5 |
+| tetrahedron | node 1 → 2 | node 1 → 3 | node 1 → 4 |
+
+Local 1 lies exactly along the first edge; local 2 is only the part of the second edge square to
+it, and local 3 is 1 × 2. So the frame stays orthonormal and right-handed however distorted the
+element is.
+
+Local 3 landing near the third edge rather than away from it is **not a separate convention** — it
+is the positive Jacobian. 1→2, 1→4 and 1→5 are the +ξ, +η and +ζ directions, and ξ × η is +ζ
+exactly when the determinant is positive, which the checks above guarantee. The same argument gives
+1→4 for the tetrahedron, whose Jacobian is the triple product of its three edges from node 1.
+
+### What proves it works
+
+Turning a problem round cannot change what the material is doing inside it, so a reading in the
+element's own axes has to be invariant under a rigid rotation. `local.tcl` solves one distorted
+brick and one distorted tetrahedron, then solves each again turned 45° about Z with its loads
+turned with it:
+
+| | local reading, turned vs plain | global reading, turned vs plain |
+| --- | --- | --- |
+| tetrahedron (peak 15.2) | **8.9e-15** | 15.4 |
+| SSP brick (peak 5.99) | **2.4e-03** | 2.86 |
+
+The tetrahedron is exact to machine precision. The brick keeps a residual of about 0.04%, and that
+is not the frame — `SSPbrick::GetStab` builds its hourglass stabilisation from the Jacobian at the
+element centre, and that is not quite orientation-independent once the element is distorted. A
+regular cube and the tetrahedron, which has no stabilisation term, both match to 1e-14.
+
+Von Mises is an invariant and is computed after the frame is chosen, so it reads the same either
+way — checked, because a difference there would mean the rotation was not a rotation.
+
+### It is for reading only
+
+The frame never reaches the solver. `element SSPbrick` and `element FourNodeTetrahedron` take no
+orientation argument, so the analysis runs in the global axes whatever Axes is set to, and an
+orthotropic material still lines up with the world.
+
+## The solver works in the global axes
+
+There is no local axis to *give* OpenSees, which is a different thing from the reporting frame
+above, and worth stating plainly because the component used to say the opposite:
 
 - `element SSPbrick $tag $n1..$n8 $matTag <$b1 $b2 $b3>` — ten integers and three optional body
   forces, and nothing else;
@@ -91,7 +135,9 @@ Run against recorder files this suite solves itself, so the numbers are the solv
   a fifth of a millimetre thick are accepted;
 - a file whose classes carry interleaved tags reads back in the model's order, not the file's;
 - an element or a step the file does not hold is named rather than read past;
-- an orthotropic material in a brick follows the global axes.
+- an orthotropic material in a brick follows the global axes;
+- the frame taken off the node numbering is orthonormal, right handed and anchored to the first
+  edge, and reading in it survives turning the whole problem 45 degrees.
 
 ## Running it
 

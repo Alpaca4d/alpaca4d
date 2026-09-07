@@ -1,4 +1,4 @@
-// Solid elements: which way round they have to be wound, and how their stresses are read back.
+﻿// Solid elements: which way round they have to be wound, and how their stresses are read back.
 //
 // Two things are being guarded here.
 //
@@ -55,6 +55,9 @@ class TaggedSolid : IBrick
     public List<int?> IndexNodes { get; set; }
     public Color Color { get; set; }
     public int Ndf => 3;
+    // Never asked for: the reader only wants a frame when it is reading in local axes, and these
+    // stand-ins have no mesh to take one from.
+    public Plane LocalPlane => Plane.Unset;
     public void SetTags() { }
     public void SetTopologyRTree(Model model) { }
     public string WriteTcl() => "";
@@ -182,6 +185,152 @@ class BrickStressTest
         })) < 1e-12, "four points on one plane read zero");
     }
 
+    // ------------------------------------------------------------------- the local frame
+
+    /// <summary>
+    /// The frame convention, checked on solids whose node numbering is deliberately plain enough
+    /// that the answer can be written down: a cube in OpenSees order has 1 to 2 along world X and
+    /// 1 to 4 along world Y, so its frame is the world frame.
+    /// </summary>
+    static void FrameTests()
+    {
+        Console.WriteLine("\nThe frame the node numbering gives\n");
+
+        var cube = Cube(1.0);
+        var f = Utils.SolidFrame(cube);
+
+        Check((f.X - Vector3d.XAxis).Length < 1e-12, "a cube in OpenSees order has local 1 along world X, from node 1 to 2");
+        Check((f.Y - Vector3d.YAxis).Length < 1e-12, "local 2 along world Y, from node 1 to 4");
+        Check((f.Z - Vector3d.ZAxis).Length < 1e-12, "and local 3 along world Z");
+
+        // Which is the same as node 1 to node 5, and that is the positive Jacobian rather than a
+        // separate rule: 1-2, 1-4 and 1-5 are the +xi, +eta and +zeta directions.
+        Check(f.Z * (cube[4] - cube[0]) > 0, "local 3 points the same way as node 1 to 5");
+
+        var tet = new List<Point3d>
+        {
+            new Point3d(0,0,0), new Point3d(1,0,0), new Point3d(0,1,0), new Point3d(0,0,1)
+        };
+        var t = Utils.SolidFrame(tet);
+        Check((t.X - Vector3d.XAxis).Length < 1e-12, "a tetrahedron has local 1 from node 1 to 2");
+        Check((t.Y - Vector3d.YAxis).Length < 1e-12, "local 2 from node 1 to 3, squared up");
+        Check(t.Z * (tet[3] - tet[0]) > 0, "and local 3 points the same way as node 1 to 4");
+
+        // Squared up, not just copied: a guide edge well off square still leaves an orthonormal
+        // right handed frame with local 1 exactly along the first edge.
+        var skew = Cube(1.0);
+        skew[3] = new Point3d(0.8, 1.0, 0.0);
+        var k = Utils.SolidFrame(skew);
+        Check(Math.Abs(k.X * k.Y) < 1e-12 && Math.Abs(k.Y * k.Z) < 1e-12 && Math.Abs(k.Z * k.X) < 1e-12,
+              "a skewed guide edge still gives three square axes");
+        Check(Math.Abs(k.X.Length - 1) < 1e-12 && Math.Abs(k.Y.Length - 1) < 1e-12 && Math.Abs(k.Z.Length - 1) < 1e-12,
+              "all three unit length");
+        Check((k.X - Vector3d.XAxis).Length < 1e-12, "and local 1 still exactly along node 1 to 2");
+        Check((Vector3d.CrossProduct(k.X, k.Y) - k.Z).Length < 1e-12, "right handed: 1 cross 2 is 3");
+
+        // The plane the components hand out and draw has to be the frame the stress is rotated by,
+        // not merely something built from it. Rhino's Plane(origin, x, y) squares up what it is
+        // given; SolidAxes writes the axes on instead, so the two cannot come apart.
+        var plane = Utils.SolidAxes(skew);
+        Check((plane.XAxis - k.X).Length < 1e-15 &&
+              (plane.YAxis - k.Y).Length < 1e-15 &&
+              (plane.ZAxis - k.Z).Length < 1e-15,
+              "SolidAxes carries exactly the three vectors SolidFrame gives");
+
+        var middle = Point3d.Origin;
+        foreach (var node in skew) middle += node;
+        middle /= skew.Count;
+        Check(plane.Origin.DistanceTo(middle) < 1e-12, "and sits at the centre of the element");
+
+        Console.WriteLine("\nRotating the tensor into a frame\n");
+
+        var sigma = new double[] { 11.0, 22.0, 33.0, 12.0, 23.0, 13.0 };
+        var same = Utils.StressInFrame(sigma, Vector3d.XAxis, Vector3d.YAxis, Vector3d.ZAxis);
+        Check(sigma.Zip(same, (a, b) => Math.Abs(a - b)).Max() < 1e-12,
+              "the world frame gives the components back unchanged");
+
+        // Uniaxial along X, read in a frame turned 45 degrees about Z: the classic half-and-half.
+        double r = 1.0 / Math.Sqrt(2.0);
+        var turned = Utils.StressInFrame(new double[] { 10, 0, 0, 0, 0, 0 },
+                                         new Vector3d(r, r, 0), new Vector3d(-r, r, 0), Vector3d.ZAxis);
+        Close(turned[0], 5.0, "uniaxial 10 along X read at 45 degrees gives sigma11");
+        Close(turned[1], 5.0, "and sigma22");
+        Close(turned[3], -5.0, "and sigma12");
+
+        // Von Mises is an invariant, so the frame must not move it. Both result components compute
+        // it after the frame has been chosen, and a difference here would mean the rotation was
+        // not a rotation.
+        var skewFrame = Utils.SolidFrame(new List<Point3d>
+        {
+            new Point3d(0,0,0), new Point3d(1,1,0.3), new Point3d(0,1,0), new Point3d(-0.2,1,1),
+            new Point3d(0,0,1), new Point3d(1,1,1.3), new Point3d(0,1,1), new Point3d(-0.2,1,2),
+        });
+        Close(VonMises(Utils.StressInFrame(sigma, skewFrame.X, skewFrame.Y, skewFrame.Z)),
+              VonMises(sigma), "von Mises is the same in an arbitrary frame");
+    }
+
+    /// <summary>The equivalent stress, from the six components in whatever frame they are in.</summary>
+    static double VonMises(IList<double> v)
+    {
+        return Math.Sqrt(0.5 * ((v[0]-v[1])*(v[0]-v[1]) + (v[1]-v[2])*(v[1]-v[2]) + (v[2]-v[0])*(v[2]-v[0])
+                                + 6.0 * (v[3]*v[3] + v[4]*v[4] + v[5]*v[5])));
+    }
+
+    /// <summary>
+    /// The point of the whole frame: turn the problem round and the local reading must not move.
+    ///
+    /// local.tcl solves one distorted brick and one distorted tetrahedron, then solves each again
+    /// turned 45 degrees about Z with its loads turned with it. In the global axes the two disagree
+    /// - that is what says the solver has no frame of its own - and in the element's axes they have
+    /// to agree, because turning a problem round does not change what the material is doing.
+    /// </summary>
+    static void RotationTests(string file)
+    {
+        Console.WriteLine("\nTurn the problem round; the local reading must not move\n");
+
+        var nodes = new Dictionary<string, List<Point3d>>();
+        var stress = new Dictionary<string, double[]>();
+
+        foreach (var line in File.ReadAllLines(file))
+        {
+            var t = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length < 3) continue;
+            var n = t.Skip(2).Select(v => double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+
+            if (t[0] == "NODES")
+                nodes[t[1]] = Enumerable.Range(0, n.Length / 3)
+                                        .Select(i => new Point3d(n[3 * i], n[3 * i + 1], n[3 * i + 2])).ToList();
+            else if (t[0] == "STRESS")
+                stress[t[1]] = n;
+        }
+
+        foreach (var kind in new[] { "BRICK", "TET" })
+        {
+            var plainF = Utils.SolidFrame(nodes[kind + "_PLAIN"]);
+            var turnedF = Utils.SolidFrame(nodes[kind + "_TURNED"]);
+
+            var plainL = Utils.StressInFrame(stress[kind + "_PLAIN"], plainF.X, plainF.Y, plainF.Z);
+            var turnedL = Utils.StressInFrame(stress[kind + "_TURNED"], turnedF.X, turnedF.Y, turnedF.Z);
+
+            double peak = stress[kind + "_PLAIN"].Max(Math.Abs);
+            double localGap = Enumerable.Range(0, 6).Max(i => Math.Abs(plainL[i] - turnedL[i]));
+            double globalGap = Enumerable.Range(0, 6).Max(i => Math.Abs(stress[kind + "_PLAIN"][i] - stress[kind + "_TURNED"][i]));
+
+            // The brick keeps a little orientation sensitivity of its own: SSPbrick builds its
+            // hourglass stabilisation from the Jacobian at the element centre, and that is not
+            // quite frame independent once the element is distorted. The tetrahedron has no
+            // stabilisation term and matches to machine precision.
+            double allowed = kind == "BRICK" ? 1e-3 * peak : 1e-10 * peak;
+
+            Check(localGap < allowed,
+                  $"{kind}: read in its own axes the turned solid matches the plain one " +
+                  $"({localGap:E2} against a peak of {peak:F3})");
+            Check(globalGap > 0.1 * peak,
+                  $"{kind}: read in the global axes they differ, which is what makes the check mean something " +
+                  $"({globalGap:E2})");
+        }
+    }
+
     // ------------------------------------------------------------------------- the reader
 
     static Model ModelOf(string file, params (int tag, ElementClass cls)[] solids)
@@ -295,16 +444,23 @@ class BrickStressTest
         Console.WriteLine("Solid elements: winding, and reading their stresses back");
 
         JacobianTests();
+        FrameTests();
 
         string mixed = args.Length > 0 ? args[0] : "mixed.mpco";
         string one = args.Length > 1 ? args[1] : "one.mpco";
         string ortho = args.Length > 2 ? args[2] : "ortho.txt";
+        string local = args.Length > 3 ? args[3] : "local.txt";
 
         if (File.Exists(mixed))
         {
             ReaderTests(mixed);
             if (File.Exists(one)) ComponentOrderTests(one);
             if (File.Exists(ortho)) OrthotropicTests(ortho);
+        }
+
+        if (File.Exists(local))
+        {
+            RotationTests(local);
         }
         else
         {

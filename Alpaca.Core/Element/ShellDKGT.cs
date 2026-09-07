@@ -34,6 +34,12 @@ namespace Alpaca4d.Element
         {
 
         }
+        /// <summary>
+        /// The axes this shell's forces and stresses are reported in. A ShellDKGT takes no local
+        /// axis of its own, so this is always the frame its node order gives.
+        /// </summary>
+        public Plane LocalPlane => Alpaca4d.Utils.ShellAxes(this.Mesh.Vertices.ToPoint3dArray(), Vector3d.Zero);
+
         public void SetTopologyRTree(Alpaca4d.Model model)
         {
             var tol = model.Tollerance;

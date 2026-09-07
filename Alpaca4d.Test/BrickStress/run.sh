@@ -13,7 +13,7 @@ RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.d
 [ -f "$RHINO" ] || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp BrickStress.cs one.tcl mixed.tcl ortho.tcl "$work/"
+cp BrickStress.cs one.tcl mixed.tcl ortho.tcl local.tcl "$work/"
 # PureHDF and its dependencies come from the build output; the reader needs them at run time.
 cp "$COREDIR"/*.dll "$work/" 2>/dev/null || true
 cp "$RHINO" "$work/"
@@ -24,6 +24,7 @@ cp "$RHINO" "$work/"
     "$OPENSEES" one.tcl   > /dev/null 2>&1 || echo "warning: one.tcl did not solve"
     "$OPENSEES" mixed.tcl > /dev/null 2>&1 || echo "warning: mixed.tcl did not solve"
     "$OPENSEES" ortho.tcl > /dev/null 2>&1 || echo "warning: ortho.tcl did not solve"
+    "$OPENSEES" local.tcl > /dev/null 2>&1 || echo "warning: local.tcl did not solve"
   else
     echo "note: OpenSees not found, the reader checks will be skipped"
   fi
@@ -35,4 +36,4 @@ cp "$RHINO" "$work/"
   NETSTD_REF=""
   [ -n "$NETSTD" ] && NETSTD_REF="-r:$NETSTD"
   mcs -target:exe -out:BrickStress.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:PureHDF.dll -r:System.Drawing.dll $NETSTD_REF BrickStress.cs
-  mono BrickStress.exe mixed.mpco one.mpco ortho.txt )
+  mono BrickStress.exe mixed.mpco one.mpco ortho.txt local.txt )

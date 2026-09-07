@@ -35,13 +35,19 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The Alpaca Model", GH_ParamAccess.item);
-            pManager.AddIntegerParameter("StressType", "StressType", "Stress component to display, in the global axes: 0=σxx, 1=σyy, 2=σzz, 3=σxy, 4=σyz, 5=σzx, 6=Von Mises", GH_ParamAccess.item, 0);
+            pManager.AddIntegerParameter("StressType", "StressType", "Stress component to display: 0=σ₁₁, 1=σ₂₂, 2=σ₃₃, 3=σ₁₂, 4=σ₂₃, 5=σ₁₃, 6=Von Mises. Axes says what 1, 2 and 3 mean.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Analysis step", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddColourParameter("Colors", "Colors", "Color gradient for visualization", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntervalParameter("Range", "Range", "Min/Max range for color mapping", GH_ParamAccess.item);
+            pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddIntegerParameter("Axes", "Axes",
+                "Which frame to read the components in: 0 = global, the axes the solver works in; " +
+                "1 = each element's own, from its node numbering. Reading only - it changes nothing " +
+                "in the analysis.",
+                GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -67,11 +73,14 @@ namespace Alpaca4d.Gh
             // Update value list for StressType input
             var stressTypeNames = new List<string> 
             { 
-                "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "Von Mises" 
+                "σ₁₁", "σ₂₂", "σ₃₃", "σ₁₂", "σ₂₃", "σ₁₃", "Von Mises" 
             };
             var stressTypeValues = new List<int> { 0, 1, 2, 3, 4, 5, 6 };
             
             ValueList.UpdateValueLists(this, 1, stressTypeNames, stressTypeValues, GH_ValueListMode.DropDown, 0);
+
+            ValueList.UpdateValueLists(this, 5, new List<string> { "Global", "Local" },
+                                       new List<int> { 0, 1 }, GH_ValueListMode.DropDown, 0);
         }
 
         /// <summary>
@@ -88,6 +97,10 @@ namespace Alpaca4d.Gh
             if (!DA.GetData(0, ref _model)) return;
             DA.GetData(1, ref _stressType);
             DA.GetData(2, ref _step);
+
+            int axes = 0;
+            DA.GetData(5, ref axes);
+            bool local = axes == 1;
 
             // Validate stress type
             if (_stressType < 0 || _stressType > 6)
@@ -121,12 +134,12 @@ namespace Alpaca4d.Gh
             if (_model.HasTetrahedron)
             {
                 (tetraSigma11, tetraSigma22, tetraSigma33, tetraSigma12, tetraSigma23, tetraSigma13) = 
-                    Alpaca4d.Result.Read.TetrahedronStress(_model, _step);
+                    Alpaca4d.Result.Read.TetrahedronStress(_model, _step, local: local);
             }
             if (_model.HasSSpBrick)
             {
                 (sspSigma11, sspSigma22, sspSigma33, sspSigma12, sspSigma23, sspSigma13) = 
-                    Alpaca4d.Result.Read.SSPBrickStress(_model, _step);
+                    Alpaca4d.Result.Read.SSPBrickStress(_model, _step, local: local);
             }
 
             // The elements in the order the two readers were just called in: every tetrahedron,
@@ -216,8 +229,9 @@ namespace Alpaca4d.Gh
             }
 
             // Output info
-            string[] stressNames = { "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "Von Mises" };
-            string info = $"Stress: {stressNames[_stressType]}, Min: {_min:F3}, Max: {_max:F3}, Step: {_step}";
+            string[] stressNames = { "σ₁₁", "σ₂₂", "σ₃₃", "σ₁₂", "σ₂₃", "σ₁₃", "Von Mises" };
+            string info = $"Stress: {stressNames[_stressType]} ({(local ? "local" : "global")} axes), " +
+                          $"Min: {_min:F3}, Max: {_max:F3}, Step: {_step}";
             DA.SetData(0, info);
 
             // Ensure viewport updates

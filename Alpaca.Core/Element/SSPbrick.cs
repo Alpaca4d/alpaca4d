@@ -30,6 +30,13 @@ namespace Alpaca4d.Element
             this.Material = material;
         }
 
+        /// <summary>
+        /// The element's own axes. The mesh carries its vertices in OpenSees node order - that is
+        /// what Utils.CleanHexahedron leaves behind - so the numbering the frame is read off is
+        /// the numbering the solver was given.
+        /// </summary>
+        public Plane LocalPlane => Alpaca4d.Utils.SolidAxes(this.Mesh.Vertices.ToPoint3dArray());
+
         public void SetTags()
         {
 

@@ -375,6 +375,69 @@ namespace Alpaca4d.Gh
                     args.Display.Draw2dText("Y", System.Drawing.Color.Green, mid + localY * axLen * 1.1, true, 10);
                     args.Display.Draw2dText("Z", System.Drawing.Color.Blue,  mid + localZ * axLen * 1.1, true, 10);
                 }
+
+                // Shells, labelled 1, 2 and 3 to match the components they belong to: fxx and
+                // sigma11 act along the red arrow, fyy and sigma22 along the green one, and the
+                // blue one is the normal the moments turn about.
+                //
+                // Utils.ShellFrame rather than anything worked out here, because which frame a
+                // shell reports in is not obvious - a quad's section axes are turned away from its
+                // first edge even with no -local given.
+                foreach (var shell in _model.Shells)
+                {
+                    if (_visibleElementIds != null && shell.Id.HasValue && !_visibleElementIds.Contains(shell.Id.Value)) continue;
+
+                    Plane frame;
+                    try
+                    {
+                        frame = shell.LocalPlane;
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+
+                    DrawElementAxes(args, frame.Origin, frame.XAxis, frame.YAxis, frame.ZAxis,
+                                    Math.Sqrt(AreaMassProperties.Compute(shell.Mesh).Area) * 0.35);
+                }
+
+                // Solids, labelled 1, 2 and 3 rather than X, Y and Z, because that is what the
+                // stress components they belong to are called - sigma11 is the direct stress along
+                // this red arrow. A beam's are x, y and z because that is what OpenSees calls a
+                // beam's; the two conventions are different and are drawn differently.
+                foreach (var brick in _model.Bricks)
+                {
+                    if (_visibleElementIds != null && brick.Id.HasValue && !_visibleElementIds.Contains(brick.Id.Value)) continue;
+
+                    var nodes = brick.Mesh.Vertices.ToPoint3dArray();
+
+                    // Utils.SolidFrame, not brick.LocalPlane, even though the plane is built from
+                    // exactly this. It is the same call the stress reader makes to rotate the
+                    // tensor, so what is drawn here and what comes out of Brick Stresses cannot
+                    // drift apart - there is one frame, read once, in one place.
+                    (Vector3d X, Vector3d Y, Vector3d Z) frame;
+                    try
+                    {
+                        frame = Alpaca4d.Utils.SolidFrame(nodes);
+                    }
+                    catch (Exception)
+                    {
+                        // A solid too degenerate to have a frame. Nothing to draw, and a viewport
+                        // is the wrong place to complain about it - Assemble already does.
+                        continue;
+                    }
+
+                    var origin = Point3d.Origin;
+                    foreach (var node in nodes)
+                        origin += node;
+                    origin /= nodes.Length;
+
+                    // A quarter of the element's own reach, so the arrows stay inside a small brick
+                    // and are still visible on a large one.
+                    var axLen = brick.Mesh.GetBoundingBox(false).Diagonal.Length * 0.25;
+
+                    DrawElementAxes(args, origin, frame.X, frame.Y, frame.Z, axLen);
+                }
             }
 
             // ── Loads ─────────────────────────────────────────────────────────
@@ -445,6 +508,29 @@ namespace Alpaca4d.Gh
         }
 
         public override bool IsPreviewCapable => true;
+
+        /// <summary>
+        /// One set of element axes, drawn as three arrows numbered 1, 2 and 3.
+        ///
+        /// Numbered rather than lettered because that is what the components they belong to are
+        /// called - sigma11 and fxx act along the red one. A beam's axes are drawn X, Y and Z next
+        /// to these, which is not an inconsistency: OpenSees names a beam's local axes that way and
+        /// a shell's and a solid's stress components the other, and pretending otherwise would make
+        /// one of the two labels wrong.
+        /// </summary>
+        private static void DrawElementAxes(IGH_PreviewArgs args, Point3d origin,
+                                            Vector3d x, Vector3d y, Vector3d z, double length)
+        {
+            if (!(length > 0.0)) return;
+
+            args.Display.DrawArrow(new Line(origin, origin + x * length), System.Drawing.Color.Red,   12, 0);
+            args.Display.DrawArrow(new Line(origin, origin + y * length), System.Drawing.Color.Green, 12, 0);
+            args.Display.DrawArrow(new Line(origin, origin + z * length), System.Drawing.Color.Blue,  12, 0);
+
+            args.Display.Draw2dText("1", System.Drawing.Color.Red,   origin + x * length * 1.1, true, 10);
+            args.Display.Draw2dText("2", System.Drawing.Color.Green, origin + y * length * 1.1, true, 10);
+            args.Display.Draw2dText("3", System.Drawing.Color.Blue,  origin + z * length * 1.1, true, 10);
+        }
 
         public override BoundingBox ClippingBox => new BoundingBox(
             new Point3d(-1e9, -1e9, -1e9),

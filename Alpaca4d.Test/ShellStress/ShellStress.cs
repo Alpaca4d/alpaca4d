@@ -1,4 +1,4 @@
-// Shell stresses through the thickness, and the layered section that makes them interesting.
+﻿// Shell stresses through the thickness, and the layered section that makes them interesting.
 //
 // Two things are being guarded, and both come from the same confusion:
 //
@@ -21,6 +21,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
+using Rhino.Geometry;
 
 using PureHDF;
 
@@ -244,12 +246,98 @@ class ShellStressTest
         }
     }
 
+    // ------------------------------------------------------------ which way does axis 1 point
+
+    /// <summary>
+    /// The frame a shell reports its forces and stresses in, checked against the frame the solver
+    /// was measured to use.
+    ///
+    /// Worth measuring rather than assuming, because a quad's is not its first edge. Every shell
+    /// element builds a reference frame from its nodes and then turns the *section* within that
+    /// plane, and it is the section that answers a recorder - getResponse case 2 returns
+    /// getStressResultant() without rotating it back. For an ASDShellQ4 the section direction is
+    /// the line joining the midpoints of sides 2-3 and 4-1, which is the first edge only on a
+    /// parallelogram.
+    /// </summary>
+    static void FrameTests(string file)
+    {
+        Console.WriteLine("\nWhich way axis 1 points, against the solver's own answer\n");
+
+        // frame.tcl imposes a known uniform strain and reads the direction back out of the
+        // components the element reports.
+        var measured = new Dictionary<string, double>();
+        foreach (var line in File.ReadAllLines(file))
+        {
+            var t = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            int at = Array.IndexOf(t, "at");
+            if (at > 0 && at + 1 < t.Length)
+                measured[t[0]] = double.Parse(t[at + 1], System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        var rect = new List<Point3d>
+        {
+            new Point3d(0,0,0), new Point3d(2,0,0), new Point3d(2,1,0), new Point3d(0,1,0)
+        };
+        var skew = new List<Point3d>
+        {
+            new Point3d(0,0,0), new Point3d(2,0,0), new Point3d(2.5,1,0), new Point3d(1.0,1.2,0)
+        };
+
+        foreach (var pair in new[] { Tuple.Create("RECT", rect), Tuple.Create("SKEW", skew) })
+        {
+            if (!measured.TryGetValue(pair.Item1, out double want)) continue;
+
+            var frame = Alpaca4d.Utils.ShellFrame(pair.Item2, Vector3d.Zero);
+            double got = Math.Atan2(frame.X.Y, frame.X.X) * 180.0 / Math.PI;
+
+            Close(got, want, 1e-3, $"{pair.Item1}: Utils.ShellFrame against the solver's own axis 1");
+        }
+
+        // The skew case is the one that means anything: a rectangle's two candidate directions
+        // agree, so only a quad that is not one can tell them apart.
+        if (measured.ContainsKey("SKEW"))
+            Check(Math.Abs(measured["SKEW"]) > 1.0,
+                  $"and the skew quad's axis 1 is not its first edge, which is what makes that a real check " +
+                  $"({measured["SKEW"]:F3} deg off it)");
+
+        Console.WriteLine();
+
+        // A triangle has no section angle of its own: ASDShellT3's default section direction is
+        // node 1 to 2, the very vector its reference frame is built on, so the two coincide - and
+        // ShellNLDKGT::updateBasis builds the same frame from scratch.
+        var tri = new List<Point3d> { new Point3d(0,0,0), new Point3d(1,1,0), new Point3d(0,1,0) };
+        var triFrame = Alpaca4d.Utils.ShellFrame(tri, Vector3d.Zero);
+        Close(Math.Atan2(triFrame.X.Y, triFrame.X.X) * 180.0 / Math.PI, 45.0, 1e-9,
+              "a triangle's axis 1 is its first edge");
+
+        // A -local given is flattened onto the element plane rather than taken as the axis outright.
+        var tilted = Alpaca4d.Utils.ShellFrame(rect, new Vector3d(0.5, 0.5, 7.0));
+        Close(Math.Atan2(tilted.X.Y, tilted.X.X) * 180.0 / Math.PI, 45.0, 1e-9,
+              "a -local pointing well out of the plane is flattened onto it");
+
+        foreach (var deg in new[] { 30.0, 90.0, 200.0 })
+        {
+            double r = deg * Math.PI / 180.0;
+            var f = Alpaca4d.Utils.ShellFrame(rect, new Vector3d(Math.Cos(r), Math.Sin(r), 0));
+            double got = Math.Atan2(f.X.Y, f.X.X) * 180.0 / Math.PI;
+            if (got < -1e-9) got += 360.0;
+            Close(got, deg, 1e-9, $"a -local at {deg} degrees gives axis 1 there");
+
+            Check(Math.Abs(f.X * f.Y) < 1e-12 && Math.Abs(f.Y * f.Z) < 1e-12 && Math.Abs(f.Z * f.X) < 1e-12
+                  && (Vector3d.CrossProduct(f.X, f.Y) - f.Z).Length < 1e-12,
+                  $"and the frame stays orthonormal and right handed at {deg} degrees");
+        }
+    }
+
     static void Main(string[] args)
     {
         Console.WriteLine("Shell stresses through the thickness, and the layered section");
 
         LayerTests();
         LayeredSectionTests();
+
+        string frame = args.Length > 2 ? args[2] : "frame.txt";
+        if (File.Exists(frame)) FrameTests(frame);
 
         string plate = args.Length > 0 ? args[0] : "plate.mpco";
         string layered = args.Length > 1 ? args[1] : "layered.mpco";

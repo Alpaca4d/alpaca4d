@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -52,6 +52,7 @@ namespace Alpaca4d.Gh
         private MenuDropDown _ddComponent;
         private MenuDropDown _ddLayer;
         private MenuDropDown _ddReaction;
+        private MenuDropDown _ddAxes;
         private MenuCheckBox _ckDeformed;
         private MenuSlider _slDeformScale;
         private MenuCheckBox _ckAnimate;
@@ -63,6 +64,7 @@ namespace Alpaca4d.Gh
         // A caption is hidden with the control it names, so both are held.
         private MenuStaticText _txLayer;
         private MenuStaticText _txReaction;
+        private MenuStaticText _txAxes;
         private MenuStaticText _txDeformScale;
         private MenuStaticText _txDiagramScale;
         private MenuStaticText _txTextSize;
@@ -137,8 +139,14 @@ namespace Alpaca4d.Gh
                 _ddReaction.AddItem(name, name);
             _ddReaction.ValueChanged += OnWidgetChanged;
 
+            _ddAxes = new MenuDropDown(4, "Axes", "Axes") { VisibleItemCount = 2 };
+            foreach (var name in ResultField.StressAxes)
+                _ddAxes.AddItem(name, name);
+            _ddAxes.ValueChanged += OnWidgetChanged;
+
             _txLayer = Caption("Layer through the thickness");
             _txReaction = Caption("Reactions drawn as");
+            _txAxes = Caption("Read in which axes");
 
             resultPanel.AddControl(Caption("Result"));
             resultPanel.AddControl(_ddFamily);
@@ -148,6 +156,8 @@ namespace Alpaca4d.Gh
             resultPanel.AddControl(_ddLayer);
             resultPanel.AddControl(_txReaction);
             resultPanel.AddControl(_ddReaction);
+            resultPanel.AddControl(_txAxes);
+            resultPanel.AddControl(_ddAxes);
             resultMenu.AddControl(resultPanel);
             resultMenu.Expand();
             attr.AddMenu(resultMenu);
@@ -208,6 +218,7 @@ namespace Alpaca4d.Gh
             _ddComponent.ValueChanged += OnWidgetChanged;
             _ddLayer.ValueChanged += OnWidgetChanged;
             _ddReaction.ValueChanged += OnWidgetChanged;
+            _ddAxes.ValueChanged += OnWidgetChanged;
             _ckDeformed.ValueChanged += OnWidgetChanged;
             _slDeformScale.ValueChanged += OnWidgetChanged;
             _ckAnimate.ValueChanged += OnAnimateChanged;
@@ -255,6 +266,7 @@ namespace Alpaca4d.Gh
             var family = Family;
 
             Show(ResultField.HasLayers(family), _txLayer, _ddLayer);
+            Show(ResultField.HasAxes(family), _txAxes, _ddAxes);
             Show(ResultField.HasReactionStyle(family), _txReaction, _ddReaction);
             Show(ResultField.HasScale(family), _txDiagramScale, _slDiagramScale);
 
@@ -454,13 +466,14 @@ namespace Alpaca4d.Gh
             var family = Family;
             int component = _ddComponent?.Value ?? 0;
             int layer = _ddLayer?.Value ?? 0;
+            bool localAxes = (_ddAxes?.Value ?? 0) == 1;
 
-            var key = $"{_model.GetHashCode()}|{family}|{component}|{layer}|{step}";
+            var key = $"{_model.GetHashCode()}|{family}|{component}|{layer}|{step}|{localAxes}";
             if (key != _cacheKey)
             {
                 try
                 {
-                    _cachedField = ResultField.Read(_model, family, component, layer, step);
+                    _cachedField = ResultField.Read(_model, family, component, layer, step, localAxes);
                     _cachedDisplacement = NodalOffsets(step);
                 }
                 catch (Exception ex)

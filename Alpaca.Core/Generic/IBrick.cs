@@ -18,5 +18,12 @@ namespace Alpaca4d.Generic
         public List<int?> IndexNodes { get; set; }
         public Color Color { get; set; }
 
+        /// <summary>
+        /// The element's own axes, taken from the order its nodes are numbered in - see
+        /// Utils.SolidAxes for the convention. A frame to report a stress in; it never reaches the
+        /// solver, which runs every solid in the global axes.
+        /// </summary>
+        public Plane LocalPlane { get; }
+
     }
 }

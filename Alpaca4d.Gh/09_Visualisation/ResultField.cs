@@ -45,10 +45,10 @@ namespace Alpaca4d.Gh
         private static readonly string[] BeamForceNames = { "N", "Vy", "Vz", "Torsion", "My", "Mz" };
         private static readonly string[] ShellForceNames = { "fxx", "fyy", "fxy", "mxx", "myy", "mxy", "vxz", "vyz" };
         private static readonly string[] ShellStressNames = { "σ11", "σ22", "σ12", "σ23", "σ31", "VonMises" };
-        // The global axes, which is what a solid's stress is in: neither SSPbrick nor
-        // FourNodeTetrahedron has a frame of its own, and neither does an nD material, so the six
-        // components come back in world X, Y and Z. Named that way here and in Brick Stresses.
-        private static readonly string[] BrickStressNames = { "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "VonMises" };
+        // Index notation, because the frame is the Axes dropdown's to choose: the solver reports in
+        // the global axes, and Axes can turn the six components into the element's own, taken from
+        // its node numbering. Naming them sigma-xx would be right for only one of the two settings.
+        private static readonly string[] BrickStressNames = { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
 
         /// <summary>What the Component dropdown offers for a given family.</summary>
@@ -109,6 +109,19 @@ namespace Alpaca4d.Gh
             return family == ResultFamily.BeamForce || family == ResultFamily.Reaction;
         }
 
+        /// <summary>
+        /// Whether the family can be read in a frame other than the global one. Only the solids:
+        /// a beam force is already in the beam's axes and a shell stress in the shell's, and a
+        /// displacement and a reaction are vectors with nowhere else to go.
+        /// </summary>
+        public static bool HasAxes(ResultFamily family)
+        {
+            return family == ResultFamily.BrickStress;
+        }
+
+        /// <summary>The frames a solid stress can be read in, in the order the dropdown offers them.</summary>
+        public static readonly string[] StressAxes = { "Global", "Local" };
+
         /// <summary>Whether the family draws reactions, which have a style of their own to pick.</summary>
         public static bool HasReactionStyle(ResultFamily family)
         {
@@ -149,7 +162,8 @@ namespace Alpaca4d.Gh
             }
         }
 
-        public static ResultField Read(Alpaca4d.Model model, ResultFamily family, int component, int layer, int step)
+        public static ResultField Read(Alpaca4d.Model model, ResultFamily family, int component, int layer, int step,
+                                       bool localAxes = false)
         {
             switch (family)
             {
@@ -157,7 +171,7 @@ namespace Alpaca4d.Gh
                 case ResultFamily.BeamForce: return BeamForce(model, component, step);
                 case ResultFamily.ShellForce: return ShellForce(model, component, step);
                 case ResultFamily.ShellStress: return ShellStress(model, component, layer, step);
-                case ResultFamily.BrickStress: return BrickStress(model, component, step);
+                case ResultFamily.BrickStress: return BrickStress(model, component, step, localAxes);
                 default: return Reaction(model, component, step);
             }
         }
@@ -310,7 +324,7 @@ namespace Alpaca4d.Gh
             }
         }
 
-        private static ResultField BrickStress(Alpaca4d.Model model, int component, int step)
+        private static ResultField BrickStress(Alpaca4d.Model model, int component, int step, bool localAxes)
         {
             var field = new ResultField
             {
@@ -324,14 +338,14 @@ namespace Alpaca4d.Gh
 
             if (model.HasTetrahedron && tetrahedra.Count > 0)
             {
-                var read = Alpaca4d.Result.Read.TetrahedronStress(model, step);
+                var read = Alpaca4d.Result.Read.TetrahedronStress(model, step, local: localAxes);
                 FillFlat(field.ByElement, tetrahedra, component,
                     read.Item1, read.Item2, read.Item3, read.Item4, read.Item5, read.Item6);
             }
 
             if (model.HasSSpBrick && bricks.Count > 0)
             {
-                var read = Alpaca4d.Result.Read.SSPBrickStress(model, step);
+                var read = Alpaca4d.Result.Read.SSPBrickStress(model, step, local: localAxes);
                 FillFlat(field.ByElement, bricks, component,
                     read.Item1, read.Item2, read.Item3, read.Item4, read.Item5, read.Item6);
             }

@@ -16,10 +16,14 @@ namespace Alpaca4d.Gh
           : base("Brick Stresses (Alpaca4d)", "Brick Stresses",
             "Reads the stress state of every solid element of an analysed model - the six components " +
             "of the stress tensor plus the Von Mises equivalent stress.\n" +
-            "One value per element, in the global axes. Neither solid element has a frame of its " +
-            "own: both build their strain from global nodal displacements and hand it straight to " +
-            "the nD material, and an nD material has no orientation either. An SSP Brick and a " +
-            "Four Node Tetrahedron, the only two solid types, each have one integration point.\n" +
+            "One value per element. An SSP Brick and a Four Node Tetrahedron, the only two solid " +
+            "types, each have one integration point.\n" +
+            "Axes picks the frame the six components are read in: the global one the solver works " +
+            "in, or the element's own, taken from the order its nodes are numbered - 1 to 2 is " +
+            "local 1, 1 to 4 (1 to 3 on a tetrahedron) sets local 2, and local 3 comes out along " +
+            "1 to 5 (1 to 4). Plane says which frame was used, so it is never a guess.\n" +
+            "The local frame is for reading only. OpenSees gives neither solid an orientation " +
+            "argument, so the analysis is run in the global axes whatever Axes says.\n" +
             "Values come tetrahedra first, then SSP bricks - Element says which is which. Give " +
             "ElementId to read part of a big model.",
             "Alpaca4d", "08_NumericalOutput")
@@ -44,24 +48,52 @@ namespace Alpaca4d.Gh
             _filterInput = pManager.ParamCount;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _axesInput = pManager.ParamCount;
+            pManager.AddIntegerParameter("Axes", "Axes",
+                "Which frame to read the six components in: 0 = global, the axes the solver works " +
+                "in; 1 = the element's own, from its node numbering. Plane reports whichever was used.",
+                GH_ParamAccess.item, 0);
+            pManager[pManager.ParamCount - 1].Optional = true;
         }
 
         /// <summary>Where the ElementId filter sits in the input list.</summary>
         private int _filterInput;
+
+        /// <summary>Where the Axes choice sits in the input list.</summary>
+        private int _axesInput;
+
+        /// <summary>The Axes dropdown, offered as a value list rather than a bare integer.</summary>
+        protected override void BeforeSolveInstance()
+        {
+            base.BeforeSolveInstance();
+            Alpaca4d.UIWidgets.ValueList.UpdateValueLists(
+                this, _axesInput,
+                new List<string> { "Global", "Local" },
+                new List<int> { 0, 1 },
+                Grasshopper.Kernel.Special.GH_ValueListMode.DropDown, 0);
+        }
 
         /// <summary>
         /// Registers all the output parameters for this component.
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("SigmaXX", "σxx", $"Direct stress along the global X axis [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("SigmaYY", "σyy", $"Direct stress along the global Y axis [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("SigmaZZ", "σzz", $"Direct stress along the global Z axis [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("SigmaXY", "σxy", $"Shear stress in the global XY plane [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("SigmaYZ", "σyz", $"Shear stress in the global YZ plane [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("SigmaZX", "σzx", $"Shear stress in the global ZX plane [{Units.Force}/{Units.Length}²]");
-            pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, derived from the six components above [{Units.Force}/{Units.Length}²]");
+            // Index notation, because the frame is the user's choice: 1, 2 and 3 are the global X,
+            // Y and Z when Axes is Global, and the element's own axes when it is Local. Plane is
+            // what says which, and is the world plane in the global case.
+            const string Frame = "1, 2 and 3 are the global X, Y and Z, or the element's own axes when Axes is Local";
+            pManager.Register_GenericParam("Sigma11", "σ₁₁", $"Direct stress along axis 1. {Frame} [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("Sigma22", "σ₂₂", $"Direct stress along axis 2. {Frame} [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("Sigma33", "σ₃₃", $"Direct stress along axis 3. {Frame} [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("Sigma12", "σ₁₂", $"Shear stress in the 1-2 plane. {Frame} [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("Sigma23", "σ₂₃", $"Shear stress in the 2-3 plane. {Frame} [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("Sigma13", "σ₁₃", $"Shear stress in the 1-3 plane. {Frame} [{Units.Force}/{Units.Length}²]");
+            pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, derived from the six components above. The same number in either frame [{Units.Force}/{Units.Length}²]");
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
+            pManager.Register_PlaneParam("Plane", "Plane",
+                "The frame each element's components are given in - the world plane at the element " +
+                "centre when Axes is Global, the element's own axes when it is Local. One per element, " +
+                "matching Element.");
         }
 
         /// <summary>
@@ -79,6 +111,10 @@ namespace Alpaca4d.Gh
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
+            int axes = 0;
+            DA.GetData(_axesInput, ref axes);
+            bool local = axes == 1;
+
             var filter = ElementFilterInput.Read(DA, _filterInput, this);
 
             var steps = HistorySteps.Of(alpacaModel, history, step, this);
@@ -92,7 +128,7 @@ namespace Alpaca4d.Gh
 
             foreach (int current in steps)
             {
-                var stresses = StressesAt(alpacaModel, current);
+                var stresses = StressesAt(alpacaModel, current, local);
                 for (int i = 0; i < outputs.Length; i++)
                     outputs[i].AddRange(ElementFilterInput.Slice(stresses[i], kept), new Grasshopper.Kernel.Data.GH_Path(current));
             }
@@ -111,6 +147,15 @@ namespace Alpaca4d.Gh
             // The only thing saying which element each value belongs to: unlike the beam and
             // shell components these outputs are flat lists, with no branch path to carry a tag.
             DA.SetDataList(7, kept.Select(i => bricks[i]));
+
+            // The frame the numbers above are in. Written out even in the global case, where it is
+            // the world plane sat at the element's centre, so that reading the two together never
+            // depends on remembering which way the Axes input was set.
+            DA.SetDataList(8, kept.Select(i => local
+                ? bricks[i].LocalPlane
+                : new Rhino.Geometry.Plane(bricks[i].LocalPlane.Origin,
+                                           Rhino.Geometry.Vector3d.XAxis,
+                                           Rhino.Geometry.Vector3d.YAxis)));
         }
 
         /// <summary>
@@ -134,8 +179,12 @@ namespace Alpaca4d.Gh
         /// <summary>
         /// The six stress components and von Mises at one step, in the order the outputs are
         /// registered, each holding one value per brick.
+        ///
+        /// Von Mises is computed after the frame has been chosen, which costs nothing and is worth
+        /// saying: it is an invariant, so the two frames give the same number, and a difference
+        /// between them would mean the rotation had gone wrong.
         /// </summary>
-        private static List<double>[] StressesAt(Alpaca4d.Model alpacaModel, int step)
+        private static List<double>[] StressesAt(Alpaca4d.Model alpacaModel, int step, bool local)
         {
             List<double> tetraSigma11 = new List<double>();
             List<double> tetraSigma22 = new List<double>();
@@ -153,11 +202,11 @@ namespace Alpaca4d.Gh
 
             if (alpacaModel.HasTetrahedron)
             {
-                (tetraSigma11, tetraSigma22, tetraSigma33, tetraSigma12, tetraSigma23, tetraSigma13) = Alpaca4d.Result.Read.TetrahedronStress(alpacaModel, step);
+                (tetraSigma11, tetraSigma22, tetraSigma33, tetraSigma12, tetraSigma23, tetraSigma13) = Alpaca4d.Result.Read.TetrahedronStress(alpacaModel, step, local: local);
             }
             if (alpacaModel.HasSSpBrick)
             {
-                (sspSigma11, sspSigma22, sspSigma33, sspSigma12, sspSigma23, sspSigma13) = Alpaca4d.Result.Read.SSPBrickStress(alpacaModel, step);
+                (sspSigma11, sspSigma22, sspSigma33, sspSigma12, sspSigma23, sspSigma13) = Alpaca4d.Result.Read.SSPBrickStress(alpacaModel, step, local: local);
             }
 
 
