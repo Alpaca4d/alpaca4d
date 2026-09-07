@@ -1,4 +1,4 @@
-using Grasshopper;
+﻿using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Special;
 using Rhino.Geometry;
@@ -35,7 +35,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The Alpaca Model", GH_ParamAccess.item);
-            pManager.AddIntegerParameter("StressType", "StressType", "Stress type to display: 0=σ₁₁, 1=σ₂₂, 2=σ₃₃, 3=σ₁₂, 4=σ₂₃, 5=σ₁₃, 6=Von Mises", GH_ParamAccess.item, 0);
+            pManager.AddIntegerParameter("StressType", "StressType", "Stress component to display, in the global axes: 0=σxx, 1=σyy, 2=σzz, 3=σxy, 4=σyz, 5=σzx, 6=Von Mises", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Analysis step", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -67,7 +67,7 @@ namespace Alpaca4d.Gh
             // Update value list for StressType input
             var stressTypeNames = new List<string> 
             { 
-                "σ₁₁", "σ₂₂", "σ₃₃", "σ₁₂", "σ₂₃", "σ₁₃", "Von Mises" 
+                "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "Von Mises" 
             };
             var stressTypeValues = new List<int> { 0, 1, 2, 3, 4, 5, 6 };
             
@@ -129,8 +129,16 @@ namespace Alpaca4d.Gh
                     Alpaca4d.Result.Read.SSPBrickStress(_model, _step);
             }
 
+            // The elements in the order the two readers were just called in: every tetrahedron,
+            // then every SSP brick. Not the order the model holds them in, which is what the
+            // meshes below used to be coloured by - a model mixing the two kinds painted each
+            // brick with another one's stress.
+            var recordedOrder = _model.Bricks
+                .Where(x => x.ElementClass == Alpaca4d.Element.ElementClass.FourNodeTetrahedron)
+                .Concat(_model.Bricks.Where(x => x.ElementClass == Alpaca4d.Element.ElementClass.SSPBrick))
+                .ToList();
+
             // Merge stress data
-            var ids = _model.Bricks.Select(d => d.Id).ToList();
             var sigma11 = tetraSigma11.Concat(sspSigma11).ToList();
             var sigma22 = tetraSigma22.Concat(sspSigma22).ToList();
             var sigma33 = tetraSigma33.Concat(sspSigma33).ToList();
@@ -186,9 +194,9 @@ namespace Alpaca4d.Gh
 
             // Create colored meshes
             _coloredBrickMeshes.Clear();
-            for (int i = 0; i < _model.Bricks.Count; i++)
+            for (int i = 0; i < recordedOrder.Count; i++)
             {
-                var brick = _model.Bricks[i];
+                var brick = recordedOrder[i];
                 var mesh = brick.Mesh.DuplicateMesh();
                 
                 if (i < allStresses.Count)
@@ -208,7 +216,7 @@ namespace Alpaca4d.Gh
             }
 
             // Output info
-            string[] stressNames = { "σ₁₁", "σ₂₂", "σ₃₃", "σ₁₂", "σ₂₃", "σ₁₃", "Von Mises" };
+            string[] stressNames = { "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "Von Mises" };
             string info = $"Stress: {stressNames[_stressType]}, Min: {_min:F3}, Max: {_max:F3}, Step: {_step}";
             DA.SetData(0, info);
 

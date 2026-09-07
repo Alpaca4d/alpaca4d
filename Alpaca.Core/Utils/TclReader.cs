@@ -1093,36 +1093,21 @@ namespace Alpaca4d
         }
 
         /// <summary>
-        /// A closed tetrahedron or hexahedron. The faces are wound exactly as Utils.CleanTetrahedron
-        /// and Utils.CleanHexahedron wind them, because the element already stores its nodes in the
-        /// order those produced - and because a solid whose normals point inwards reports a negative
-        /// volume, which would turn up as a negative mass.
+        /// A closed tetrahedron or hexahedron, wound so that its normals point out of the solid.
+        ///
+        /// The nodes are taken straight off the element line in the order the solver was given
+        /// them, without reordering: that order is already the one OpenSees wants, and it is the
+        /// one Utils.CleanHexahedron and Utils.CleanTetrahedron produced when the deck was written.
+        /// Utils.SolidMesh is what winds it, so a solid read back from a deck and a solid built in
+        /// Grasshopper are the same mesh - which matters because a solid whose normals point inward
+        /// reports a negative volume, and that turns up as a negative mass.
         /// </summary>
         private Mesh SolidMeshOf(string[] tokens, int firstIndex, int vertexCount)
         {
-            var mesh = VerticesOf(tokens, firstIndex, vertexCount);
+            var vertices = VerticesOf(tokens, firstIndex, vertexCount)
+                .Vertices.ToPoint3dArray();
 
-            if (vertexCount == 4)
-            {
-                mesh.Faces.AddFace(0, 2, 1);
-                mesh.Faces.AddFace(0, 2, 3);
-                mesh.Faces.AddFace(0, 3, 1);
-                mesh.Faces.AddFace(1, 3, 2);
-            }
-            else
-            {
-                mesh.Faces.AddFace(0, 1, 2, 3);
-                mesh.Faces.AddFace(4, 5, 6, 7);
-                mesh.Faces.AddFace(1, 2, 6, 5);
-                mesh.Faces.AddFace(0, 3, 7, 4);
-                mesh.Faces.AddFace(0, 1, 5, 4);
-                mesh.Faces.AddFace(3, 2, 6, 7);
-            }
-
-            mesh.FaceNormals.ComputeFaceNormals();
-            mesh.UnifyNormals();
-
-            return mesh;
+            return Alpaca4d.Utils.SolidMesh(vertices);
         }
 
         private IUniaxialSection SectionAt(string[] tokens, int index, int elementTag)

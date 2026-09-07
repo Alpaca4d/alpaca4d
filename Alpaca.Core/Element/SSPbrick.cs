@@ -35,24 +35,24 @@ namespace Alpaca4d.Element
 
         }
 
+        /// <summary>
+        /// The eight nodes this brick sits on, in the order the mesh carries its vertices - which
+        /// is the order OpenSees wants, because Utils.CleanHexahedron put them in it.
+        ///
+        /// This used to append every hit of every search to one flat list, so a tolerance wide
+        /// enough to catch two nodes at one vertex produced nine indexes for eight vertices and
+        /// WriteTcl read the first eight of them: a brick quietly attached to the wrong nodes.
+        /// RTreeSearch returns exactly one index per vertex and says so when a vertex finds none.
+        /// </summary>
         public void SetTopologyRTree(Alpaca4d.Model model)
         {
-            var tol = model.Tollerance;
-            var meshPoints = this.Mesh.Vertices.ToList();
+            var meshPoints = this.Mesh.Vertices.ToPoint3dArray();
 
-            var closestIndexes = new List<int?>();
-
-            void SearchCallback(object sender, RTreeEventArgs e)
-            {
-                closestIndexes.Add(e.Id + 1);
-            }
-
-            foreach (var pt in meshPoints)
-            {
-                model.RTreeCloudPointThreeNDF.Search(new Rhino.Geometry.Sphere(pt, tol), SearchCallback);
-            }
-
-            this.IndexNodes = closestIndexes;
+            this.IndexNodes = Alpaca4d.Utils
+                .RTreeSearch(model.RTreeCloudPointThreeNDF, meshPoints, model.Tollerance,
+                             $"SSP Brick {this.Id}", model.UniquePointsThreeNDF)
+                .Select(x => (int?)(x + 1))
+                .ToList();
         }
 
         public string WriteTcl()

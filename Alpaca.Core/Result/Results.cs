@@ -778,106 +778,121 @@ namespace Alpaca4d.Result
 
 
         /// <summary>
-        /// 
+        /// The six stress components of every solid of one class, one value per element, in the
+        /// order the model lists those elements.
+        ///
+        /// Keyed by element tag rather than by row position. The recorder groups its rows by
+        /// element class and writes an ID dataset alongside them saying which element each row
+        /// belongs to; reading rows positionally only happens to work while the model's own order
+        /// and the file's agree, which is a coincidence of how Alpaca4d hands out tags rather than
+        /// anything the format promises.
+        ///
+        /// The group is found by class name rather than named outright. The recorder's directory
+        /// name carries an integration rule and a header index - "121-SSPbrick[400:0:0]" - and the
+        /// header index counts up when one class produces two different response layouts, so two
+        /// materials answering "stresses" differently put half the elements in a group that a
+        /// hard-coded name never opens. Every group for the class is read and merged instead.
         /// </summary>
-        /// <param name="alpacaModel"></param>
-        /// <param name="step"></param>
-        /// <param name="resultType"></param>
-        /// <returns></returns>
-        /// <exception cref="Exception"></exception>
-        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TetrahedronStress(Model alpacaModel, int step, string resultType = null)
+        /// <param name="className">The element's OpenSees class name, as it appears in the group name.</param>
+        /// <param name="elements">The elements to report on, in the order they are to be reported.</param>
+        private static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>)
+            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements)
         {
-            resultType = "179-FourNodeTetrahedron[300:0:0]";
-            var sigma11 = new List<double>();
-            var sigma22 = new List<double>();
-            var sigma33 = new List<double>();
-            var sigma12 = new List<double>();
-            var sigma23 = new List<double>();
-            var sigma13 = new List<double>();
+            const string BASE = ON_ELEMENTS + "/stresses";
+            const int COMPONENTS = 6;
 
+            var sigma = new List<double>[COMPONENTS];
+            for (int c = 0; c < COMPONENTS; c++)
+                sigma[c] = new List<double>();
+
+            if (elements.Count == 0)
+                return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
 
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
 
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
-            double[,] values;
 
-            var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/stresses/{resultType}/DATA/STEP_{step}");
-            var dimX = (long)dataset.Space.Dimensions[0];
-            var dimY = (long)dataset.Space.Dimensions[1];
+            if (!h5File.LinkExists(BASE))
+                throw new Exception(
+                    "The recorder file holds no stresses. Switch \"stresses\" on in the Recorder component.");
 
-            values = dataset.Read<double>().ToArray2D(dimX, dimY);
+            var rowById = new Dictionary<int, double[]>();
 
+            var groups = h5File.Group(BASE)
+                               .Children()
+                               .OfType<PureHDF.IH5Group>()
+                               .Where(group => group.Name.Contains(className))
+                               .ToList();
 
-            var tetrahedronBrickNumber = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.FourNodeTetrahedron).Count();
-            try
+            foreach (var group in groups)
             {
-                for (int i = 0; i < tetrahedronBrickNumber; i++)
+                if (!group.LinkExists("DATA") || !group.Group("DATA").LinkExists($"{STEP_PREFIX}{step}"))
+                    throw new Exception($"STEP_{step} not defined!");
+
+                var idDataset = group.Dataset("ID");
+                var dataDataset = group.Group("DATA").Dataset($"{STEP_PREFIX}{step}");
+
+                long rows = (long)dataDataset.Space.Dimensions[0];
+                long cols = (long)dataDataset.Space.Dimensions[1];
+
+                double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                int[,] ids = idDataset.Read<int>().ToArray2D((long)idDataset.Space.Dimensions[0], 1L);
+
+                for (int r = 0; r < rows; r++)
                 {
+                    var row = new double[cols];
+                    for (int c = 0; c < cols; c++)
+                        row[c] = data[r, c];
 
-                    sigma11.Add((double)values.GetValue(i, 0));
-                    sigma22.Add((double)values.GetValue(i, 1));
-                    sigma33.Add((double)values.GetValue(i, 2));
-                    sigma12.Add((double)values.GetValue(i, 3));
-                    sigma23.Add((double)values.GetValue(i, 4));
-                    sigma13.Add((double)values.GetValue(i, 5));
+                    rowById[ids[r, 0]] = row;
                 }
-
-                h5File.Dispose();
             }
-            catch
+
+            foreach (var element in elements)
             {
-                h5File.Dispose();
-                throw new Exception($"STEP_{step} not defined!");
+                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS)
+                    throw new Exception(
+                        $"The recorder file holds no stresses for {className} {element.Id}. The file was " +
+                        "written by a different model from the one being read - re-run the analysis.");
+
+                for (int c = 0; c < COMPONENTS; c++)
+                    sigma[c].Add(row[c]);
             }
 
-            return (sigma11, sigma22, sigma33, sigma12, sigma23, sigma13);
+            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
         }
 
+        /// <summary>
+        /// The stress in every four node tetrahedron, one value per element, in the order the model
+        /// lists them.
+        ///
+        /// The six components are sigma11, sigma22, sigma33, sigma12, sigma23 and sigma13, which is
+        /// the order FourNodeTetrahedron::setResponse names them in. They are the global axes: the
+        /// element builds its strain from global nodal displacements and hands it straight to the
+        /// nD material, and neither the element nor the material has a frame of its own.
+        /// </summary>
+        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TetrahedronStress(Model alpacaModel, int step, string resultType = null)
+        {
+            var tetrahedra = alpacaModel.Bricks
+                .Where(x => x.ElementClass == Element.ElementClass.FourNodeTetrahedron)
+                .ToList();
 
+            return SolidStress(alpacaModel, step, "FourNodeTetrahedron", tetrahedra);
+        }
+
+        /// <summary>
+        /// The stress in every SSP brick, one value per element, in the order the model lists them.
+        /// Same six components and same axes as <see cref="TetrahedronStress"/>; SSPbrick has no
+        /// "stresses" response of its own and passes the request to its material, which answers in
+        /// the three dimensional order sigma11, sigma22, sigma33, sigma12, sigma23, sigma31.
+        /// </summary>
         public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) SSPBrickStress(Model alpacaModel, int step, string resultType = null)
         {
-            resultType = "121-SSPbrick[400:0:0]";
-            var sigma11 = new List<double>();
-            var sigma22 = new List<double>();
-            var sigma33 = new List<double>();
-            var sigma12 = new List<double>();
-            var sigma23 = new List<double>();
-            var sigma13 = new List<double>();
+            var bricks = alpacaModel.Bricks
+                .Where(x => x.ElementClass == Element.ElementClass.SSPBrick)
+                .ToList();
 
-            string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
-
-            using var h5File = PureHDF.H5File.OpenRead(recorderPath);
-            double[,] values;
-
-            var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/stresses/{resultType}/DATA/STEP_{step}");
-            var dimX = (long)dataset.Space.Dimensions[0];
-            var dimY = (long)dataset.Space.Dimensions[1];
-
-            values = dataset.Read<double>().ToArray2D(dimX, dimY);
-
-            var sspBrickNumber = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.SSPBrick).Count();
-            try
-            {
-                for (int i = 0; i < sspBrickNumber; i++)
-                {
-
-                    sigma11.Add((double)values.GetValue(i, 0));
-                    sigma22.Add((double)values.GetValue(i, 1));
-                    sigma33.Add((double)values.GetValue(i, 2));
-                    sigma12.Add((double)values.GetValue(i, 3));
-                    sigma23.Add((double)values.GetValue(i, 4));
-                    sigma13.Add((double)values.GetValue(i, 5));
-                }
-
-                h5File.Dispose();
-            }
-            catch
-            {
-                h5File.Dispose();
-                throw new Exception($"STEP_{step} not defined!");
-            }
-
-            return (sigma11, sigma22, sigma33, sigma12, sigma23, sigma13);
+            return SolidStress(alpacaModel, step, "SSPbrick", bricks);
         }
 
 

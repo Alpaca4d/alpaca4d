@@ -25,23 +25,58 @@ namespace Alpaca4d
             plane.Rotate(-num + 1.5707963267948966, plane.ZAxis, plane.Origin);
             return plane;
         }
-        public static List<int> RTreeSearch(RTree tree, IList<Point3d> searchPoints, double tol)
+        /// <summary>
+        /// The node nearest each search point, as an index into the cloud the tree was built from,
+        /// counting from zero. Exactly one index per point, in the order the points were given.
+        ///
+        /// Nearest rather than first: a tolerance wide enough to catch two nodes used to hand back
+        /// whichever the tree happened to reach first, which is not a property of the model. A
+        /// point that catches nothing is an error rather than a gap in the list, because a caller
+        /// reading the result positionally - which every caller does - cannot see a gap.
+        /// </summary>
+        /// <param name="owner">
+        /// What is doing the searching, named in the message when a point finds no node. The
+        /// alternative is "No node found within tolerance" with nothing saying where to look.
+        /// </param>
+        /// <param name="cloud">
+        /// The points the tree was built from. Only needed to break a tie: without it the tree
+        /// hands back whichever of several hits it reached first.
+        /// </param>
+        public static List<int> RTreeSearch(RTree tree, IList<Point3d> searchPoints, double tol,
+                                            string owner = null, IList<Point3d> cloud = null)
         {
             var closestIndexes = new List<int>(searchPoints.Count);
 
             foreach (var pt in searchPoints)
             {
                 int foundIndex = -1;
+                double foundDistance = double.MaxValue;
+                var point = pt;
 
-                tree.Search(new Sphere(pt, tol), (sender, e) =>
+                tree.Search(new Sphere(point, tol), (sender, e) =>
                 {
-                    foundIndex = e.Id;
-                    // Stop further callbacks for this search once we have a hit
-                    e.Cancel = true;
+                    // The tree hands back everything inside the sphere in no particular order, so
+                    // when the cloud is to hand every hit is measured and the nearest kept.
+                    if (cloud == null)
+                    {
+                        foundIndex = e.Id;
+                        e.Cancel = true;
+                        return;
+                    }
+
+                    double distance = point.DistanceTo(cloud[e.Id]);
+                    if (foundIndex == -1 || distance < foundDistance)
+                    {
+                        foundIndex = e.Id;
+                        foundDistance = distance;
+                    }
                 });
 
                 if (foundIndex == -1)
-                    throw new Exception("No node found within tolerance.");
+                    throw new Exception(
+                        $"{owner ?? "Something"} reaches {pt}, where the model has no node within the " +
+                        $"tolerance of {tol}. Nodes are made by the elements that arrive at them, so a " +
+                        "point no element reaches has nothing to attach to.");
 
                 closestIndexes.Add(foundIndex);
             }
@@ -367,109 +402,82 @@ namespace Alpaca4d
             return result;
         }
 
+        /// <summary>
+        /// A mesh split into one mesh per face. Works on a copy: unwelding rewrites the mesh it is
+        /// called on, and the caller's mesh is the one the user drew.
+        /// </summary>
         private static List<Mesh> MeshToShell(Mesh mesh)
         {
-            mesh.Unweld(0, true);
-            var myMesh = mesh.ExplodeAtUnweldedEdges();
+            var working = mesh.DuplicateMesh();
+            working.Unweld(0, true);
 
-            var newMeshes = new List<Mesh>();
-            foreach (var explodedMesh in myMesh)
-            {
-                newMeshes.Add(explodedMesh);
-            }
-            return newMeshes;
+            return working.ExplodeAtUnweldedEdges().ToList();
         }
+        /// <summary>
+        /// A run of meshes swept into a layer of bricks between each neighbouring pair.
+        ///
+        /// Each brick takes its near face from one mesh and its far face from the next, pairing
+        /// them corner by corner in the order the two faces list their vertices. That pairing is
+        /// the whole method, and it is only right if every mesh in the series carries its faces and
+        /// its vertices in the same order - so the bricks are checked here rather than left to come
+        /// out twisted, because a twisted brick is one OpenSees solves rather than rejects.
+        /// </summary>
         public static List<Mesh> MeshSeriesToBrick(List<Mesh> MeshList)
         {
-            var meshExpl = new List<List<Mesh>>();
+            if (MeshList == null || MeshList.Count < 2)
+                throw new Exception("A series needs at least two meshes to sweep a brick between.");
+
             var solid = new List<Mesh>();
 
-            var a = MeshList[0].DuplicateMesh();
+            // Every mesh split into its own faces, so that a mesh of many faces sweeps into many
+            // bricks rather than one. A single face mesh explodes to a list of one and takes the
+            // same path.
+            var meshExpl = MeshList.Select(MeshToShell).ToList();
 
-
-            a.Unweld(0, true);
-            var b = a.ExplodeAtUnweldedEdges();
-            if (b.Count() > 0)
+            int faceCount = meshExpl[0].Count;
+            for (int i = 1; i < meshExpl.Count; i++)
             {
-                foreach (var Mesh in MeshList)
-                {
-                    var shellWrapper = MeshToShell(Mesh);
-                    meshExpl.Add(shellWrapper);
-                }
+                if (meshExpl[i].Count != faceCount)
+                    throw new Exception(
+                        $"Mesh {i + 1} of the series has {meshExpl[i].Count} faces where the first has " +
+                        $"{faceCount}. Each pair of neighbours becomes a layer of bricks, so every mesh in " +
+                        "the series has to carry the same faces in the same order.");
+            }
 
-                for (int index1 = 0; index1 < MeshList.Count() - 1; index1++)
+            for (int index1 = 0; index1 < meshExpl.Count - 1; index1++)
+            {
+                for (int index2 = 0; index2 < faceCount; index2++)
                 {
-                    for (int index2 = 0; index2 < meshExpl[0].Count(); index2++)
+                    var near = meshExpl[index1][index2];
+                    var far = meshExpl[index1 + 1][index2];
+
+                    // A triangle would sweep into a wedge, which is not an element Alpaca4d has;
+                    // saying so beats dropping it and returning fewer bricks than faces.
+                    if (near.Vertices.Count != 4 || far.Vertices.Count != 4)
+                        throw new Exception(
+                            $"Face {index2 + 1} of mesh {index1 + 1} or {index1 + 2} in the series has " +
+                            $"{Math.Min(near.Vertices.Count, far.Vertices.Count)} corners. A brick sweeps " +
+                            "between quadrilaterals, so triangulated meshes have to be quadrangulated first.");
+
+                    var nodes = near.Vertices.ToPoint3dArray()
+                                    .Concat(far.Vertices.ToPoint3dArray())
+                                    .ToList();
+
+                    // Both faces reversed together flips the sign without disturbing the pairing,
+                    // exactly as CleanHexahedron does it.
+                    if (HexahedronJacobian(nodes, 0.0, 0.0, 0.0) < 0.0)
                     {
-                        if (meshExpl[index1][index2].Vertices.Count == 4)
-                        {
-                            var vertix1 = meshExpl[index1][index2].Vertices[0];
-                            var vertix2 = meshExpl[index1][index2].Vertices[1];
-                            var vertix3 = meshExpl[index1][index2].Vertices[2];
-                            var vertix4 = meshExpl[index1][index2].Vertices[3];
-                            var vertix5 = meshExpl[index1 + 1][index2].Vertices[0];
-                            var vertix6 = meshExpl[index1 + 1][index2].Vertices[1];
-                            var vertix7 = meshExpl[index1 + 1][index2].Vertices[2];
-                            var vertix8 = meshExpl[index1 + 1][index2].Vertices[3];
-
-
-                            var ele = new Rhino.Geometry.Mesh();
-
-                            ele.Vertices.Add(vertix1);
-                            ele.Vertices.Add(vertix2);
-                            ele.Vertices.Add(vertix3);
-                            ele.Vertices.Add(vertix4);
-                            ele.Vertices.Add(vertix5);
-                            ele.Vertices.Add(vertix6);
-                            ele.Vertices.Add(vertix7);
-                            ele.Vertices.Add(vertix8);
-
-                            ele.Faces.AddFace(0, 1, 2, 3);
-                            ele.Faces.AddFace(4, 5, 6, 7);
-                            ele.Faces.AddFace(0, 1, 5, 4);
-                            ele.Faces.AddFace(3, 2, 6, 7);
-                            ele.Faces.AddFace(1, 5, 6, 2);
-                            ele.Faces.AddFace(0, 4, 7, 3);
-                            solid.Add(ele);
-
-                        }
+                        nodes = Enumerable.Range(0, 4).Reverse().Select(i => nodes[i])
+                                .Concat(Enumerable.Range(4, 4).Reverse().Select(i => nodes[i]))
+                                .ToList();
                     }
+
+                    CheckHexahedron(nodes);
+
+                    solid.Add(HexahedronMesh(nodes));
                 }
             }
-            else
-            {
-                for (int index1 = 0; index1 < MeshList.Count() - 1; index1++)
-                {
-                    var vertix1 = MeshList[index1].Vertices[0];
-                    var vertix2 = MeshList[index1].Vertices[1];
-                    var vertix3 = MeshList[index1].Vertices[2];
-                    var vertix4 = MeshList[index1].Vertices[3];
-                    var vertix5 = MeshList[index1 + 1].Vertices[0];
-                    var vertix6 = MeshList[index1 + 1].Vertices[1];
-                    var vertix7 = MeshList[index1 + 1].Vertices[2];
-                    var vertix8 = MeshList[index1 + 1].Vertices[3];
 
-                    var ele = new Rhino.Geometry.Mesh();
-
-                    ele.Vertices.Add(vertix1);
-                    ele.Vertices.Add(vertix2);
-                    ele.Vertices.Add(vertix3);
-                    ele.Vertices.Add(vertix4);
-                    ele.Vertices.Add(vertix5);
-                    ele.Vertices.Add(vertix6);
-                    ele.Vertices.Add(vertix7);
-                    ele.Vertices.Add(vertix8);
-
-                    ele.Faces.AddFace(0, 1, 2, 3);
-                    ele.Faces.AddFace(4, 5, 6, 7);
-                    ele.Faces.AddFace(0, 1, 5, 4);
-                    ele.Faces.AddFace(3, 2, 6, 7);
-                    ele.Faces.AddFace(1, 5, 6, 2);
-                    ele.Faces.AddFace(0, 4, 7, 3);
-
-                    solid.Add(ele);
-                }
-            }
             return solid;
         }
         /// <summary>
@@ -674,156 +682,282 @@ namespace Alpaca4d
         }
 
 
+        /// <summary>
+        /// The eight corners of the trilinear brick in its own local frame, in the order OpenSees
+        /// numbers the nodes: SSPbrick::GetStab lays its shape function derivatives out as nodes
+        /// one to four at zeta = -1 and nodes five to eight directly above them.
+        /// </summary>
+        private static readonly double[][] HexahedronCorners =
+        {
+            new[] { -1.0, -1.0, -1.0 }, new[] {  1.0, -1.0, -1.0 },
+            new[] {  1.0,  1.0, -1.0 }, new[] { -1.0,  1.0, -1.0 },
+            new[] { -1.0, -1.0,  1.0 }, new[] {  1.0, -1.0,  1.0 },
+            new[] {  1.0,  1.0,  1.0 }, new[] { -1.0,  1.0,  1.0 },
+        };
+
+        /// <summary>
+        /// The determinant of the Jacobian of a trilinear hexahedron at one point of its local
+        /// frame, its nodes given in OpenSees order.
+        ///
+        /// This is the quantity that decides whether a solid is usable at all. OpenSees forms the
+        /// volume element as the Gauss weight times this determinant and never looks at its sign,
+        /// so an element wound the wrong way round is not rejected: it solves, with a negative
+        /// stiffness, and hands back displacements pointing the wrong way and stresses of the
+        /// wrong sign. Nothing downstream can tell that from a real answer, which is why the
+        /// question is settled here.
+        /// </summary>
+        private static double HexahedronJacobian(IList<Point3d> nodes, double xi, double eta, double zeta)
+        {
+            var j = new double[3, 3];
+
+            for (int a = 0; a < 8; a++)
+            {
+                var corner = HexahedronCorners[a];
+
+                // d(N)/d(xi, eta, zeta) for N = (1 + xi_a xi)(1 + eta_a eta)(1 + zeta_a zeta) / 8
+                var dN = new[]
+                {
+                    0.125 * corner[0] * (1.0 + corner[1] * eta) * (1.0 + corner[2] * zeta),
+                    0.125 * corner[1] * (1.0 + corner[0] * xi)  * (1.0 + corner[2] * zeta),
+                    0.125 * corner[2] * (1.0 + corner[0] * xi)  * (1.0 + corner[1] * eta),
+                };
+
+                var x = new[] { nodes[a].X, nodes[a].Y, nodes[a].Z };
+
+                for (int row = 0; row < 3; row++)
+                    for (int col = 0; col < 3; col++)
+                        j[row, col] += x[row] * dN[col];
+            }
+
+            return j[0, 0] * (j[1, 1] * j[2, 2] - j[1, 2] * j[2, 1])
+                 - j[0, 1] * (j[1, 0] * j[2, 2] - j[1, 2] * j[2, 0])
+                 + j[0, 2] * (j[1, 0] * j[2, 1] - j[1, 1] * j[2, 0]);
+        }
+
+        /// <summary>
+        /// The determinant of the Jacobian of a four node tetrahedron, which is constant over the
+        /// element. Six times the signed volume, and the same number FourNodeTetrahedron::shp3d
+        /// computes as its Jdet.
+        /// </summary>
+        private static double TetrahedronJacobian(IList<Point3d> nodes)
+        {
+            return (nodes[1] - nodes[0]) * Vector3d.CrossProduct(nodes[2] - nodes[0], nodes[3] - nodes[0]);
+        }
+
+        /// <summary>
+        /// Throws unless a brick is the right way out everywhere, not just at its centre.
+        ///
+        /// A brick whose far face is twisted against its near one - which is what a mesh series
+        /// whose meshes carry their faces in different orders produces - can read positive at the
+        /// centre and still fold through itself at a corner, so every corner is checked.
+        /// </summary>
+        private static void CheckHexahedron(IList<Point3d> nodes)
+        {
+            double centre = HexahedronJacobian(nodes, 0.0, 0.0, 0.0);
+            double worst = centre;
+
+            foreach (var corner in HexahedronCorners)
+                worst = Math.Min(worst, HexahedronJacobian(nodes, corner[0], corner[1], corner[2]));
+
+            // Measured against the element's own size rather than an absolute figure, so that the
+            // same brick passes or fails the same way whatever the model is drawn in. A Jacobian
+            // scales as a volume, so the yardstick has to as well.
+            if (worst <= 0.0 || worst < 1.0e-8 * Math.Abs(centre))
+                throw new Exception(
+                    "This brick folds through itself: its Jacobian is not positive at every corner " +
+                    $"({worst:G4} at the worst corner against {centre:G4} at the centre). OpenSees would " +
+                    "solve it anyway, with a negative stiffness, and hand back displacements and stresses " +
+                    "of the wrong sign. Check that the two faces are drawn the same way round - a brick " +
+                    "built from a mesh series needs every mesh in that series to carry its faces and its " +
+                    "vertices in the same order.");
+        }
+
+        /// <summary>
+        /// The closed surface of a hexahedron whose nodes are in OpenSees order, wound so that
+        /// every face normal points out of the solid.
+        ///
+        /// Written out face by face rather than left to Mesh.UnifyNormals, which only makes the
+        /// faces agree with one another - which of the two agreeing answers it settles on is its
+        /// own business. Everything that asks this mesh for a volume, and so everything that turns
+        /// a density into a weight, needs the outward one.
+        /// </summary>
+        private static Mesh HexahedronMesh(IList<Point3d> nodes)
+        {
+            var mesh = new Mesh();
+
+            foreach (var node in nodes)
+                mesh.Vertices.Add(node);
+
+            mesh.Faces.AddFace(0, 3, 2, 1); // zeta = -1
+            mesh.Faces.AddFace(4, 5, 6, 7); // zeta = +1
+            mesh.Faces.AddFace(0, 1, 5, 4); // eta  = -1
+            mesh.Faces.AddFace(3, 7, 6, 2); // eta  = +1
+            mesh.Faces.AddFace(1, 2, 6, 5); // xi   = +1
+            mesh.Faces.AddFace(0, 4, 7, 3); // xi   = -1
+
+            mesh.FaceNormals.ComputeFaceNormals();
+            mesh.Normals.ComputeNormals();
+
+            return mesh;
+        }
+
+        /// <summary>
+        /// The closed surface of a tetrahedron whose nodes are in OpenSees order, wound outward.
+        /// The counterpart of <see cref="HexahedronMesh"/>, and outward for the same reason.
+        /// </summary>
+        private static Mesh TetrahedronMesh(IList<Point3d> nodes)
+        {
+            var mesh = new Mesh();
+
+            foreach (var node in nodes)
+                mesh.Vertices.Add(node);
+
+            mesh.Faces.AddFace(0, 2, 1);
+            mesh.Faces.AddFace(0, 3, 2);
+            mesh.Faces.AddFace(0, 1, 3);
+            mesh.Faces.AddFace(1, 2, 3);
+
+            mesh.FaceNormals.ComputeFaceNormals();
+            mesh.Normals.ComputeNormals();
+
+            return mesh;
+        }
+
+        /// <summary>
+        /// A closed solid mesh built straight from nodes already in OpenSees order - four for a
+        /// tetrahedron, eight for a brick - without reordering them.
+        ///
+        /// For reading a deck back, where the element line already carries the order the solver
+        /// was given and the only thing left to do is draw it.
+        /// </summary>
+        public static Mesh SolidMesh(IList<Point3d> nodes)
+        {
+            if (nodes.Count == 4)
+                return TetrahedronMesh(nodes);
+
+            if (nodes.Count == 8)
+                return HexahedronMesh(nodes);
+
+            throw new Exception($"A solid has four nodes or eight, not {nodes.Count}.");
+        }
+
+        /// <summary>
+        /// The mesh with any vertices sitting on top of one another merged into one, but only if
+        /// that is what it takes to reach <paramref name="wanted"/>.
+        ///
+        /// A box drawn in Rhino and exploded, or one that has been through a boolean, arrives with
+        /// its corners split - twenty four vertices where a brick has eight - and every corner then
+        /// looks like a separate node. Welding it is what the user would have done by hand; doing it
+        /// on a copy leaves the mesh they drew alone.
+        /// </summary>
+        private static Mesh Welded(Mesh mesh, int wanted)
+        {
+            if (mesh.Vertices.Count == wanted)
+                return mesh;
+
+            var working = mesh.DuplicateMesh();
+            working.Vertices.CombineIdentical(true, true);
+
+            return working;
+        }
+
+        /// <summary>
+        /// An eight vertex mesh reordered into the node order OpenSees wants for a brick, and
+        /// rebuilt as a closed outward facing mesh.
+        ///
+        /// The element carries its nodes in whatever order this hands back, so this is the one
+        /// place that decides whether a brick is the right way out. It used to decide by firing a
+        /// ray of a fixed 1000 units along the first face normal and counting crossings, which
+        /// asks a question about the model's units rather than about the element - a solid deeper
+        /// than that in the direction of the ray, or thinner than the 0.001 the ray was nudged by,
+        /// answered it backwards. It now asks the solver's own question, whether the Jacobian is
+        /// positive, and answers it exactly.
+        /// </summary>
         public static Mesh CleanHexahedron(Mesh brick)
         {
-            brick.FaceNormals.ComputeFaceNormals();
+            brick = Welded(brick, 8);
 
-            // Find the center face and normal
-            Point3d faceCenter = brick.Faces.GetFaceCenter(0);
-            Vector3d faceNormal = brick.FaceNormals[0];
+            if (brick.Vertices.Count != 8)
+                throw new Exception(
+                    $"A brick is a mesh of eight vertices. This one has {brick.Vertices.Count} once " +
+                    "coincident vertices are merged.");
 
-            List<Point3d> polyCurvePts = new List<Point3d>();
-            List<int> firstFace = new List<int>();
+            if (brick.Faces.Count == 0 || !brick.Faces[0].IsQuad)
+                throw new Exception(
+                    "A brick is a mesh of six quadrilateral faces. This one's first face is not a quad.");
 
-            foreach (int item in brick.Faces.GetTopologicalVertices(0))
+            // The first face, and facing it the four vertices that pair with its corners: for each
+            // corner, the one vertex sharing an edge with it that is not itself on that face.
+            var face = brick.Faces[0];
+            var firstFace = new List<int> { face.A, face.B, face.C, face.D };
+            var secondFace = new List<int>();
+
+            foreach (int corner in firstFace)
             {
-                polyCurvePts.Add(brick.Vertices[item]);
-                firstFace.Add(item);
+                var offFace = brick.Vertices.GetConnectedVertices(corner)
+                                            .Where(i => i != corner && !firstFace.Contains(i))
+                                            .ToList();
+
+                if (offFace.Count != 1)
+                    throw new Exception(
+                        $"Vertex {corner} of this brick joins {offFace.Count} vertices off its first face, " +
+                        "where a hexahedron joins exactly one. The mesh is not a closed eight vertex brick - " +
+                        "look for a missing face, a split vertex, or two corners closer together than the " +
+                        "model tolerance.");
+
+                secondFace.Add(offFace[0]);
             }
 
-            Curve faceEdge = Curve.CreateControlPointCurve(polyCurvePts, 1);
+            List<Point3d> Nodes() => firstFace.Concat(secondFace)
+                                              .Select(i => (Point3d)brick.Vertices[i])
+                                              .ToList();
 
-            // Find the number of intersections to determine if the normal is pointing outside
-            Line line = new Line(faceCenter, faceCenter + (1000 * faceNormal));
-            line.Extend(0.001, 0.001);
-            var intersections = Rhino.Geometry.Intersect.Intersection.MeshLine(brick, line);
-            int result = intersections.Length;
+            var nodes = Nodes();
 
-            if (result > 1)
-            {
-                faceNormal.Reverse();
-            }
-
-            CurveOrientation orientation = faceEdge.ClosedCurveOrientation(faceNormal);
-
-            List<int> secondFace = new List<int>();
-
-            foreach (int item in brick.Faces.GetTopologicalVertices(0))
-            {
-                int[] indices = brick.Vertices.GetConnectedVertices(item);
-                foreach (int i in indices)
-                {
-                    if (!brick.Faces.GetTopologicalVertices(0).Contains(i))
-                    {
-                        secondFace.Add(i);
-                    }
-                }
-            }
-
-            if (orientation != CurveOrientation.Clockwise)
+            // Reversing the winding of both faces together turns the local frame inside out, and so
+            // flips the sign of the Jacobian, while leaving each far vertex facing the same near one.
+            if (HexahedronJacobian(nodes, 0.0, 0.0, 0.0) < 0.0)
             {
                 firstFace.Reverse();
                 secondFace.Reverse();
+                nodes = Nodes();
             }
 
-            // Create new brick
-            Mesh newBrick = new Mesh();
+            CheckHexahedron(nodes);
 
-            foreach (int index in firstFace)
-            {
-                newBrick.Vertices.Add(brick.Vertices[index]);
-            }
-
-            foreach (int index in secondFace)
-            {
-                newBrick.Vertices.Add(brick.Vertices[index]);
-            }
-
-            newBrick.Faces.AddFace(0, 1, 2, 3);
-            newBrick.Faces.AddFace(4, 5, 6, 7);
-            newBrick.Faces.AddFace(1, 2, 6, 5);
-            newBrick.Faces.AddFace(0, 3, 7, 4);
-            newBrick.Faces.AddFace(0, 1, 5, 4);
-            newBrick.Faces.AddFace(3, 2, 6, 7);
-
-            newBrick.FaceNormals.ComputeFaceNormals();
-            newBrick.UnifyNormals();
-
-            return newBrick;
+            return HexahedronMesh(nodes);
         }
 
-
+        /// <summary>
+        /// A four vertex mesh reordered into the node order OpenSees wants for a tetrahedron, and
+        /// rebuilt as a closed outward facing mesh. The counterpart of
+        /// <see cref="CleanHexahedron"/>, and it decides the same question the same way.
+        /// </summary>
         public static Mesh CleanTetrahedron(Mesh iMesh)
         {
-            Point3d[] iPoints = iMesh.Vertices.ToPoint3dArray();
+            var nodes = Welded(iMesh, 4).Vertices.ToPoint3dArray().ToList();
 
-            List<Point3d> iPoint = new List<Point3d>();
-            foreach (Point3d pt in iPoints)
+            if (nodes.Count != 4)
+                throw new Exception(
+                    $"A tetrahedron is a mesh of four vertices. This one has {nodes.Count} once " +
+                    "coincident vertices are merged.");
+
+            // Swapping any two nodes turns the local frame inside out, and so flips the sign of the
+            // Jacobian.
+            if (TetrahedronJacobian(nodes) < 0.0)
             {
-                iPoint.Add(pt);
+                var held = nodes[1];
+                nodes[1] = nodes[2];
+                nodes[2] = held;
             }
 
-            Mesh tets = new Mesh();
+            if (TetrahedronJacobian(nodes) <= 0.0)
+                throw new Exception(
+                    "This tetrahedron encloses no volume: its four vertices lie on one plane, or two of " +
+                    "them are the same point. OpenSees divides the shape function derivatives by the " +
+                    "Jacobian, so there is nothing here it can solve.");
 
-            foreach (Point3d pt in iPoint)
-            {
-                tets.Vertices.Add(pt);
-            }
-
-            tets.Faces.AddFace(0, 2, 1);
-            tets.Faces.AddFace(0, 2, 3);
-            tets.Faces.AddFace(0, 3, 1);
-            tets.Faces.AddFace(1, 3, 2);
-
-            tets.FaceNormals.ComputeFaceNormals();
-
-            // find the center face and normal
-            Point3d faceCenter = tets.Faces.GetFaceCenter(0);
-            Vector3d faceNormal = tets.FaceNormals[0];
-
-            List<Point3d> polyCurvePt = new List<Point3d>();
-            polyCurvePt.AddRange(iPoint.GetRange(0, 3));
-            polyCurvePt.Add(iPoint[0]);
-            Curve faceEdge = new Polyline(polyCurvePt).ToNurbsCurve();
-
-            // find number of intersection to understand if the normal is pointing outside
-            Line line = new Line(faceCenter, faceCenter + (1000 * faceNormal));
-            line.Extend(0.001, 0.001);
-            var intersections = Rhino.Geometry.Intersect.Intersection.MeshLine(tets, line);
-            int result = intersections.Length;
-            Console.WriteLine(result);
-
-            if (result > 1)
-            {
-                faceNormal.Reverse();
-            }
-
-            CurveOrientation orientation = faceEdge.ClosedCurveOrientation(faceNormal);
-
-            if (orientation != CurveOrientation.Clockwise)
-            {
-                // change the order if it is anticlockwise
-                Mesh newTets = new Mesh();
-
-                newTets.Vertices.Add(iPoint[0]);
-                newTets.Vertices.Add(iPoint[2]);
-                newTets.Vertices.Add(iPoint[1]);
-                newTets.Vertices.Add(iPoint[3]);
-
-                newTets.Faces.AddFace(0, 2, 1);
-                newTets.Faces.AddFace(0, 2, 3);
-                newTets.Faces.AddFace(0, 3, 1);
-                newTets.Faces.AddFace(1, 3, 2);
-
-                newTets.FaceNormals.ComputeFaceNormals();
-                newTets.UnifyNormals();
-
-                return newTets;
-            }
-            else
-            {
-                return tets;
-            }
+            return TetrahedronMesh(nodes);
         }
 
         public static List<Curve> Explode(Curve curve, bool recursive = false)

@@ -36,24 +36,21 @@ namespace Alpaca4d.Element
 
         }
 
+        /// <summary>
+        /// The four nodes this tetrahedron sits on, in the order the mesh carries its vertices -
+        /// which is the order OpenSees wants, because Utils.CleanTetrahedron put them in it.
+        /// Exactly one node per vertex; see <see cref="SSPbrick.SetTopologyRTree"/> for why that
+        /// is worth insisting on.
+        /// </summary>
         public void SetTopologyRTree(Alpaca4d.Model model)
         {
-            var tol = model.Tollerance;
-            var meshPoints = this.Mesh.Vertices.ToList();
+            var meshPoints = this.Mesh.Vertices.ToPoint3dArray();
 
-            var closestIndexes = new List<int?>();
-
-            void SearchCallback(object sender, RTreeEventArgs e)
-            {
-                closestIndexes.Add(e.Id + 1);
-            }
-
-            foreach (var pt in meshPoints)
-            {
-                model.RTreeCloudPointThreeNDF.Search(new Rhino.Geometry.Sphere(pt, tol), SearchCallback);
-            }
-
-            this.IndexNodes = closestIndexes;
+            this.IndexNodes = Alpaca4d.Utils
+                .RTreeSearch(model.RTreeCloudPointThreeNDF, meshPoints, model.Tollerance,
+                             $"Four Node Tetrahedron {this.Id}", model.UniquePointsThreeNDF)
+                .Select(x => (int?)(x + 1))
+                .ToList();
         }
 
         public string WriteTcl()

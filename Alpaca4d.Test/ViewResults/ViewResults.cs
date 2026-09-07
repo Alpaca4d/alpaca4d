@@ -1,4 +1,4 @@
-// The dropdown wiring behind View Results.
+﻿// The dropdown wiring behind View Results.
 //
 // The component offers a Result and a Component in two dropdowns, and turns the pair into a call
 // on one of the readers. Every one of those readers hands back a tuple in an order of its own, and
@@ -139,9 +139,11 @@ class ViewResultsTest
 
         Section("Solid stresses, against what Brick Stresses View offers");
         {
-            // Index notation and the element's own axes. Named sigma-xx it would read as the
-            // global ones, which is not what the reader reports.
-            var expected = new[] { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
+            // The global axes, which is what the reader reports: neither SSPbrick nor
+            // FourNodeTetrahedron takes a local axis, and neither does an nD material, so a
+            // solid's stress is in world X, Y and Z. This used to expect index notation, on the
+            // reading that the numbers were the element's own axes - they never were.
+            var expected = new[] { "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "VonMises" };
             Check(ComponentNames("BrickStress").SequenceEqual(expected),
                   "three direct, three shear, then the equivalent computed from them");
         }

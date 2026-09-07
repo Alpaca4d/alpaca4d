@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -96,7 +96,7 @@ namespace Alpaca4d
                         var shell = (IShell)item;
 
                         double meshArea = Rhino.Geometry.AreaMassProperties.Compute(shell.Mesh).Area;
-                        var areaDensity = shell.Section.Thickness * (double)shell.Section.Material.Rho;
+                        var areaDensity = shell.Section.Thickness * (shell.Section.Material.Rho ?? 0.0);
                         mass += areaDensity * meshArea;
                     }
 
@@ -104,7 +104,7 @@ namespace Alpaca4d
                     {
                         var brick = (IBrick)item;
                         var meshVolume = Rhino.Geometry.VolumeMassProperties.Compute(brick.Mesh).Volume;
-                        var density = (double)brick.Material.Rho;
+                        var density = brick.Material.Rho ?? 0.0;
                         mass += density * meshVolume;
                     }
 
@@ -1048,7 +1048,7 @@ namespace Alpaca4d
                     var shell = (IShell)item;
 
                     double meshArea = Rhino.Geometry.AreaMassProperties.Compute(shell.Mesh).Area;
-                    var areaDensity = shell.Section.Thickness * (double)shell.Section.Material.Rho * 9.81 / 1000.0;
+                    var areaDensity = shell.Section.Thickness * (shell.Section.Material.Rho ?? 0.0) * 9.81 / 1000.0;
                     mass += areaDensity * meshArea;
                     if (gravityLoad != null)
                     {
@@ -1082,7 +1082,10 @@ namespace Alpaca4d
                 {
                     var brick = (IBrick)item;
                     var meshVolume = Rhino.Geometry.VolumeMassProperties.Compute(brick.Mesh).Volume;
-                    var density = (double)brick.Material.Rho * 9.81 / 1000.0;
+                    // A material given no density weighs nothing, which is a model, rather than a
+                    // reason to stop: the cast this replaces threw on every nD material left at
+                    // its default.
+                    var density = (brick.Material.Rho ?? 0.0) * 9.81 / 1000.0;
                     mass += density * meshVolume;
                     if (gravityLoad != null)
                     {
@@ -1268,8 +1271,10 @@ namespace Alpaca4d
             int index = 1;
             foreach(var element in this.Elements)
             {
-                element.SetTopologyRTree(this);
+                // The tag first, so that an element failing to find one of its nodes can name
+                // itself in the message rather than reporting as element null.
                 element.Id = index;
+                element.SetTopologyRTree(this);
                 element.SetTags();
                 index++;
             }

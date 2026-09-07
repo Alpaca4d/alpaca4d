@@ -16,8 +16,10 @@ namespace Alpaca4d.Gh
           : base("Brick Stresses (Alpaca4d)", "Brick Stresses",
             "Reads the stress state of every solid element of an analysed model - the six components " +
             "of the stress tensor plus the Von Mises equivalent stress.\n" +
-            "One value per element, in its local axes. An SSP Brick and a Four Node Tetrahedron, " +
-            "the only two solid types, each have one integration point.\n" +
+            "One value per element, in the global axes. Neither solid element has a frame of its " +
+            "own: both build their strain from global nodal displacements and hand it straight to " +
+            "the nD material, and an nD material has no orientation either. An SSP Brick and a " +
+            "Four Node Tetrahedron, the only two solid types, each have one integration point.\n" +
             "Values come tetrahedra first, then SSP bricks - Element says which is which. Give " +
             "ElementId to read part of a big model.",
             "Alpaca4d", "08_NumericalOutput")
@@ -52,12 +54,12 @@ namespace Alpaca4d.Gh
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("Sigma11", "σ₁₁", $"Direct stress along the element's local 1 axis [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("Sigma22", "σ₂₂", $"Direct stress along the element's local 2 axis [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("Sigma33", "σ₃₃", $"Direct stress along the element's local 3 axis [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("Sigma12", "σ₁₂", $"Shear stress in the local 1-2 plane [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("Sigma23", "σ₂₃", $"Shear stress in the local 2-3 plane [{Units.Force}/{Units.Length}²]");
-            pManager.Register_GenericParam("Sigma13", "σ₁₃", $"Shear stress in the local 1-3 plane [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("SigmaXX", "σxx", $"Direct stress along the global X axis [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("SigmaYY", "σyy", $"Direct stress along the global Y axis [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("SigmaZZ", "σzz", $"Direct stress along the global Z axis [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("SigmaXY", "σxy", $"Shear stress in the global XY plane [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("SigmaYZ", "σyz", $"Shear stress in the global YZ plane [{Units.Force}/{Units.Length}²]");
+            pManager.Register_GenericParam("SigmaZX", "σzx", $"Shear stress in the global ZX plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, derived from the six components above [{Units.Force}/{Units.Length}²]");
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }

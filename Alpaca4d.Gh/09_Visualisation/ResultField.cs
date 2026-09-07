@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -45,9 +45,10 @@ namespace Alpaca4d.Gh
         private static readonly string[] BeamForceNames = { "N", "Vy", "Vz", "Torsion", "My", "Mz" };
         private static readonly string[] ShellForceNames = { "fxx", "fyy", "fxy", "mxx", "myy", "mxy", "vxz", "vyz" };
         private static readonly string[] ShellStressNames = { "σ11", "σ22", "σ12", "σ23", "σ31", "VonMises" };
-        // Index notation and the element's own axes, the way the solid reader reports them and the
-        // way Brick Stresses names them - not σxx, which would read as the global axes.
-        private static readonly string[] BrickStressNames = { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
+        // The global axes, which is what a solid's stress is in: neither SSPbrick nor
+        // FourNodeTetrahedron has a frame of its own, and neither does an nD material, so the six
+        // components come back in world X, Y and Z. Named that way here and in Brick Stresses.
+        private static readonly string[] BrickStressNames = { "σxx", "σyy", "σzz", "σxy", "σyz", "σzx", "VonMises" };
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
 
         /// <summary>What the Component dropdown offers for a given family.</summary>

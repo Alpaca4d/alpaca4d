@@ -13,7 +13,17 @@ namespace Alpaca4d.Gh
     {
         public SSPbrick()
           : base("SSP Brick (Alpaca4d)", "SSP Brick",
-            "Construct a SSP (Stabilized Single Point) Brick element",
+            "Construct a SSP (Stabilized Single Point) Brick element from an eight vertex mesh.\n" +
+            "The mesh is reordered into the node order OpenSees wants and checked for a positive " +
+            "Jacobian at every corner - a brick wound the wrong way round, or twisted, is one the " +
+            "solver accepts and answers with the wrong sign rather than rejecting.\n" +
+            "\n" +
+            "A solid has no local axes. OpenSees gives neither element an orientation argument, and " +
+            "an nD material has no orientation either, so the material's own directions - Ex, Ey and " +
+            "Ez on an Elastic Orthotropic - are the global X, Y and Z, and so are the stresses read " +
+            "back. To align an orthotropic material with the part, rotate the model.\n" +
+            "Where a solid meets a beam or a shell at a point, the two are tied in translation only: " +
+            "a solid node carries no moment, so the junction is a pin.",
             "Alpaca4d", "02_Element")
         {
             // Draw a Description Underneath the component
