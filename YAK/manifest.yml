@@ -1,6 +1,6 @@
 ---
 name: Alpaca4d
-version: 0.11.0
+version: 0.11.0-beta.1
 authors:
 - Marco Pellegrino
 description: Alpaca4d is a Grasshopper plugin which has been developed on top of OpenSees. It lets you analyse beam, shell and brick elements through Static, Dynamic, Linear and Not Linear Analysis.

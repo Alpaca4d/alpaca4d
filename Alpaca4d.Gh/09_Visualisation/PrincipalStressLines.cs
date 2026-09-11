@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Grasshopper.Kernel;
@@ -341,41 +341,45 @@ namespace Alpaca4d.Gh
             // ---------------------------------------------------------------------
             const int rk4Method = 4;
 
-            var streamlines1 = new Streamlines(principal1, stepTolerance, rk4Method, maxError, dTest);
-            var streamlines2 = new Streamlines(principal2, stepTolerance, rk4Method, maxError, dTest);
+            if (!singleLine && dSep <= 0.0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "Separation distance (dSep) must be greater than 0 in multi-line mode.");
+                return;
+            }
+
+            var streamlines1 = new Streamlines(this, principal1, stepTolerance, rk4Method, maxError, dTest);
+            var streamlines2 = new Streamlines(this, principal2, stepTolerance, rk4Method, maxError, dTest);
 
             // Single-line vs multi-line behaviour over multiple seeds:
             // - singleLine == true  => one streamline per seed (GH_StressLine-like)
-            // - singleLine == false => a field per seed (GH_StressLines-like, uses dSep)
+            // - singleLine == false => one field grown from all seeds together (GH_StressLines-like,
+            //   uses dSep). All seeds must go into the same call so that they share the separation
+            //   check; seeding them one at a time produces overlapping, duplicated fields.
             var lines1 = new List<Polyline>();
             var lines2 = new List<Polyline>();
 
             try
             {
-                foreach (var seed in seeds)
+                if (singleLine)
                 {
-                    if (singleLine)
+                    foreach (var seed in seeds)
                     {
-                        var line1 = streamlines1.CreateStreamline(seed);
-                        var line2 = streamlines2.CreateStreamline(seed);
-                        lines1.Add(line1);
-                        lines2.Add(line2);
-                    }
-                    else
-                    {
-                        if (dSep <= 0.0)
-                        {
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                "Separation distance (dSep) must be greater than 0 in multi-line mode.");
-                            return;
-                        }
-
-                        var seedLines1 = streamlines1.CreateStreamlines(seed, 1, dSep);
-                        var seedLines2 = streamlines2.CreateStreamlines(seed, 1, dSep);
-                        lines1.AddRange(seedLines1);
-                        lines2.AddRange(seedLines2);
+                        lines1.Add(streamlines1.CreateStreamline(seed));
+                        lines2.Add(streamlines2.CreateStreamline(seed));
                     }
                 }
+                else
+                {
+                    lines1.AddRange(streamlines1.CreateStreamlines(seeds, 1, dSep));
+                    lines2.AddRange(streamlines2.CreateStreamlines(seeds, 1, dSep));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "Stress line generation aborted (ESC pressed).");
+                return;
             }
             catch (Exception ex)
             {
@@ -1191,6 +1195,9 @@ namespace Alpaca4d.Gh
         public Mesh Mesh;
         private readonly Polyline[] _nakedEdges;
 
+        // Owning component, used to abort a long solution when the user presses ESC
+        private readonly GH_Component _parentComponent;
+
         // Integration state
         private Point3d _point;
         private Point3d _end;
@@ -1230,8 +1237,9 @@ namespace Alpaca4d.Gh
             _dTest = 0.0;
         }
 
-        public Streamlines(PrincipalMesh principalMesh, double stepSize, int method, double maxError, double dTest)
+        public Streamlines(GH_Component parentComponent, PrincipalMesh principalMesh, double stepSize, int method, double maxError, double dTest)
         {
+            _parentComponent = parentComponent;
             _principalMesh = principalMesh;
             Mesh = principalMesh.Mesh;
             Mesh.FaceNormals.ComputeFaceNormals();
@@ -1271,7 +1279,7 @@ namespace Alpaca4d.Gh
             return segment1;
         }
 
-        public List<Polyline> CreateStreamlines(Point3d seed, int seedingMethod, double dSep)
+        public List<Polyline> CreateStreamlines(List<Point3d> startSeeds, int seedingMethod, double dSep)
         {
             _seedingStrategy = seedingMethod;
             _dSep = dSep;
@@ -1282,7 +1290,7 @@ namespace Alpaca4d.Gh
 
             if (seedingMethod == 1)
             {
-                NeighbourStreamlines(seed);
+                NeighbourStreamlines(startSeeds);
             }
             else
             {
@@ -1292,23 +1300,28 @@ namespace Alpaca4d.Gh
             return _completedStreamlines;
         }
 
-        private void NeighbourStreamlines(Point3d seed)
+        private void NeighbourStreamlines(List<Point3d> startSeeds)
         {
-            var seeds = new List<Point3d> { seed };
+            var seeds = new List<Point3d>();
+            seeds.AddRange(startSeeds);
             Polyline activeStreamline = new Polyline();
+            Point3d seed = new Point3d();
 
             while (seeds.Count > 0)
             {
                 seed = seeds[0];
 
-                // Enforce separation distance to existing check points
-                Vector3d radius1 = new Vector3d(_dSep * 0.99, _dSep * 0.99, _dSep * 0.99);
+                // Enforce separation distance to existing check points. Rejecting at a flat
+                // 0.99 * dSep leaves visible gaps when dTest is small, so scale the rejection
+                // radius with dTest and never go above what dTest itself would allow.
+                double seedDistFactor = Math.Max(0.6, _dTest / _dSep * 1.1);
+                Vector3d radius1 = new Vector3d(_dSep * seedDistFactor, _dSep * seedDistFactor, _dSep * seedDistFactor);
                 BoundingBox testBox = new BoundingBox(seed - radius1, seed + radius1);
                 for (int i = 0; i < _checkPts.Count; i++)
                 {
                     if (testBox.Contains(_checkPts[i]))
                     {
-                        if ((_checkPts[i] - seed).Length < _dSep * 0.99)
+                        if ((_checkPts[i] - seed).Length < _dSep * seedDistFactor)
                         {
                             seeds.RemoveAt(0);
                             goto BREAK;
@@ -1346,14 +1359,15 @@ namespace Alpaca4d.Gh
 
                     streamlineDirection.Rotate(Math.PI / 2, Mesh.FaceNormals[meshPt.FaceIndex]);
                     Point3d seed1 = pt + streamlineDirection / streamlineDirection.Length * _dSep;
-                    streamlineDirection.Rotate(Math.PI, Mesh.FaceNormals[meshPt.FaceIndex]);
-                    Point3d seed2 = pt + streamlineDirection / streamlineDirection.Length * _dSep;
+                    Point3d seed2 = pt - streamlineDirection / streamlineDirection.Length * _dSep;
 
                     seed1 = Mesh.ClosestPoint(seed1);
                     seed2 = Mesh.ClosestPoint(seed2);
 
-                    seeds.Insert(0, seed1);
-                    seeds.Insert(0, seed2);
+                    // Queue (FIFO), not stack: breadth-first seeding grows the field evenly
+                    // outwards instead of chasing one branch to the boundary first.
+                    seeds.Add(seed1);
+                    seeds.Add(seed2);
                 }
 
             BREAK:;
@@ -1381,6 +1395,12 @@ namespace Alpaca4d.Gh
             while (keepGoing)
             {
                 _end = Mesh.ClosestPoint(_end);
+
+                if (i % 100 == 0 && GH_Document.IsEscapeKeyDown())
+                {
+                    _parentComponent?.OnPingDocument()?.RequestAbortSolution();
+                    throw new OperationCanceledException("Stress line generation aborted (ESC pressed).");
+                }
 
                 keepGoing = true;
                 foreach (var edge in _nakedEdges)

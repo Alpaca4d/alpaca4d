@@ -120,6 +120,14 @@ namespace Alpaca4d.License
 
                     if (elementCount > maxElements)
                     {
+                        // Restart the window here too, otherwise the counter stays at zero
+                        // and the form reopens on every single solve.
+                        if (!forceCheck)
+                        {
+                            validationFirstTimeRun = DateTime.Now;
+                            validationCounter++;
+                        }
+
                         showFormCallback?.Invoke();
                         return false; // Return false to indicate license issue
                     }

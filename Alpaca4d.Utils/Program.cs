@@ -15,9 +15,10 @@ namespace CreateLicense
         {
             var jsonFilePath = "data.json";
             
-            // Get the project root directory (Alpaca4d.Utils folder)
+            // Get the project root directory (Alpaca4d.Utils folder).
+            // The exe runs from bin/<Configuration>/net48, so it is three levels down.
             var currentDir = Directory.GetCurrentDirectory();
-            var projectRoot = Path.GetFullPath(Path.Combine(currentDir, "..", ".."));
+            var projectRoot = Path.GetFullPath(Path.Combine(currentDir, "..", "..", ".."));
             var binaryFilePath = Path.Combine(projectRoot, "data.bin");
 
             Console.WriteLine($"Current directory: {currentDir}");

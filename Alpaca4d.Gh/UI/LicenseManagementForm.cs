@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,8 @@ namespace Alpaca4d.UI
         
         private string licenseFilePath;
         private List<User> currentLicenses;
+
+        private static LicenseManagementForm openForm;
 
         public LicenseManagementForm()
         {
@@ -412,8 +414,15 @@ namespace Alpaca4d.UI
         /// </summary>
         public static void ShowForm()
         {
-            var form = new LicenseManagementForm();
-            form.Show();
+            if (openForm != null && !openForm.IsDisposed)
+            {
+                openForm.BringToFront();
+                return;
+            }
+
+            openForm = new LicenseManagementForm();
+            openForm.Closed += (sender, e) => openForm = null;
+            openForm.Show();
         }
     }
 }
