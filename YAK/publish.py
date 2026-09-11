@@ -151,7 +151,21 @@ def collect_files(paths: dict, version: str) -> Path:
     shutil.copy2(str(gha), str(version_dir / gha.name))
 
     # Copy folders and extra files (best-effort)
-    safe_copy_tree(output_dir / "OpenSees-Solvers", version_dir / "OpenSees-Solvers")
+    #
+    # OpenSees-Solvers is deliberately not packaged. The solver is chosen by the user -
+    # Alpaca4d > Settings > Set OpenSees Executable - and Application.OpenSees reads that
+    # path and nothing else, so a bundled copy was never loaded at runtime. It stays in
+    # the repo and in the build output for local development; shipping it only added
+    # ~114 MB to every download, and on macOS a bundled unsigned solver arrives
+    # quarantined and gets SIGKILLed anyway.
+    #
+    # Dropped from a version dir an older script already filled: the directory is reused,
+    # not rebuilt, so a leftover copy would go on being packaged and quietly undo this.
+    stale_solvers = version_dir / "OpenSees-Solvers"
+    if stale_solvers.exists():
+        shutil.rmtree(stale_solvers)
+        print_status(f"Removed stale OpenSees-Solvers from {version_dir.name} (no longer packaged)")
+
     safe_copy_file(output_dir / "data.bin", version_dir)
     safe_copy_tree(output_dir / "UserObject", version_dir / "UserObject")
 
