@@ -162,7 +162,7 @@ namespace Alpaca4d.Gh
             return true;
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
+        public override GH_Exposure Exposure => GH_Exposure.primary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.External_Link__Alpaca4d_;
 

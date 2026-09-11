@@ -85,7 +85,7 @@ namespace Alpaca4d.Gh
             base.AppendAdditionalMenuItems(menu);
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.primary;
 
         protected override Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Force_Beam_Column__Alpaca4d_;
 

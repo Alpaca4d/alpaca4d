@@ -8,6 +8,12 @@ using Alpaca4d.TimeSeries;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>
+    /// Retired. The deformed shape is a toggle inside View Results rather than a component of
+    /// its own, so a result can be read on the shape it belongs to instead of being drawn twice.
+    /// Kept hidden so definitions that already place it still open.
+    /// </summary>
+    [Obsolete]
     public class DeformedModel : GH_Component
     {
         public DeformedModel()
@@ -116,7 +122,7 @@ namespace Alpaca4d.Gh
         /// each of which can be combined with the GH_Exposure.obscure flag, which 
         /// ensures the component will only be visible on panel dropdowns.
         /// </summary>
-        public override GH_Exposure Exposure => GH_Exposure.primary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         /// <summary>
         /// Provides an Icon for every component that will be visible in the User Interface.

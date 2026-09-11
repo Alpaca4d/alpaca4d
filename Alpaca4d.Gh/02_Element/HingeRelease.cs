@@ -50,7 +50,7 @@ namespace Alpaca4d.Gh
             DA.SetData(0, release);
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.quarternary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Hinge_Release__Alpaca4d_;
 
