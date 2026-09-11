@@ -164,7 +164,7 @@ namespace Alpaca4d.Gh
 
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.External_Link__Alpaca4d_;
+        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Spring_Link__Alpaca4d_;
 
         public override Guid ComponentGuid => new Guid("{5E9C2F84-1D67-4A03-9B58-C4F2E7A06D31}");
     }

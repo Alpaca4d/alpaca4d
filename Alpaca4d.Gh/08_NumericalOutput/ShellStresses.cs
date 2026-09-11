@@ -136,7 +136,7 @@ namespace Alpaca4d.Gh
 
         public override GH_Exposure Exposure => GH_Exposure.tertiary;
 
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.shellStress;
+        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Shell_Stresses__Alpaca4d_;
 
         public override Guid ComponentGuid => new Guid("{9B38E0D7-5A40-528F-A0E0-404AB291CE01}");
     }
