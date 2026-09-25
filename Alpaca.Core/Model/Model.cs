@@ -849,7 +849,7 @@ namespace Alpaca4d
                 if (this.UniquePointsThreeNDF.Count != 0)
                 {
                     closestPointInThreeNDF = Rhino.Collections.Point3dList.ClosestPointInList(this.UniquePointsThreeNDF, supportNode.Pos);
-                    if (supportNode.Pos.DistanceTo(closestPointInThreeNDF) < this.Tollerance)
+                    if (supportNode.Pos.DistanceTo(closestPointInThreeNDF) <= this.Tollerance)
                     {
                         supportNode.ndf = 3;
                         this.ThreeNdfModel.Add(supportNode);

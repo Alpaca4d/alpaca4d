@@ -79,7 +79,7 @@ namespace Alpaca4d.Loads
             if (model.UniquePointsThreeNDF.Count != 0)
                 {
                     var closestPointInThreeNDF = Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos);
-                    if (this.Pos.DistanceTo(closestPointInThreeNDF) < model.Tollerance)
+                    if (this.Pos.DistanceTo(closestPointInThreeNDF) <= model.Tollerance)
                     {
                         this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
                         this.Ndf = 3;

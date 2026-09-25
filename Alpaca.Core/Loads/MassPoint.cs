@@ -45,12 +45,12 @@ namespace Alpaca4d.Loads
         {
             try
             {
-                if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos)) < model.Tollerance)
+                if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos)) <= model.Tollerance)
                 {
                     this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
                     this.Ndf = 3;
                 }
-                else if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos)) < model.Tollerance)
+                else if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos)) <= model.Tollerance)
                 {
                     this.Id = model.CloudPointSixNDF.ClosestPoint(this.Pos) + 1 + model.UniquePointsThreeNDF.Count();
                     this.Ndf = 6;
@@ -58,12 +58,12 @@ namespace Alpaca4d.Loads
             }
             catch
             {
-                if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos)) < model.Tollerance)
+                if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos)) <= model.Tollerance)
                 {
                     this.Id = model.CloudPointSixNDF.ClosestPoint(this.Pos) + 1 + model.UniquePointsThreeNDF.Count();
                     this.Ndf = 6;
                 }
-                else if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos)) < model.Tollerance)
+                else if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos)) <= model.Tollerance)
                 {
                     this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
                     this.Ndf = 3;
