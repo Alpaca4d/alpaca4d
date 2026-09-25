@@ -49,28 +49,7 @@ namespace Alpaca4d
 
             foreach (var pt in searchPoints)
             {
-                int foundIndex = -1;
-                double foundDistance = double.MaxValue;
-                var point = pt;
-
-                tree.Search(new Sphere(point, tol), (sender, e) =>
-                {
-                    // The tree hands back everything inside the sphere in no particular order, so
-                    // when the cloud is to hand every hit is measured and the nearest kept.
-                    if (cloud == null)
-                    {
-                        foundIndex = e.Id;
-                        e.Cancel = true;
-                        return;
-                    }
-
-                    double distance = point.DistanceTo(cloud[e.Id]);
-                    if (foundIndex == -1 || distance < foundDistance)
-                    {
-                        foundIndex = e.Id;
-                        foundDistance = distance;
-                    }
-                });
+                int foundIndex = NearestWithin(tree, pt, tol, cloud);
 
                 if (foundIndex == -1)
                     throw new Exception(
@@ -82,6 +61,39 @@ namespace Alpaca4d
             }
 
             return closestIndexes;
+        }
+
+        /// <summary>
+        /// The search behind <see cref="RTreeSearch"/> for a single point: the index of the node
+        /// nearest <paramref name="point"/> within <paramref name="tol"/>, or -1 when there is none.
+        /// For a caller with somewhere else to look when a point finds nothing, where an exception
+        /// would be the wrong answer. <paramref name="cloud"/> is as for RTreeSearch.
+        /// </summary>
+        public static int NearestWithin(RTree tree, Point3d point, double tol, IList<Point3d> cloud = null)
+        {
+            int foundIndex = -1;
+            double foundDistance = double.MaxValue;
+
+            tree.Search(new Sphere(point, tol), (sender, e) =>
+            {
+                // The tree hands back everything inside the sphere in no particular order, so
+                // when the cloud is to hand every hit is measured and the nearest kept.
+                if (cloud == null)
+                {
+                    foundIndex = e.Id;
+                    e.Cancel = true;
+                    return;
+                }
+
+                double distance = point.DistanceTo(cloud[e.Id]);
+                if (foundIndex == -1 || distance < foundDistance)
+                {
+                    foundIndex = e.Id;
+                    foundDistance = distance;
+                }
+            });
+
+            return foundIndex;
         }
         public static DataTree<object> DataTreeFromNestedList(List<List<double>> nestedList)
         {

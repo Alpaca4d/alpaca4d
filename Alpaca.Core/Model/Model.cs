@@ -559,7 +559,8 @@ namespace Alpaca4d
         {
             if (this.RTreeCloudPointSixNDF != null)
             {
-                var found = FirstWithin(this.RTreeCloudPointSixNDF, point, this.Tollerance);
+                var found = Alpaca4d.Utils.NearestWithin(this.RTreeCloudPointSixNDF, point, this.Tollerance,
+                                                         this.UniquePointsSixNDF);
                 if (found >= 0)
                 {
                     ndf = 6;
@@ -569,7 +570,8 @@ namespace Alpaca4d
 
             if (this.RTreeCloudPointThreeNDF != null)
             {
-                var found = FirstWithin(this.RTreeCloudPointThreeNDF, point, this.Tollerance);
+                var found = Alpaca4d.Utils.NearestWithin(this.RTreeCloudPointThreeNDF, point, this.Tollerance,
+                                                         this.UniquePointsThreeNDF);
                 if (found >= 0)
                 {
                     ndf = 3;
@@ -581,20 +583,6 @@ namespace Alpaca4d
                                 $"nodes that are already there; it does not make them. Move the end onto a " +
                                 $"beam end, a mesh vertex or another node, or raise the model tolerance " +
                                 $"(currently {this.Tollerance}).");
-        }
-
-        /// <summary>The index of the first point within <paramref name="tol"/>, or -1.</summary>
-        private static int FirstWithin(RTree tree, Point3d point, double tol)
-        {
-            int found = -1;
-
-            tree.Search(new Sphere(point, tol), (sender, e) =>
-            {
-                found = e.Id;
-                e.Cancel = true;
-            });
-
-            return found;
         }
 
         /// <summary>

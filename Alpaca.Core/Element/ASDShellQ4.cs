@@ -38,24 +38,20 @@ namespace Alpaca4d.Element
         /// <summary>The axes this shell's forces and stresses are reported in.</summary>
         public Plane LocalPlane => Alpaca4d.Utils.ShellAxes(this.Mesh.Vertices.ToPoint3dArray(), this.LocalX);
 
+        /// <summary>
+        /// The four nodes this shell sits on, in the order the mesh carries its vertices. Exactly
+        /// one node per vertex; see <see cref="SSPbrick.SetTopologyRTree"/> for why that is worth
+        /// insisting on.
+        /// </summary>
         public void SetTopologyRTree(Alpaca4d.Model model)
         {
-            var tol = model.Tollerance;
-            var meshPoints = this.Mesh.Vertices.ToList();
+            var meshPoints = this.Mesh.Vertices.ToPoint3dArray();
 
-            var closestIndexes = new List<int?>();
-
-            void SearchCallback(object sender, RTreeEventArgs e)
-            {
-                closestIndexes.Add(e.Id + 1);
-            }
-
-            foreach (var pt in meshPoints)
-            {
-                model.RTreeCloudPointSixNDF.Search(new Rhino.Geometry.Sphere(pt, tol), SearchCallback);
-            }
-
-            this.IndexNodes = closestIndexes.Select(x => x + model.UniquePointsThreeNDF.Count).ToList();
+            this.IndexNodes = Alpaca4d.Utils
+                .RTreeSearch(model.RTreeCloudPointSixNDF, meshPoints, model.Tollerance,
+                             $"ASD Shell Q4 {this.Id}", model.UniquePointsSixNDF)
+                .Select(x => (int?)(x + 1 + model.UniquePointsThreeNDF.Count))
+                .ToList();
         }
         public override string WriteTcl()
         {

@@ -121,27 +121,19 @@ namespace Alpaca4d.Element
             this.BeamIntegration.Id = this.Id;
         }
 
+        /// <summary>
+        /// The nodes at the two ends of this beam. Exactly one node per end; see
+        /// <see cref="SSPbrick.SetTopologyRTree"/> for why that is worth insisting on.
+        /// </summary>
         public void SetTopologyRTree(Model model)
         {
-            var tol = model.Tollerance;
-            var pointAtStart = this.Curve.PointAtStart;
-            var pointAtEnd = this.Curve.PointAtEnd;
-            var curvePoints = new List<Point3d> { pointAtStart, pointAtEnd };
+            var ends = new[] { this.Curve.PointAtStart, this.Curve.PointAtEnd };
 
-            var closestIndexes = new List<int>();
+            var nodes = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, ends, model.Tollerance,
+                                                   $"Beam With Hinges {this.Id}", model.UniquePointsSixNDF);
 
-            void SearchCallback(object sender, RTreeEventArgs e)
-            {
-                closestIndexes.Add(e.Id + 1);
-            }
-
-            foreach (var pt in curvePoints)
-            {
-                model.RTreeCloudPointSixNDF.Search(new Sphere(pt, tol), SearchCallback);
-            }
-
-            this.INode = closestIndexes[0] + model.UniquePointsThreeNDF.Count;
-            this.JNode = closestIndexes[1] + model.UniquePointsThreeNDF.Count;
+            this.INode = nodes[0] + 1 + model.UniquePointsThreeNDF.Count;
+            this.JNode = nodes[1] + 1 + model.UniquePointsThreeNDF.Count;
         }
 
         public override string WriteTcl()
