@@ -34,7 +34,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Recorders", "Recorders", "What to write to the results file. Left empty, Run Analysis picks a recorder to suit the analysis type.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Tolerance", "Tolerance", $"Distance below which two positions are treated as the same node [{Units.Length}]. It welds elements together and lands supports and loads on a node - too small and the model falls into pieces, too large and separate nodes merge.", GH_ParamAccess.item, 0.01);
+            pManager.AddNumberParameter("Tolerance", "Tolerance", $"Distance below which two positions are treated as the same node [{Units.Length}]. It welds elements together and lands supports and loads on a node - too small and the model falls into pieces, too large and separate nodes merge.", GH_ParamAccess.item, DefaultTolerance);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -60,7 +60,7 @@ namespace Alpaca4d.Gh
             var constraint = new List<Alpaca4d.Generic.IConstraint>();
             var massLoad = new List<Alpaca4d.Loads.MassLoad>();
             var recorder = new List<Alpaca4d.Generic.IRecorder>();
-            double tolerance = 0.01;
+            double tolerance = DefaultTolerance;
 
             if (!DA.GetDataList(0, element)) return;
             if (!DA.GetDataList(1, support)) return;
@@ -93,6 +93,17 @@ namespace Alpaca4d.Gh
             DA.GetDataList(4, recorder);
             DA.GetData(5, ref tolerance);
 
+            // Zero welds nothing that is not bit-for-bit identical, and a negative radius finds
+            // no node at all, so every element would fail to connect. Same fallback as TclReader
+            // and NodeFilter; the negated test also catches NaN.
+            if (!(tolerance > 0.0))
+            {
+                this.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"Tolerance must be greater than zero. {DefaultTolerance} {Units.Length} is used instead.");
+                tolerance = DefaultTolerance;
+            }
+
+            WarnIfDocumentUnitsDiffer();
 
             var model = new Model(element, support, loadPattern, constraint, recorder);
             model.Mass = massLoad;
@@ -103,6 +114,30 @@ namespace Alpaca4d.Gh
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, model);
             DA.SetData(1, model.TotalMass);
+        }
+
+        private const double DefaultTolerance = 0.01;
+
+        /// <summary>
+        /// Alpaca4d never scales geometry: a coordinate is written to the deck as it stands and
+        /// read as <see cref="Units.Length"/>, and so is the Tolerance. A document in any other
+        /// unit gives a model at the wrong size with nothing to say so, so this says so. No
+        /// document (Rhino.Compute, headless) means nothing to check.
+        /// </summary>
+        private void WarnIfDocumentUnitsDiffer()
+        {
+            var doc = Rhino.RhinoDoc.ActiveDoc;
+            if (doc == null)
+                return;
+
+            var expected = Units.Length == LengthUnit.mm ? Rhino.UnitSystem.Millimeters : Rhino.UnitSystem.Meters;
+            if (doc.ModelUnitSystem == expected)
+                return;
+
+            this.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                $"The Rhino document is in {doc.ModelUnitSystem}, but Alpaca4d reads every coordinate - and the " +
+                $"Tolerance - as {expected} without converting. Switch the document units to {expected}, or " +
+                $"the model will come out at the wrong size.");
         }
 
 
