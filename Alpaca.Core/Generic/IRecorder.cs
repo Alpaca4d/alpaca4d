@@ -9,5 +9,8 @@ namespace Alpaca4d.Generic
     public interface IRecorder
     {
         public string FileName { get; set; }
+
+        /// <summary>The recorder command, written after the model and before the analysis.</summary>
+        public string WriteTcl();
     }
 }

@@ -105,6 +105,35 @@ namespace Alpaca4d.Result
         }
 
         /// <summary>
+        /// Whether the recorder file holds a nodal result at all. An MPCO Recorder writes only what
+        /// is ticked in it, and a file from an older Alpaca4d has no angular velocity or angular
+        /// acceleration, so a component with an output per result asks before it reads rather than
+        /// failing every output over the one that is not there.
+        /// </summary>
+        public static bool Holds(Model alpacaModel, ResultType resultType)
+        {
+            string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
+
+            using var h5File = PureHDF.H5File.OpenRead(recorderPath);
+            return h5File.LinkExists($"{ON_NODES}/{Alpaca4d.Helper.EnumHelper.ResultTypeConvert(resultType)}");
+        }
+
+        /// <summary>
+        /// A nodal result as the recorder command names it - reactionForce - where the file
+        /// calls it REACTION_FORCE. It is the name on the tick box that records it.
+        /// </summary>
+        public static string RecorderName(ResultType resultType)
+        {
+            if (resultType == ResultType.MODES_OF_VIBRATION_U)
+                return "modesOfVibration";
+            if (resultType == ResultType.MODES_OF_VIBRATION_R)
+                return "modesOfVibrationRotational";
+
+            var words = resultType.ToString().ToLowerInvariant().Split('_');
+            return words[0] + string.Concat(words.Skip(1).Select(word => char.ToUpperInvariant(word[0]) + word.Substring(1)));
+        }
+
+        /// <summary>
         /// Methods to return nodal Displacement, Rotation, Velocity, Acceleration
         /// </summary>
         /// <param name="alpacaModel"></param>
@@ -122,6 +151,10 @@ namespace Alpaca4d.Result
             double[,] values;
 
             var _resultType = Alpaca4d.Helper.EnumHelper.ResultTypeConvert(resultType);
+            if (!h5File.LinkExists($"{ON_NODES}/{_resultType}"))
+                throw new Exception($"The recorder file holds no {RecorderName(resultType)}. " +
+                    $"Switch \"{RecorderName(resultType)}\" on in the MPCO Recorder component.");
+
             if (alpacaModel.IsModal == false)
             {
                 var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_NODES/{_resultType}/DATA/STEP_{step}");
@@ -216,7 +249,7 @@ namespace Alpaca4d.Result
 
             if (!h5File.LinkExists(BASE))
                 throw new Exception(
-                    "The recorder file holds no section forces. Switch \"section.force\" on in the Recorder component.");
+                    "The recorder file holds no section forces. Switch \"section.force\" on in the MPCO Recorder component.");
 
             // Map: element ID -> row data (all columns for that element)
             var rowById = new Dictionary<int, double[]>();
@@ -663,7 +696,7 @@ namespace Alpaca4d.Result
             if (!h5File.LinkExists(BASE))
                 throw new Exception(
                     "The recorder file holds no through-thickness stresses. Switch \"section.fiber.stress\" " +
-                    "on in the Recorder component and run the analysis again.");
+                    "on in the MPCO Recorder component and run the analysis again.");
 
             // One group per element class, named <classTag>-<className>[<rule>:<index>:<header>].
             // Enumerated rather than named: the index is handed out in order of discovery, so it is
@@ -819,7 +852,7 @@ namespace Alpaca4d.Result
 
             if (!h5File.LinkExists(BASE))
                 throw new Exception(
-                    "The recorder file holds no stresses. Switch \"stresses\" on in the Recorder component.");
+                    "The recorder file holds no stresses. Switch \"stresses\" on in the MPCO Recorder component.");
 
             var rowById = new Dictionary<int, double[]>();
 

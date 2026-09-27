@@ -113,7 +113,11 @@ namespace Alpaca4d.Gh
             analysisModel.FileName = System.IO.Path.GetFullPath("AlpacaModel");
 
 
-            // Recorder
+            // Recorder. Mode shapes only, whatever Assemble Model was given: its recorders are
+            // chosen for Run Analysis, and an eigen analysis has no steps for them to record.
+            if (model.Recorders != null && model.Recorders.Count > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    $"The recorders from Assemble Model are for Run Analysis. The mode shapes are recorded to {recorderName} as always.");
             analysisModel.Recorders = new List<IRecorder>();
             var recorder = new Alpaca4d.Recorder();
             recorder = Alpaca4d.Recorder.MpcoEigen(recorderName);

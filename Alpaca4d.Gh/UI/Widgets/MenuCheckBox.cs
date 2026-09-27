@@ -86,6 +86,10 @@ namespace Alpaca4d.UIWidgets
 		public override bool Read(GH_IReader reader)
 		{
 			GH_IReader gH_IReader = reader.FindChunk("Checkbox", Index);
+			// A file saved before this box was added to its menu has nothing for it: it keeps the
+			// default it was built with.
+			if (gH_IReader == null)
+				return true;
 			_active = gH_IReader.GetBoolean("Active");
 			return true;
 		}

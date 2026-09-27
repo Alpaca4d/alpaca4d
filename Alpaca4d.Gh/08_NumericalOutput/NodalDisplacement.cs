@@ -101,6 +101,24 @@ namespace Alpaca4d.Gh
 
 			if (alpacaModel.IsModal == false)
 			{
+                // What the recorder file holds, asked once rather than per step. An MPCO Recorder can
+                // leave any of these out, and a file from an older Alpaca4d has no angular velocity or
+                // acceleration. Either way that output comes out empty and the others still stand.
+                var wanted = new List<ResultType> { ResultType.DISPLACEMENT, ResultType.ROTATION };
+                if (alpacaModel.IsTransient)
+                    wanted.AddRange(new[] { ResultType.VELOCITY, ResultType.ANGULAR_VELOCITY,
+                                            ResultType.ACCELERATION, ResultType.ANGULAR_ACCELERATION });
+
+                var held = new HashSet<ResultType>(wanted.Where(type => Alpaca4d.Result.Read.Holds(alpacaModel, type)));
+                var notHeld = wanted.Where(type => !held.Contains(type)).Select(Alpaca4d.Result.Read.RecorderName).ToList();
+                if (notHeld.Count > 0)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        $"Not in the recorder file, so left empty: {string.Join(", ", notHeld)}.");
+
+                IEnumerable<Vector3d> ReadHeld(int at, ResultType type) => held.Contains(type)
+                    ? Alpaca4d.Result.Read.NodalOutput(alpacaModel, at, type, readTags)
+                    : Enumerable.Empty<Vector3d>();
+
                 if(history == false)
                 {
                     var disp = Enumerable.Empty<Rhino.Geometry.Vector3d>();
@@ -110,18 +128,14 @@ namespace Alpaca4d.Gh
                     var acc = Enumerable.Empty<Rhino.Geometry.Vector3d>();
                     var angAcc = Enumerable.Empty<Rhino.Geometry.Vector3d>();
 
-                    disp = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.DISPLACEMENT, readTags);
-                    rot = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.ROTATION, readTags);
+                    disp = ReadHeld(step, ResultType.DISPLACEMENT);
+                    rot = ReadHeld(step, ResultType.ROTATION);
                     if (alpacaModel.IsTransient)
                     {
-                        vel = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.VELOCITY, readTags);
-                        acc = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.ACCELERATION, readTags);
-                        // Recorded only since angularVelocity and angularAcceleration were added to
-                        // the recorder, so a model analysed by an older Alpaca4d has the file but
-                        // not these groups. Missing means empty rather than an error on the whole
-                        // component: the translational half above is still worth having.
-                        angVel = TryRead(alpacaModel, step, Alpaca4d.Result.ResultType.ANGULAR_VELOCITY, readTags);
-                        angAcc = TryRead(alpacaModel, step, Alpaca4d.Result.ResultType.ANGULAR_ACCELERATION, readTags);
+                        vel = ReadHeld(step, ResultType.VELOCITY);
+                        acc = ReadHeld(step, ResultType.ACCELERATION);
+                        angVel = ReadHeld(step, ResultType.ANGULAR_VELOCITY);
+                        angAcc = ReadHeld(step, ResultType.ANGULAR_ACCELERATION);
                     }
 
                     // Finally assign the spiral to the output parameter.
@@ -151,14 +165,14 @@ namespace Alpaca4d.Gh
                     foreach (int current in steps)
                     {
                         var path = new Grasshopper.Kernel.Data.GH_Path(current);
-                        disp.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.DISPLACEMENT, readTags), path);
-                        rot.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.ROTATION, readTags), path);
+                        disp.AddRange(ReadHeld(current, ResultType.DISPLACEMENT), path);
+                        rot.AddRange(ReadHeld(current, ResultType.ROTATION), path);
                         if (alpacaModel.IsTransient)
                         {
-                            vel.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.VELOCITY, readTags), path);
-                            acc.AddRange(Alpaca4d.Result.Read.NodalOutput(alpacaModel, current, Alpaca4d.Result.ResultType.ACCELERATION, readTags), path);
-                            angVel.AddRange(TryRead(alpacaModel, current, Alpaca4d.Result.ResultType.ANGULAR_VELOCITY, readTags), path);
-                            angAcc.AddRange(TryRead(alpacaModel, current, Alpaca4d.Result.ResultType.ANGULAR_ACCELERATION, readTags), path);
+                            vel.AddRange(ReadHeld(current, ResultType.VELOCITY), path);
+                            acc.AddRange(ReadHeld(current, ResultType.ACCELERATION), path);
+                            angVel.AddRange(ReadHeld(current, ResultType.ANGULAR_VELOCITY), path);
+                            angAcc.AddRange(ReadHeld(current, ResultType.ANGULAR_ACCELERATION), path);
                         }
                     }
 
@@ -198,27 +212,6 @@ namespace Alpaca4d.Gh
         /// output of their own - filtered they are exactly what was typed into NodeTag, and
         /// unfiltered they are one to the number of nodes, in order.
         /// </summary>
-        /// <summary>
-        /// A nodal result the recorder may not hold, as an empty list rather than an exception.
-        ///
-        /// Angular velocity and angular acceleration were added to the Recorder after the file
-        /// format was already in use, so a model analysed by an older Alpaca4d has a perfectly good
-        /// recorder file with those two groups missing. Failing the whole component over it would
-        /// cost the user the translational half as well.
-        /// </summary>
-        private static IEnumerable<Vector3d> TryRead(Alpaca4d.Model alpacaModel, int step,
-            Alpaca4d.Result.ResultType resultType, System.Collections.Generic.List<int?> readTags)
-        {
-            try
-            {
-                return Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, resultType, readTags).ToList();
-            }
-            catch
-            {
-                return Enumerable.Empty<Vector3d>();
-            }
-        }
-
         private static void SetPositions(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, System.Collections.Generic.List<int> kept)
         {
             DA.SetDataList(0, kept.Select(i => alpacaModel.Nodes[i].Pos));

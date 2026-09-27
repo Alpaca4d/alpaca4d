@@ -25,7 +25,8 @@ namespace Alpaca4d.Gh
             "Writes the assembled model out as an OpenSees script, solves it, and returns the model " +
             "with its results attached.\n" +
             "Results are recorded to a recorder.mpco file beside the Grasshopper document and read " +
-            "back by the 08_NumericalOutput components. When a run fails the AlpacaModel output comes " +
+            "back by the 08_NumericalOutput components; an MPCO Recorder connected to Assemble Model " +
+            "chooses what the file holds, and what it is called. When a run fails the AlpacaModel output comes " +
             "out empty - read the log output to find out why.",
             "Alpaca4d", "07_Analysis")
         {
@@ -146,7 +147,6 @@ namespace Alpaca4d.Gh
             if(settings != null)
             {
                 string recorderName = "recorder.mpco";
-                analysisModel.Recorders = new List<IRecorder>();
                 analysisModel.Settings = settings;
                 // Recorder
                 var recorder = new Alpaca4d.Recorder();
@@ -161,11 +161,36 @@ namespace Alpaca4d.Gh
                     recorder = Alpaca4d.Recorder.MpcoTransient(recorderName);
                     analysisModel.IsTransient = true;
                 }
-                analysisModel.Recorders.Add(recorder);
-                analysisModel.Tcl.Add(recorder.WriteTcl());
+
+                // Recorders from Assemble Model are the user's choice and go in as they are, in
+                // place of the one picked above. The result components read the first of them.
+                analysisModel.Recorders = model.Recorders != null && model.Recorders.Count > 0
+                    ? new List<IRecorder>(model.Recorders)
+                    : new List<IRecorder> { recorder };
+
+                // Two recorders on one file would have the second overwrite the first.
+                var shared = analysisModel.Recorders
+                    .Where(item => !string.IsNullOrEmpty(item.FileName))
+                    .GroupBy(item => System.IO.Path.GetFullPath(item.FileName), StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault(group => group.Count() > 1);
+                if (shared != null)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                        $"{shared.Count()} recorders write to {shared.First().FileName}. Give each one a FileName of its own.");
+                    return;
+                }
+
+                foreach (var item in analysisModel.Recorders)
+                    analysisModel.Tcl.Add(item.WriteTcl());
                 // Settings
                 analysisModel.Tcl.Add(settings.WriteTcl());
                 analysisModel.Tcl.Add("wipe");
+            }
+            else if (model.Recorders != null && model.Recorders.Count > 0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "With \"Do not use settings\" the script runs as it stands, and the recorders from " +
+                    "Assemble Model are not written into it.");
             }
 
 

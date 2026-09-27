@@ -1,163 +1,126 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Alpaca4d.Generic;
 using Alpaca4d.Template;
 
 namespace Alpaca4d
 {
+    /// <summary>
+    /// An MPCO recorder: the chosen results of every node and every element, in one HDF5 file.
+    /// It is the file the 08_NumericalOutput components read back, and the one STKO opens.
+    ///
+    /// Results are held by the names the "recorder mpco" command takes, so what is asked for here
+    /// is word for word what goes on the line.
+    /// </summary>
     public class Recorder : IRecorder
     {
         public string FileName { get; set; }
-        public bool Displacement { get; set; }
-        public bool Rotation { get; set; }
-        public bool Velocity { get; set; }
 
         /// <summary>
-        /// Rotational velocity, the other half of Velocity. Recorded separately by OpenSees -
-        /// "velocity" is the translational dofs only - so a model that asks for one and not the
-        /// other gets half a transient answer.
+        /// Nodal results, written after -N. Each one out of <see cref="NodeResultTypes"/> or the
+        /// mode shapes: MPCO refuses the whole recorder over a nodal name it does not know.
         /// </summary>
-        public bool AngularVelocity { get; set; }
-        public bool Acceleration { get; set; }
+        public List<string> NodeResults { get; set; } = new List<string>();
 
-        /// <summary>Rotational acceleration. See <see cref="AngularVelocity"/>.</summary>
-        public bool AngularAcceleration { get; set; }
-        public bool ReactionForce { get; set; }
-        public bool ReactionMoment { get; set; }
-        public bool ModesOfVibration { get; set; }
-        public bool ModesOfVibrationRotational { get; set; }
-        public bool Force { get; set; }
-        public bool Stress { get; set; }
-        public bool SectionForce { get; set; }
-        public bool SectionFiberStress { get; set; }
+        /// <summary>
+        /// Element results, written after -E, with the words of a response joined by dots -
+        /// "section.force" for "section force". An element that does not answer to one is left out
+        /// of that result without a word from MPCO, so beams and bricks can share one recorder.
+        /// </summary>
+        public List<string> ElementResults { get; set; } = new List<string>();
 
         public Recorder()
         {
         }
 
-        public Recorder(string filePath, bool displacements = false, bool rotations = true, bool velocity = false, bool accelerations = false, bool reactionForces = false, bool reactionMoments = false, bool modesOfVibrations = false, bool modesOfVibrationsRotational = false, bool forces = false, bool stresses = false, bool sectionForces = false, bool sectionFiberStresses = false, bool angularVelocity = false, bool angularAccelerations = false)
+        public Recorder(string fileName, IEnumerable<string> nodeResults, IEnumerable<string> elementResults)
         {
-            this.FileName = filePath;
-            this.Displacement = displacements;
-            this.Rotation = rotations;
-            this.Velocity = velocity;
-            this.AngularVelocity = angularVelocity;
-            this.Acceleration = accelerations;
-            this.AngularAcceleration = angularAccelerations;
-            this.ReactionForce = reactionForces;
-            this.ReactionMoment = reactionMoments;
-            this.ModesOfVibration = modesOfVibrations;
-            this.ModesOfVibrationRotational = modesOfVibrationsRotational;
-            this.Force = forces;
-            this.Stress = stresses;
-            this.SectionForce = sectionForces;
-            this.SectionFiberStress = sectionFiberStresses;
+            this.FileName = fileName;
+            this.NodeResults = nodeResults.ToList();
+            this.ElementResults = elementResults.ToList();
         }
+
+        /// <summary>
+        /// The nodal results the MPCO Recorder component offers: those a result component reads
+        /// back. MPCO records more - Rayleigh and unbalanced forces, reactions with inertia - but
+        /// nothing in Alpaca4d would read them, and a box that fills the file with results no
+        /// component can show is one to leave out until a reader for them exists.
+        ///
+        /// Append only. The MPCO Recorder component saves its ticks by position in this list, so
+        /// moving or removing a name would tick a different result in every file already saved.
+        /// </summary>
+        public static readonly IReadOnlyList<string> NodeResultTypes = new[]
+        {
+            "displacement",         // Nodal Displacements, View Results
+            "rotation",             // Nodal Displacements, Principal Stress Lines
+            "velocity",             // Nodal Displacements, after a transient analysis
+            "angularVelocity",
+            "acceleration",
+            "angularAcceleration",
+            "reactionForce",        // Reaction Forces, View Results
+            "reactionMoment",
+        };
+
+        /// <summary>
+        /// The element results the MPCO Recorder component offers, for the same reason as
+        /// <see cref="NodeResultTypes"/>:
+        ///
+        ///   stresses               Brick Stresses - bricks and tetrahedra
+        ///   section.force          Beam Forces and Shell Forces - every forceBeamColumn, hinged
+        ///                          or not, and every shell
+        ///   section.fiber.stress   Shell Stresses - through the thickness of plate fibre and
+        ///                          layered sections
+        ///
+        /// Append only, for the same reason as <see cref="NodeResultTypes"/>.
+        /// </summary>
+        public static readonly IReadOnlyList<string> ElementResultTypes = new[]
+        {
+            "stresses",
+            "section.force",
+            "section.fiber.stress",
+        };
+
+        public static readonly IReadOnlyList<string> StaticNodeResults = new[]
+        {
+            "displacement", "rotation", "reactionForce", "reactionMoment",
+        };
+
+        /// <summary>
+        /// The static set and the motion that a static analysis has none of. Rotational velocity
+        /// and acceleration are recorded apart from the translational ones - "velocity" is the
+        /// translational dofs only - so asking for one and not the other gets half an answer.
+        /// </summary>
+        public static readonly IReadOnlyList<string> TransientNodeResults = new[]
+        {
+            "displacement", "rotation", "velocity", "angularVelocity",
+            "acceleration", "angularAcceleration", "reactionForce", "reactionMoment",
+        };
+
+        /// <summary>What Brick Stresses, Beam Forces, Shell Forces and Shell Stresses read.</summary>
+        public static readonly IReadOnlyList<string> DefaultElementResults = new[]
+        {
+            "stresses", "section.force", "section.fiber.stress",
+        };
 
         public string WriteTcl()
         {
-            string nodeRespType = "";
-
-            if (this.Displacement)
-                nodeRespType += " displacement";
-
-            if (this.Rotation)
-                nodeRespType += " rotation";
-
-            if (this.Velocity)
-                nodeRespType += " velocity";
-
-            if (this.AngularVelocity)
-                nodeRespType += " angularVelocity";
-
-            if (this.Acceleration)
-                nodeRespType += " acceleration";
-
-            if (this.AngularAcceleration)
-                nodeRespType += " angularAcceleration";
-
-            if (this.ReactionForce)
-                nodeRespType += " reactionForce";
-
-            if (this.ReactionMoment)
-                nodeRespType += " reactionMoment";
-
-            if (this.ModesOfVibration)
-                nodeRespType += " modesOfVibration";
-
-            if (this.ModesOfVibrationRotational)
-                nodeRespType += " modesOfVibrationRotational";
-
-            string elementRespType = "";
-
-            if (this.Force)
-                elementRespType += " force";
-
-            if (this.Stress)
-                elementRespType += " stresses";
-
-            if (this.SectionForce)
-                elementRespType += " section.force";
-
-            if (this.SectionFiberStress)
-                elementRespType += " section.fiber.stress";
-
-            return $"recorder mpco {this.FileName} -N {nodeRespType} -E {elementRespType}\n";
+            return $"recorder mpco {this.FileName} -N {string.Join(" ", this.NodeResults)} -E {string.Join(" ", this.ElementResults)}\n";
         }
 
-        public static Recorder MpcoStatic(string filePath,
-                                  bool displacements = true,
-                                  bool rotations = true,
-                                  bool velocity = false,
-                                  bool accelerations = false,
-                                  bool reactionForces = true,
-                                  bool reactionMoments = true,
-                                  bool modesOfVibrations = false,
-                                  bool modesOfVibrationsRotational = false,
-                                  bool forces = false,
-                                  bool stresses = true,
-                                  bool sectionForces = true,
-                                  bool sectionFiberStresses = true,
-                                  bool angularVelocity = false,
-                                  bool angularAccelerations = false)
+        public static Recorder MpcoStatic(string filePath)
         {
-            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses, angularVelocity, angularAccelerations);
+            return new Recorder(filePath, StaticNodeResults, DefaultElementResults);
         }
 
-        public static Recorder MpcoTransient(string filePath,
-                          bool displacements = true,
-                          bool rotations = true,
-                          bool velocity = true,
-                          bool accelerations = true,
-                          bool reactionForces = true,
-                          bool reactionMoments = true,
-                          bool modesOfVibrations = false,
-                          bool modesOfVibrationsRotational = false,
-                          bool forces = false,
-                          bool stresses = true,
-                          bool sectionForces = true,
-                          bool sectionFiberStresses = true,
-                          bool angularVelocity = true,
-                          bool angularAccelerations = true)
+        public static Recorder MpcoTransient(string filePath)
         {
-            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses, angularVelocity, angularAccelerations);
+            return new Recorder(filePath, TransientNodeResults, DefaultElementResults);
         }
 
-        public static Recorder MpcoEigen(string filePath,
-                  bool displacements = false,
-                  bool rotations = false,
-                  bool velocity = false,
-                  bool accelerations = false,
-                  bool reactionForces = false,
-                  bool reactionMoments = false,
-                  bool modesOfVibrations = true,
-                  bool modesOfVibrationsRotational = true,
-                  bool forces = false,
-                  bool stresses = false,
-                  bool sectionForces = false,
-                  bool sectionFiberStresses = false)
+        public static Recorder MpcoEigen(string filePath)
         {
-            return new Recorder(filePath, displacements, rotations, velocity, accelerations, reactionForces, reactionMoments, modesOfVibrations, modesOfVibrationsRotational, forces, stresses, sectionForces, sectionFiberStresses);
+            return new Recorder(filePath, new[] { "modesOfVibration", "modesOfVibrationRotational" }, new string[0]);
         }
 
 
