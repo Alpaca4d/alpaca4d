@@ -18,8 +18,10 @@ namespace Alpaca4d.Gh
 {
     public class RunAnalysis : GH_Component
     {
+        // The leading space is on purpose: the ribbon sorts a panel by name, and it puts this
+        // ahead of Natural Vibration Analysis, as the first component of 07_Analysis.
         public RunAnalysis()
-          : base("Run Analysis (Alpaca4d)", "Run Analysis",
+          : base(" Run Analysis (Alpaca4d)", "Run Analysis",
             "Writes the assembled model out as an OpenSees script, solves it, and returns the model " +
             "with its results attached.\n" +
             "Results are recorded to a recorder.mpco file beside the Grasshopper document and read " +
