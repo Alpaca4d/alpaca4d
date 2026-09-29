@@ -60,6 +60,10 @@ namespace Alpaca4d.Gh
             if (!DA.GetData(0, ref fiberSection) || fiberSection == null)
                 return;
 
+            // Needs a license whatever the section.
+            if (!LicenseGate.Allows(this, "Moment Curvature"))
+                return;
+
             // The registered defaults above are what these are; the fallbacks here only
             // matter if a wire is connected and carries nothing.
             double axial = 0.0;

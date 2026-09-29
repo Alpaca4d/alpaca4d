@@ -454,6 +454,15 @@ namespace Alpaca4d.Gh
 
             if (!DA.GetData(0, ref _model) || _model == null) return;
 
+            // Needs a license whatever the model. Refused mid-animation, the timer would go on
+            // re-solving twenty times a second only to be refused each time, so it stops too.
+            if (!LicenseGate.Allows(this, "View Results"))
+            {
+                _model = null;
+                StopAnimation();
+                return;
+            }
+
             int step = 0;
             DA.GetData(1, ref step);
 

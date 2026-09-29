@@ -86,12 +86,9 @@ namespace Alpaca4d.Gh
                 return;
             }
 
-            // Validate license
-            if (!Alpaca4d.License.License.ValidateLicense(model, false, () => Alpaca4d.UI.LicenseManagementForm.ShowForm(), Alpaca4d.Gh.Forms.Advertise.NumberOfElements))
-            {
-                // add a warning on component saying that the message will be shown every 5 minutes
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "License validation failed. The license management form will be shown every 5 minutes.");
-            }
+            // Free up to License.FreeElementLimit elements. Past it, no license means no analysis.
+            if (!LicenseGate.AllowsModel(this, model))
+                return;
 
 
             // create a shallow copy

@@ -14,11 +14,20 @@ namespace Alpaca4d.License
         public static string assemblyLocation = Assembly.GetExecutingAssembly().Location;
         public static string GhAlpacaFolder = System.IO.Path.GetDirectoryName(assemblyLocation);
         public static string licenseLocation = System.IO.Path.Combine(GhAlpacaFolder, "data.bin");
-        
-        // Static variables for license validation timing
-        private static int validationCounter = 0;
-        private static DateTime? validationFirstTimeRun = DateTime.Now;
-        private static DateTime? validationLastTimeRun = null;
+
+        /// <summary>
+        /// The most elements a model may have and still be analysed without a license. Past it,
+        /// Run Analysis and Natural Vibration Analysis refuse to run.
+        /// </summary>
+        public const int FreeElementLimit = 50;
+
+        /// <summary>
+        /// How often a refusal opens the License window. The refusal itself happens on every
+        /// solve; the window would reopen on every solve too, and a blocked component re-solves
+        /// whenever anything upstream changes.
+        /// </summary>
+        private static readonly TimeSpan ReminderInterval = TimeSpan.FromMinutes(5);
+        private static DateTime? reminderLastShown = null;
         public static bool IsValid
         {
             get
@@ -97,50 +106,47 @@ namespace Alpaca4d.License
         }
 
         /// <summary>
-        /// Validates license and shows license management form if needed
+        /// Whether a model this size may be analysed: always with a license, and without one only up
+        /// to <paramref name="maxElements"/> elements. A refusal calls <paramref name="showFormCallback"/>,
+        /// at most once every five minutes unless <paramref name="forceCheck"/> is set.
+        ///
+        /// Checked on every call. It used to look only once every five minutes and let everything
+        /// through in between, which was enough for a reminder and is not enough for a limit.
         /// </summary>
-        /// <param name="model">The Alpaca model to check element count against</param>
-        /// <param name="forceCheck">If true, bypasses the time-based check</param>
-        /// <param name="showFormCallback">Callback to show the license management form</param>
-        /// <param name="maxElements">Maximum number of elements allowed</param>
-        /// <returns>True if license is valid or form was shown, false otherwise</returns>
-        public static bool ValidateLicense(Alpaca4d.Model model, bool forceCheck = false, Action showFormCallback = null, int maxElements = 100)
+        public static bool ValidateLicense(Alpaca4d.Model model, bool forceCheck = false, Action showFormCallback = null, int maxElements = FreeElementLimit)
         {
-            // Update last run time to the current DateTime
-            validationLastTimeRun = DateTime.Now;
+            // The size first: a small model never needs the license file read.
+            if (model.Elements.Count <= maxElements || IsValid)
+                return true;
 
-            // Check if we should validate (first run or every 5 minutes)
-            if (forceCheck || validationCounter == 0 || validationLastTimeRun - validationFirstTimeRun > TimeSpan.FromMinutes(5))
-            {
-                // License validation routine
-                if (!IsValid)
-                {
-                    // Get element count directly from the Model
-                    int elementCount = model.Elements.Count;
+            Remind(showFormCallback, forceCheck);
+            return false;
+        }
 
-                    if (elementCount > maxElements)
-                    {
-                        // Restart the window here too, otherwise the counter stays at zero
-                        // and the form reopens on every single solve.
-                        if (!forceCheck)
-                        {
-                            validationFirstTimeRun = DateTime.Now;
-                            validationCounter++;
-                        }
+        /// <summary>
+        /// Whether a component that needs a license whatever the model may run. A refusal calls
+        /// <paramref name="showFormCallback"/>, on the same five-minute rule as <see cref="ValidateLicense"/>.
+        /// </summary>
+        public static bool ValidateFeature(Action showFormCallback = null, bool forceCheck = false)
+        {
+            if (IsValid)
+                return true;
 
-                        showFormCallback?.Invoke();
-                        return false; // Return false to indicate license issue
-                    }
-                }
-                
-                if (!forceCheck)
-                {
-                    validationFirstTimeRun = DateTime.Now;
-                    validationCounter++;
-                }
-            }
-            
-            return true; // License is valid
+            Remind(showFormCallback, forceCheck);
+            return false;
+        }
+
+        private static void Remind(Action showFormCallback, bool forceCheck)
+        {
+            if (showFormCallback == null)
+                return;
+
+            var now = DateTime.Now;
+            if (!forceCheck && reminderLastShown.HasValue && now - reminderLastShown.Value < ReminderInterval)
+                return;
+
+            reminderLastShown = now;
+            showFormCallback();
         }
     }
 

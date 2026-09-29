@@ -184,6 +184,14 @@ namespace Alpaca4d.Gh
             DA.GetData(0, ref _model);
             if (_model == null) return;
 
+            // Needs a license whatever the model. The model is let go of as well, or the viewport
+            // would go on drawing the last one this component was allowed to show.
+            if (!LicenseGate.Allows(this, "Model View"))
+            {
+                _model = null;
+                return;
+            }
+
             _loadPatternId = null;
             int lpId = -1;
             if (DA.GetData(1, ref lpId))

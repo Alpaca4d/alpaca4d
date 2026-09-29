@@ -330,6 +330,9 @@ namespace Alpaca4d.UI
                     {
                         UpdateStatus("License added successfully!", Eto.Drawing.Colors.DarkGreen);
                         LoadLicenses(); // Refresh the list
+
+                        // Whatever the missing license had stopped can run now.
+                        Alpaca4d.Gh.LicenseGate.RerunRefused();
                     }
                     else
                     {
