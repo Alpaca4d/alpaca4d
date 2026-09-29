@@ -10,6 +10,12 @@ using Alpaca4d.UIWidgets;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>
+    /// Retired. View Results draws the same result - "Brick stresses" in its Result dropdown -
+    /// alongside every other one, on the deformed shape if asked, so it is not a component of
+    /// its own any more. Kept hidden so definitions that already place it still open.
+    /// </summary>
+    [Obsolete]
     public class BrickStressesView : GH_Component
     {
         private Alpaca4d.Model _model = null;
@@ -294,7 +300,7 @@ namespace Alpaca4d.Gh
         /// each of which can be combined with the GH_Exposure.obscure flag, which 
         /// ensures the component will only be visible on panel dropdowns.
         /// </summary>
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         /// <summary>
         /// Provides an Icon for every component that will be visible in the User Interface.

@@ -11,6 +11,10 @@ using Alpaca4d.UIWidgets;
 namespace Alpaca4d.Gh
 {
     /// <summary>
+    /// Retired. View Results draws the same result - "Shell stresses" in its Result dropdown -
+    /// alongside every other one, on the deformed shape if asked, so it is not a component of
+    /// its own any more. Kept hidden so definitions that already place it still open.
+    ///
     /// Colours the shells by the true stress at one face of the section.
     ///
     /// The counterpart to Shell Forces View, and reading a different quantity: that one shows the
@@ -22,6 +26,7 @@ namespace Alpaca4d.Gh
     /// Principal directions are not drawn here; the Principal Stress Lines component already does
     /// that. The principal magnitudes are offered as things to colour by.
     /// </summary>
+    [Obsolete]
     public class ShellStressesView : GH_Component
     {
         private Alpaca4d.Model _model = null;
@@ -261,7 +266,7 @@ namespace Alpaca4d.Gh
             }
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.shellStress;
 
