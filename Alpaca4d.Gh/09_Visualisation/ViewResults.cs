@@ -74,8 +74,8 @@ namespace Alpaca4d.Gh
 
         public ViewResults()
           : base("View Results_WIP (Alpaca4d)", "View Results_WIP",
-            "Draw any result on the model: displacements, beam force diagrams, shell forces, shell " +
-            "stresses, solid stresses, reactions.\n" +
+            "Draw any result on the model: displacements, beam force diagrams, beam stresses, shell " +
+            "forces, shell stresses, solid stresses, reactions.\n" +
             "Pick the result and the component from the dropdowns. ElementId shows only some of the " +
             "elements and greys the rest, so what you are looking at stays in the model around it.\n" +
             "Work in progress, and meant to grow into the replacement for the separate view components.",
@@ -718,9 +718,83 @@ namespace Alpaca4d.Gh
                 return;
             }
 
+            if (family == ResultFamily.BeamStress)
+            {
+                List<double> stresses;
+                if (beam.Id.HasValue && _field.ByElement != null && _field.ByElement.TryGetValue(beam.Id.Value, out stresses)
+                    && stresses != null && stresses.Count > 0)
+                {
+                    BuildBeamField(beam, start, end, stresses);
+                    return;
+                }
+            }
+
             // A beam under a shell or solid result has no value of its own. Drawn plain rather
             // than coloured, because colouring it would mean picking a number it does not have.
             _curves.Add(Tuple.Create((Curve)line, Color.DimGray));
+        }
+
+        /// <summary>
+        /// A value at every integration section, painted along the beam: each section's colour sits
+        /// where the section does, and the colour is walked between neighbouring ones.
+        ///
+        /// Placed by the beam's own integration rather than at equal steps. Newton-Cotes spaces its
+        /// sections evenly, but HingeRadau puts one a short way in from each end and two over the
+        /// middle, and at equal steps the section just inside a hinge would be drawn a fifth of the
+        /// way along the beam rather than where it is.
+        /// </summary>
+        private void BuildBeamField(IBeam beam, Point3d start, Point3d end, List<double> values)
+        {
+            IReadOnlyList<double> stations = null;
+            if (beam.BeamIntegration != null && beam.Curve != null)
+                stations = beam.BeamIntegration.SectionLocations(beam.Curve.PointAtStart.DistanceTo(beam.Curve.PointAtEnd));
+
+            if (stations == null || stations.Count != values.Count)
+                stations = Enumerable.Range(0, values.Count)
+                                     .Select(i => values.Count > 1 ? i / (double)(values.Count - 1) : 0.5)
+                                     .ToList();
+
+            var axis = end - start;
+
+            if (values.Count == 1)
+            {
+                _curves.Add(Tuple.Create((Curve)new LineCurve(start, end), Colour(values[0])));
+            }
+            else
+            {
+                // Out to the ends as well: the first and last section need not sit on them.
+                var at = new List<double> { 0.0 };
+                var value = new List<double> { values[0] };
+                for (int i = 0; i < values.Count; i++)
+                {
+                    at.Add(stations[i]);
+                    value.Add(values[i]);
+                }
+                at.Add(1.0);
+                value.Add(values[values.Count - 1]);
+
+                const int steps = 4;
+                for (int i = 0; i < at.Count - 1; i++)
+                {
+                    if (at[i + 1] - at[i] <= 0.0) continue;
+
+                    for (int k = 0; k < steps; k++)
+                    {
+                        double a = k / (double)steps;
+                        double b = (k + 1) / (double)steps;
+                        var from = start + axis * (at[i] + (at[i + 1] - at[i]) * a);
+                        var to = start + axis * (at[i] + (at[i + 1] - at[i]) * b);
+                        double mid = value[i] + (value[i + 1] - value[i]) * (a + b) * 0.5;
+                        _curves.Add(Tuple.Create((Curve)new LineCurve(from, to), Colour(mid)));
+                    }
+                }
+            }
+
+            int worst = 0;
+            for (int i = 1; i < values.Count; i++)
+                if (Math.Abs(values[i]) > Math.Abs(values[worst])) worst = i;
+
+            Label(start + axis * stations[worst], values[worst], Color.Black);
         }
 
         private void BuildFace(Mesh source, int? tag, List<int?> nodes, bool kept, ResultFamily family,

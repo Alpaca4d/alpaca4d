@@ -9,7 +9,13 @@ using Alpaca4d.Result;
 
 namespace Alpaca4d.Gh
 {
-    /// <summary>The kinds of result View Results can draw.</summary>
+    /// <summary>
+    /// The kinds of result View Results can draw.
+    ///
+    /// The Result dropdown saves its choice as a position in this list, so a family is only ever
+    /// added at the end: one slipped in beside its neighbours would reopen every saved file one
+    /// family along.
+    /// </summary>
     internal enum ResultFamily
     {
         Displacement,
@@ -17,7 +23,8 @@ namespace Alpaca4d.Gh
         ShellForce,
         ShellStress,
         BrickStress,
-        Reaction
+        Reaction,
+        BeamStress
     }
 
     /// <summary>
@@ -38,7 +45,8 @@ namespace Alpaca4d.Gh
         /// <summary>The names in the Result dropdown, in the order of <see cref="ResultFamily"/>.</summary>
         public static readonly string[] FamilyNames =
         {
-            "Displacement", "Beam forces", "Shell forces", "Shell stresses", "Brick stresses", "Reactions"
+            "Displacement", "Beam forces", "Shell forces", "Shell stresses", "Brick stresses", "Reactions",
+            "Beam stresses"
         };
 
         private static readonly string[] DisplacementNames = { "Magnitude", "Ux", "Uy", "Uz" };
@@ -50,6 +58,8 @@ namespace Alpaca4d.Gh
         // its node numbering. Naming them sigma-xx would be right for only one of the two settings.
         private static readonly string[] BrickStressNames = { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
+        // The outputs of Beam Stresses, in the same order.
+        private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
 
         /// <summary>What the Component dropdown offers for a given family.</summary>
         public static string[] ComponentNames(ResultFamily family)
@@ -61,6 +71,7 @@ namespace Alpaca4d.Gh
                 case ResultFamily.ShellForce: return ShellForceNames;
                 case ResultFamily.ShellStress: return ShellStressNames;
                 case ResultFamily.BrickStress: return BrickStressNames;
+                case ResultFamily.BeamStress: return BeamStressNames;
                 default: return ReactionNames;
             }
         }
@@ -172,6 +183,7 @@ namespace Alpaca4d.Gh
                 case ResultFamily.ShellForce: return ShellForce(model, component, step);
                 case ResultFamily.ShellStress: return ShellStress(model, component, layer, step);
                 case ResultFamily.BrickStress: return BrickStress(model, component, step, localAxes);
+                case ResultFamily.BeamStress: return BeamStress(model, component, step);
                 default: return Reaction(model, component, step);
             }
         }
@@ -235,6 +247,51 @@ namespace Alpaca4d.Gh
             Fill(field.ByElement, model.Beams, chosen);
 
             return field;
+        }
+
+        private static ResultField BeamStress(Alpaca4d.Model model, int component, int step)
+        {
+            var field = new ResultField
+            {
+                ByElement = new Dictionary<int, List<double>>(),
+                Label = BeamStressNames[component]
+            };
+
+            if (model.Beams.Count == 0)
+                return field;
+
+            var read = Alpaca4d.Result.Read.BeamStresses(model, step);
+
+            for (int i = 0; i < model.Beams.Count && i < read.Count; i++)
+            {
+                var stresses = read[i];
+                if (!model.Beams[i].Id.HasValue || stresses.Count == 0)
+                    continue;
+
+                // An Elastic Section has no shape, so N/A is all it has. Left out of everything else,
+                // its beams draw plain rather than in a colour standing for a number they do not have.
+                if (!stresses[0].HasShape && component != 0)
+                    continue;
+
+                field.ByElement[model.Beams[i].Id.Value] = stresses.Select(x => Of(x, component)).ToList();
+            }
+
+            return field;
+        }
+
+        private static double Of(Alpaca4d.Result.BeamStress stress, int component)
+        {
+            switch (component)
+            {
+                case 1: return stress.SigmaMy;
+                case 2: return stress.SigmaMz;
+                case 3: return stress.SigmaMax;
+                case 4: return stress.SigmaMin;
+                case 5: return stress.TauV;
+                case 6: return stress.TauT;
+                case 7: return stress.VonMises;
+                default: return stress.SigmaN;
+            }
         }
 
         private static ResultField ShellForce(Alpaca4d.Model model, int component, int step)

@@ -78,6 +78,10 @@ class ViewResultsTest
             Check(names[3] == "Shell stresses" && families[3] == "ShellStress", "3 is the shell stresses");
             Check(names[4] == "Brick stresses" && families[4] == "BrickStress", "4 is the solid stresses");
             Check(names[5] == "Reactions" && families[5] == "Reaction", "5 is the reactions");
+
+            // The dropdown saves its choice as a position, so a family added later goes on the end.
+            // Slipped in beside the beam forces, it would reopen every saved file one family along.
+            Check(names[6] == "Beam stresses" && families[6] == "BeamStress", "6 is the beam stresses, added last");
         }
 
         Section("Beam forces, against what Beam Forces View offers");
@@ -86,6 +90,15 @@ class ViewResultsTest
             var expected = new[] { "N", "Vy", "Vz", "Torsion", "My", "Mz" };
             Check(ComponentNames("BeamForce").SequenceEqual(expected),
                   "N, Vy, Vz, Torsion, My, Mz - the order Beam Forces View uses");
+        }
+
+        Section("Beam stresses, against what Beam Stresses offers");
+        {
+            // ResultField picks each one off the BeamStress struct by position in this list, so the
+            // list has to match the component's outputs or σMy draws as σMz.
+            var expected = new[] { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
+            Check(ComponentNames("BeamStress").SequenceEqual(expected),
+                  "σN, σMy, σMz, σmax, σmin, τV, τT, VonMises - the outputs of Beam Stresses, in order");
         }
 
         Section("Shell forces, against what Shell Forces View offers");
