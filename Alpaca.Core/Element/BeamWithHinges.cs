@@ -103,8 +103,8 @@ namespace Alpaca4d.Element
             const double factor = 1e-6;
 
             double area   = release.Tx ? baseSection.Area   : baseSection.Area   * factor;
-            double izz    = release.Mz ? baseSection.Izz    : baseSection.Izz    * factor;
-            double iyy    = release.My ? baseSection.Iyy    : baseSection.Iyy    * factor;
+            double izz    = release.Rz ? baseSection.Izz    : baseSection.Izz    * factor;
+            double iyy    = release.Ry ? baseSection.Iyy    : baseSection.Iyy    * factor;
             double j      = release.Rx ? baseSection.J      : baseSection.J      * factor;
             double alphaY = release.Ty ? baseSection.AlphaY : baseSection.AlphaY * factor;
             double alphaZ = release.Tz ? baseSection.AlphaZ : baseSection.AlphaZ * factor;

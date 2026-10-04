@@ -24,9 +24,9 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Rx", "Rx", "Torsional rotation about X. False = released.", GH_ParamAccess.item, true);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("My", "My", "Bending about Y. False = released.", GH_ParamAccess.item, true);
+            pManager.AddBooleanParameter("Ry", "Ry", "Rotation about Y (bending). False = released.", GH_ParamAccess.item, true);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Mz", "Mz", "Bending about Z. False = released.", GH_ParamAccess.item, true);
+            pManager.AddBooleanParameter("Rz", "Rz", "Rotation about Z (bending). False = released.", GH_ParamAccess.item, true);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -37,16 +37,16 @@ namespace Alpaca4d.Gh
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            bool tx = true, ty = true, tz = true, rx = true, my = true, mz = true;
+            bool tx = true, ty = true, tz = true, rx = true, ry = true, rz = true;
 
             DA.GetData(0, ref tx);
             DA.GetData(1, ref ty);
             DA.GetData(2, ref tz);
             DA.GetData(3, ref rx);
-            DA.GetData(4, ref my);
-            DA.GetData(5, ref mz);
+            DA.GetData(4, ref ry);
+            DA.GetData(5, ref rz);
 
-            var release = new Alpaca4d.Element.Release(tx, ty, tz, rx, my, mz);
+            var release = new Alpaca4d.Element.Release(tx, ty, tz, rx, ry, rz);
             DA.SetData(0, release);
         }
 

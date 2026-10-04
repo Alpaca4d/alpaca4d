@@ -12,23 +12,23 @@ namespace Alpaca4d.Element
         public bool Tz { get; set; } = true;
         /// <summary>Torsional rotation about X. False = released (low stiffness).</summary>
         public bool Rx { get; set; } = true;
-        /// <summary>Bending about Y. False = released (low stiffness).</summary>
-        public bool My { get; set; } = true;
-        /// <summary>Bending about Z. False = released (low stiffness).</summary>
-        public bool Mz { get; set; } = true;
+        /// <summary>Rotation about Y (bending). False = released (low stiffness).</summary>
+        public bool Ry { get; set; } = true;
+        /// <summary>Rotation about Z (bending). False = released (low stiffness).</summary>
+        public bool Rz { get; set; } = true;
 
         public static readonly Release FullFixed = new Release();
 
         public Release() { }
 
-        public Release(bool tx, bool ty, bool tz, bool rx, bool my, bool mz)
+        public Release(bool tx, bool ty, bool tz, bool rx, bool ry, bool rz)
         {
             Tx = tx;
             Ty = ty;
             Tz = tz;
             Rx = rx;
-            My = my;
-            Mz = mz;
+            Ry = ry;
+            Rz = rz;
         }
     }
 }
