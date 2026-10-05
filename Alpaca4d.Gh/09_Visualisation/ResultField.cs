@@ -254,7 +254,7 @@ namespace Alpaca4d.Gh
             var field = new ResultField
             {
                 ByElement = new Dictionary<int, List<double>>(),
-                Label = BeamStressNames[component]
+                Label = BeamStressNames[component] + " [MPa]"
             };
 
             if (model.Beams.Count == 0)
@@ -273,7 +273,8 @@ namespace Alpaca4d.Gh
                 if (!stresses[0].HasShape && component != 0)
                     continue;
 
-                field.ByElement[model.Beams[i].Id.Value] = stresses.Select(x => Of(x, component)).ToList();
+                // In MPa, as the Beam Stresses component gives them, so the two read the same numbers.
+                field.ByElement[model.Beams[i].Id.Value] = stresses.Select(x => ModelStress.ToMPa(Of(x, component))).ToList();
             }
 
             return field;

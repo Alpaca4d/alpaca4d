@@ -21,6 +21,9 @@ namespace Alpaca4d.Material
         public double Nu { get; set; }
         public double? Rho { get; set; }
 
+        /// <summary>See <see cref="IUniaxialMaterial.Grade"/>. Material Library Elastic sets it.</summary>
+        public IDesignGrade Grade { get; set; }
+
         public static UniaxialMaterialElastic Steel
         {
             get

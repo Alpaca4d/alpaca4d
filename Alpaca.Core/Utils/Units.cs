@@ -56,6 +56,37 @@ namespace Alpaca4d
         public static Vector3d ToKg(Vector3d mass) => mass / KgToModelMass;
     }
 
+    /// <summary>
+    /// Stresses between N/mm² - the unit material tables and the Eurocodes are written in - and the
+    /// model's own unit, which with <see cref="Units.Force"/> in kN and <see cref="Units.Length"/> in m
+    /// is kN/m², a thousand times smaller.
+    /// </summary>
+    public static class ModelStress
+    {
+        /// <summary>How many model stress units make one N/mm².</summary>
+        public static double PerMPa
+        {
+            get
+            {
+                double newtonsPerForce = Units.Force == ForceUnit.kN ? 1000.0 : 1.0;
+                double millimetresPerLength = ModelLength.MillimetresPerUnit;
+                return millimetresPerLength * millimetresPerLength / newtonsPerForce;
+            }
+        }
+
+        public static double FromMPa(double mpa) => mpa * PerMPa;
+
+        public static double ToMPa(double stress) => stress / PerMPa;
+    }
+
+    /// <summary>Lengths in millimetres, which is what thickness limits in the Eurocodes are written in.</summary>
+    public static class ModelLength
+    {
+        public static double MillimetresPerUnit => Units.Length == LengthUnit.m ? 1000.0 : 1.0;
+
+        public static double ToMillimetres(double length) => length * MillimetresPerUnit;
+    }
+
     public enum AngleUnit
     {
         deg,

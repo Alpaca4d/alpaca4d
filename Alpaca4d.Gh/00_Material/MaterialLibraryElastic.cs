@@ -416,6 +416,7 @@ namespace Alpaca4d.Gh
 			double eNeg = E;
 			double eta = 0.0;
 			var material = new Alpaca4d.Material.UniaxialMaterialElastic(selGrade, E, eNeg, eta, G, nu, rho);
+			material.Grade = DesignGradeOf(selType, selGrade);
 			DA.SetData(0, material);
 		}
 		else
@@ -424,6 +425,22 @@ namespace Alpaca4d.Gh
 			DA.SetData(0, material);
 		}
 	}
+
+		/// <summary>
+		/// What the selection is for design - its family and strengths - from whichever database it came
+		/// out of, for the Utilisation component to check it against. Only steel has one so far.
+		/// </summary>
+		private Alpaca4d.Material.IDesignGrade DesignGradeOf(string type, string grade)
+		{
+			JObject entry = null;
+			var customType = GetMaterialTypeFromDb(customDb);
+			if (!string.IsNullOrEmpty(customType) && string.Equals(type, customType, StringComparison.OrdinalIgnoreCase))
+				entry = customDb?[grade] as JObject;
+			else if (string.Equals(type, "Steel", StringComparison.OrdinalIgnoreCase))
+				entry = LoadJsonResourceOnce(ref steelDb, "Alpaca4d.Resources.Material.steel_properties.json")?[grade] as JObject;
+
+			return Alpaca4d.Material.SteelGrade.FromEntry(grade, entry);
+		}
 
 		private void GetElasticParameters(string type, string grade, out double E, out double nu, out double rho)
 		{

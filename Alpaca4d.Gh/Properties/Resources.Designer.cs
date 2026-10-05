@@ -103,6 +103,26 @@ namespace Alpaca4d.Gh.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
+        public static System.Drawing.Bitmap Beam_Stresses__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Beam_Stresses__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Utilisation__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Utilisation__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
         public static System.Drawing.Bitmap BeamForcesDiagram__Alpaca4d_ {
             get {
                 object obj = ResourceManager.GetObject("BeamForcesDiagram__Alpaca4d_", resourceCulture);

@@ -123,6 +123,24 @@ namespace Alpaca4d.Result
         /// <summary>Peak shear stress per unit torque.</summary>
         public double Torsion { get; private set; }
 
+        /// <summary>Elastic section modulus for My: Iy over the distance to the furthest fibre in z.</summary>
+        public double WelY { get; private set; }
+        /// <summary>Elastic section modulus for Mz: Iz over the distance to the furthest fibre in y.</summary>
+        public double WelZ { get; private set; }
+        /// <summary>Plastic section modulus for My, about the axis that halves the area.</summary>
+        public double WplY { get; private set; }
+        /// <summary>Plastic section modulus for Mz, about the axis that halves the area.</summary>
+        public double WplZ { get; private set; }
+
+        /// <summary>
+        /// Where the plastic neutral axis of Mz sits, as a centroidal y: the line with half the area
+        /// either side. On the centroid for a doubly symmetric shape, off it for an I with unequal
+        /// flanges or a pair of angles.
+        /// </summary>
+        public double PlasticNeutralY { get; private set; }
+        /// <summary>As <see cref="PlasticNeutralY"/>, for My, as a centroidal z.</summary>
+        public double PlasticNeutralZ { get; private set; }
+
         /// <summary>The corners of the shape, centroidal (y, z). Empty for a round section.</summary>
         private readonly List<(double Y, double Z)> _corners = new List<(double Y, double Z)>();
 
@@ -272,6 +290,11 @@ namespace Alpaca4d.Result
                 Iz = inertia,
                 _radius = outer
             };
+
+            section.WelY = inertia / outer;
+            section.WelZ = inertia / outer;
+            section.WplY = 4.0 / 3.0 * (Math.Pow(outer, 3) - Math.Pow(inner, 3));
+            section.WplZ = section.WplY;
 
             // Jourawski across a diameter: S = (2/3)(R³ − r³), cut width 2(R − r). That is 4V/3A for a
             // solid bar and tends to 2V/A for a thin tube, the two textbook values, from one formula.
@@ -433,6 +456,14 @@ namespace Alpaca4d.Result
             section.ShearY = PeakShear(joined, iz, b => new Strip(b.Y1, b.Y2, b.Z1, b.Z2, b.Link));
             section.ShearZ = PeakShear(joined, iy, b => new Strip(b.Z1, b.Z2, b.Y1, b.Y2, b.Link));
 
+            section.WelZ = iz / section._corners.Max(c => Math.Abs(c.Y));
+            section.WelY = iy / section._corners.Max(c => Math.Abs(c.Z));
+
+            section.PlasticNeutralY = HalfArea(centred, b => new Strip(b.Y1, b.Y2, b.Z1, b.Z2, false));
+            section.PlasticNeutralZ = HalfArea(centred, b => new Strip(b.Z1, b.Z2, b.Y1, b.Y2, false));
+            section.WplZ = FirstMoment(centred, section.PlasticNeutralY, b => new Strip(b.Y1, b.Y2, b.Z1, b.Z2, false));
+            section.WplY = FirstMoment(centred, section.PlasticNeutralZ, b => new Strip(b.Z1, b.Z2, b.Y1, b.Y2, false));
+
             return section;
         }
 
@@ -566,6 +597,43 @@ namespace Alpaca4d.Result
         /// too stiff for an I. This is the stress under the torque the analysis reports; that the torque
         /// itself came out of an over-stiff member is a matter for the section.
         /// </summary>
+        private static double HalfArea(List<Box> boxes, Func<Box, Strip> axes)
+        {
+            var strips = boxes.Select(axes).ToList();
+            double half = strips.Sum(r => r.Area) / 2.0;
+
+            // The area beyond a line only grows as the line moves the other way, so halving the
+            // interval homes in on it; a hundred halvings is past double precision.
+            double low = strips.Min(r => r.U1), high = strips.Max(r => r.U2);
+            for (int i = 0; i < 100; i++)
+            {
+                double mid = (low + high) / 2.0;
+                double beyond = strips.Sum(r => (r.V2 - r.V1) * Math.Max(0.0, r.U2 - Math.Max(r.U1, mid)));
+                if (beyond > half) low = mid; else high = mid;
+            }
+
+            return (low + high) / 2.0;
+        }
+
+        /// <summary>
+        /// The plastic modulus about a line: Σ |first moment| of the area either side of it, every
+        /// fibre at fy pulling or pushing with its own lever arm.
+        /// </summary>
+        private static double FirstMoment(List<Box> boxes, double cut, Func<Box, Strip> axes)
+        {
+            double total = 0.0;
+            foreach (var r in boxes.Select(axes))
+            {
+                double above = Math.Max(0.0, r.U2 - Math.Max(r.U1, cut));
+                double below = Math.Max(0.0, Math.Min(r.U2, cut) - r.U1);
+                double fromCut = Math.Max(r.U1, cut) - cut;
+                double toCut = cut - Math.Min(r.U2, cut);
+                total += (r.V2 - r.V1) * (above * (fromCut + above / 2.0) + below * (toCut + below / 2.0));
+            }
+
+            return total;
+        }
+
         private static double OpenTorsion(BeamSectionStress section)
         {
             if (section._boxes == null || section._boxes.Count == 0) return 0.0;

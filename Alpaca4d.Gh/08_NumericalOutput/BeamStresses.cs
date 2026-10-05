@@ -22,7 +22,8 @@ namespace Alpaca4d.Gh
             "sit at the same point.\n" +
             "One branch per element, keyed by its tag, holding the values at the integration sections " +
             "from the I end to the J end, as Beam Forces does. An Elastic Section has no shape, so its " +
-            "beams give σN only.",
+            "beams give σN only.\n" +
+            "Stresses in MPa (N/mm²), the unit section tables and design codes use.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -49,7 +50,9 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            string stress = $"[{Units.Force}/{Units.Length}²]";
+            // N/mm² rather than the model's kN/m² - the unit every steel or timber strength is
+            // tabulated in, so the numbers can be read against a grade without a factor of 1000.
+            const string stress = "[MPa]";
 
             pManager.Register_DoubleParam("SigmaN", "σN", $"Axial stress N/A, positive in tension {stress}");
             pManager.Register_DoubleParam("SigmaMy", "σMy", $"Largest bending stress from My, at the fibre furthest along local z {stress}");
@@ -106,7 +109,7 @@ namespace Alpaca4d.Gh
                     var path = history ? new GH_Path(current, beam.Id.Value) : new GH_Path(beam.Id.Value);
                     var stresses = all[i];
 
-                    outputs[0].AddRange(stresses.Select(x => x.SigmaN), path);
+                    outputs[0].AddRange(stresses.Select(x => MPa(x.SigmaN)), path);
 
                     // A section with no shape has only N/A to give. Its branches are still made, empty,
                     // so every output keeps one branch per beam and they line up with Element.
@@ -118,13 +121,13 @@ namespace Alpaca4d.Gh
                         continue;
                     }
 
-                    outputs[1].AddRange(stresses.Select(x => x.SigmaMy), path);
-                    outputs[2].AddRange(stresses.Select(x => x.SigmaMz), path);
-                    outputs[3].AddRange(stresses.Select(x => x.SigmaMax), path);
-                    outputs[4].AddRange(stresses.Select(x => x.SigmaMin), path);
-                    outputs[5].AddRange(stresses.Select(x => x.TauV), path);
-                    outputs[6].AddRange(stresses.Select(x => x.TauT), path);
-                    outputs[7].AddRange(stresses.Select(x => x.VonMises), path);
+                    outputs[1].AddRange(stresses.Select(x => MPa(x.SigmaMy)), path);
+                    outputs[2].AddRange(stresses.Select(x => MPa(x.SigmaMz)), path);
+                    outputs[3].AddRange(stresses.Select(x => MPa(x.SigmaMax)), path);
+                    outputs[4].AddRange(stresses.Select(x => MPa(x.SigmaMin)), path);
+                    outputs[5].AddRange(stresses.Select(x => MPa(x.TauV)), path);
+                    outputs[6].AddRange(stresses.Select(x => MPa(x.TauT)), path);
+                    outputs[7].AddRange(stresses.Select(x => MPa(x.VonMises)), path);
                 }
             }
 
@@ -142,9 +145,11 @@ namespace Alpaca4d.Gh
             DA.SetDataList(8, kept.Select(i => beams[i]));
         }
 
+        private static double MPa(double stress) => ModelStress.ToMPa(stress);
+
         public override GH_Exposure Exposure => GH_Exposure.secondary;
 
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Timber_beam_utilisation__Alpaca4d_;
+        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Beam_Stresses__Alpaca4d_;
 
         public override Guid ComponentGuid => new Guid("{D7AB9781-1379-4608-9130-448C8476F498}");
     }

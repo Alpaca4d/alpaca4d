@@ -1,7 +1,7 @@
 {
-    "S235":    {"rho":7850, "E": 210000, "G": 80769,"fy": 235,"fu": 360,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"},
-    "S275":    {"rho":7850, "E": 210000, "G": 80769,"fy": 275,"fu": 430,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"},
-    "S355":    {"rho":7850, "E": 210000, "G": 80769,"fy": 355,"fu": 510,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"},
-    "S450":    {"rho":7850, "E": 210000, "G": 80769,"fy": 440,"fu": 550,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"}
+    "S235":    {"rho":7850, "E": 210000, "G": 80769,"fy": 235,"fu": 360, "fy_40_80": 215, "fu_40_80": 360,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"},
+    "S275":    {"rho":7850, "E": 210000, "G": 80769,"fy": 275,"fu": 430, "fy_40_80": 255, "fu_40_80": 410,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"},
+    "S355":    {"rho":7850, "E": 210000, "G": 80769,"fy": 355,"fu": 510, "fy_40_80": 335, "fu_40_80": 470,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"},
+    "S450":    {"rho":7850, "E": 210000, "G": 80769,"fy": 440,"fu": 550, "fy_40_80": 410, "fu_40_80": 550,"epsilon_yield":0.015 ,"epsilon_max_Stress": 0.11, "strainAtRupture": 0.17, "material_type": "Steel"}
 }
 
