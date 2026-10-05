@@ -39,7 +39,7 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The assembled model, from Assemble Model. Not from Run Analysis - that clears the OpenSees domain when it finishes, leaving nothing to solve.", GH_ParamAccess.item);
             pManager.AddIntegerParameter("Vibration Modes", "Vibration Modes", "How many modes to solve for, starting at the lowest. Ask for enough that the cumulative participating mass reaches whatever your code requires.", GH_ParamAccess.item, 1);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddTextParameter("Solver", "Solver", "Connect a 'ValueList'\n-genBandArpack \n-symmBandLapack \n-fullGenLapack", GH_ParamAccess.item, "-genBandArpack");
+            pManager.AddTextParameter("Solver", "Solver", "Connect a 'ValueList'\n-genBandArpack \n-fullGenLapack", GH_ParamAccess.item, "-genBandArpack");
             pManager[pManager.ParamCount-1].Optional = true;
         }
 
@@ -70,6 +70,13 @@ namespace Alpaca4d.Gh
 
             string solver = "";
             DA.GetData(2, ref solver);
+
+            string unsuitable = Alpaca4d.Eigen.Unsuitable(solver);
+            if (unsuitable != null)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, unsuitable);
+                return;
+            }
 
             // An analysed model is not a model any more: Run Analysis ends the script it
             // hands on with "wipe", which clears the OpenSees domain. Appending the eigen
@@ -125,9 +132,7 @@ namespace Alpaca4d.Gh
             analysisModel.Tcl.Add(recorder.WriteTcl());
 
             // Settings
-            string eigenTcl = $"set lambdaN [eigen {solver} {vibrationNumber}]\n";
-            analysisModel.Tcl.Add(eigenTcl);
-            analysisModel.Tcl.Add("puts \"$lambdaN\"\n");
+            analysisModel.Tcl.Add(Alpaca4d.Eigen.WriteTcl(solver, vibrationNumber));
             analysisModel.Tcl.Add($"modalProperties -file \"{analysisModel.ModalAnalysisReportFile}\" -unorm\n");
             analysisModel.Tcl.Add("record\nwipe");
 
@@ -144,29 +149,28 @@ namespace Alpaca4d.Gh
                 return;
             }
 
+            // OpenSees prints to its error stream, so that is the log, failed or not.
+            var log = new List<string>() {stderr};
+            DA.SetDataList(0, log);
+
             if (exitCode != 0)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Analysis Failed: OpenSees exited with an error. See log for details.");
                 return;
             }
 
-            // clean string
-
-            String[] separator = { "Italy.", "Using DomainModalProperties" };
-            String[] lineSeparator = { "\r\n", " " };
-
-            var eigenValue = stderr.Split(separator,
-                   StringSplitOptions.RemoveEmptyEntries)[1].Trim().Split(lineSeparator, StringSplitOptions.RemoveEmptyEntries).Select(x => double.Parse(x.Trim())).ToList();
-
+            var eigenValue = Alpaca4d.Eigen.Read(stderr);
+            if (eigenValue == null || eigenValue.Count == 0)
+            {
+                var said = Alpaca4d.Eigen.SolverMessages(stderr);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "OpenSees returned no eigenvalues." +
+                    (said.Count > 0 ? " It said: " + string.Join(" / ", said) + "." : "") + " See log for details.");
+                return;
+            }
 
             var frequencies = eigenValue.Select(eigen => Math.Sqrt(eigen)/(2 * Math.PI)).ToList();
             var period = frequencies.Select(x => 1/x).ToList();
 
-            // add error handling
-            var log = new List<string>() {stderr};
-
-            // Finally assign the spiral to the output parameter.
-            DA.SetDataList(0, log);
             DA.SetData(1, analysisModel);
             DA.SetDataList(2, eigenValue);
             DA.SetDataList(3, period);
@@ -177,7 +181,8 @@ namespace Alpaca4d.Gh
         {
             var resultTypes = new List<string>();
 
-            var _resultTypes = new List<Analysis.Solver> { Analysis.Solver.genBandArpack, Analysis.Solver.symmBandLapack, Analysis.Solver.fullGenLapack };
+            // Not symmBandLapack: it cannot solve a vibration problem (Eigen.Unsuitable).
+            var _resultTypes = new List<Analysis.Solver> { Analysis.Solver.genBandArpack, Analysis.Solver.fullGenLapack };
 
             foreach(Analysis.Solver solver in _resultTypes)
 			{
