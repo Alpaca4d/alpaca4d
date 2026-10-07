@@ -53,14 +53,17 @@ namespace Alpaca4d.Gh
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("pxx", "pxx", $"[{Units.Force}/{Units.Length}]");
-            pManager.Register_GenericParam("pyy", "pyy", $"[{Units.Force}/{Units.Length}]");
-            pManager.Register_GenericParam("pxy", "pxy", $"[{Units.Force}/{Units.Length}]");
-            pManager.Register_GenericParam("mxx", "mxx", $"[{Units.Force}{Units.Length}/{Units.Length}]");
-            pManager.Register_GenericParam("myy", "myy", $"[{Units.Force}{Units.Length}/{Units.Length}]");
-            pManager.Register_GenericParam("mxy", "mxy", $"[{Units.Force}{Units.Length}/{Units.Length}]");
-            pManager.Register_GenericParam("vxz", "vxz", $"[{Units.Force}/{Units.Length}]");
-            pManager.Register_GenericParam("vyz", "vyz", $"[{Units.Force}/{Units.Length}]");
+            // x, y and z here are axes 1, 2 and 3 of Model View's Local Axes - red, green, blue.
+            // The moment sign is checked against OpenSees: a cantilever strip with axis 3 up reads
+            // a positive mxx where it hogs.
+            pManager.Register_GenericParam("pxx", "pxx", $"[{Units.Force}/{Units.Length}] Membrane force along local x (axis 1, red). Positive is tension.");
+            pManager.Register_GenericParam("pyy", "pyy", $"[{Units.Force}/{Units.Length}] Membrane force along local y (axis 2, green). Positive is tension.");
+            pManager.Register_GenericParam("pxy", "pxy", $"[{Units.Force}/{Units.Length}] In-plane shear in the x-y plane.");
+            pManager.Register_GenericParam("mxx", "mxx", $"[{Units.Force}{Units.Length}/{Units.Length}] Bending moment whose stresses run along local x (axis 1). Positive puts the +z face - the side axis 3, blue, points to: the Top layer - in tension.");
+            pManager.Register_GenericParam("myy", "myy", $"[{Units.Force}{Units.Length}/{Units.Length}] Bending moment whose stresses run along local y (axis 2). Positive puts the +z face - the Top layer - in tension.");
+            pManager.Register_GenericParam("mxy", "mxy", $"[{Units.Force}{Units.Length}/{Units.Length}] Twisting moment.");
+            pManager.Register_GenericParam("vxz", "vxz", $"[{Units.Force}/{Units.Length}] Transverse shear on the face normal to local x.");
+            pManager.Register_GenericParam("vyz", "vyz", $"[{Units.Force}/{Units.Length}] Transverse shear on the face normal to local y.");
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 

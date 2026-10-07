@@ -53,7 +53,7 @@ namespace Alpaca4d.Gh
             pManager.Register_DoubleParam("Sigma23", "σ₂₃", $"Transverse shear stress in the local 2-3 plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_DoubleParam("Sigma31", "σ₃₁", $"Transverse shear stress in the local 3-1 plane [{Units.Force}/{Units.Length}²]");
             pManager.Register_DoubleParam("VonMises", "VonMises", $"Von Mises equivalent stress, from the five components above [{Units.Force}/{Units.Length}²]");
-            pManager.Register_StringParam("Layer", "Layer", "Which layer each branch is: Top, Middle or Bottom, in that order.");
+            pManager.Register_StringParam("Layer", "Layer", "Which layer each branch is: Top, Middle or Bottom, in that order. Top is the face on the side local axis 3 points to - the blue arrow of Model View's Local Axes - which is not up on a shell whose mesh faces down.");
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
