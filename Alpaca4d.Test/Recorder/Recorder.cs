@@ -71,6 +71,13 @@ class RecorderTest
         Check(Words(Recorder.MpcoEigen("recorder_eigen.mpco").WriteTcl()) ==
               "recorder mpco recorder_eigen.mpco -N modesOfVibration modesOfVibrationRotational -E", "eigen");
 
+        // Run Analysis now hands every recorder a full path, one file per branch it solves. Tcl
+        // would split one with a space and eat its backslashes, so it goes in braces.
+        Check(Words(Recorder.MpcoStatic("/Users/Jane Doe/AlpacaResults/recorder_0.mpco").WriteTcl())
+              .StartsWith("recorder mpco {/Users/Jane Doe/AlpacaResults/recorder_0.mpco} -N "), "a path with a space, in braces");
+        Check(Words(Recorder.MpcoStatic(@"C:\Users\Jane\AlpacaResults\recorder_0.mpco").WriteTcl())
+              .StartsWith(@"recorder mpco {C:\Users\Jane\AlpacaResults\recorder_0.mpco} -N "), "a Windows path, in braces");
+
         Console.WriteLine("\nThe tick boxes, by the position they are saved at");
 
         Check(Recorder.NodeResultTypes.SequenceEqual(new[]
