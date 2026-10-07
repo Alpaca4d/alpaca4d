@@ -29,6 +29,13 @@ namespace Alpaca4d.Gh
         private string storedFamily = null;
         private string storedSection = null;
 
+        /// <summary>
+        /// The entry that asks for every section rather than one: first in the Section list, for
+        /// the whole family, and last in the Family list, for the whole database. What an
+        /// optimisation wants to pick from, with List Item and a slider.
+        /// </summary>
+        private const string All = "All";
+
         public override Guid ComponentGuid => new Guid("{0F82C248-4B58-4C25-9F85-6B7F7C4696C0}");
         public override GH_Exposure Exposure => GH_Exposure.tertiary;
         protected override Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Section_Library__Alpaca4d_;
@@ -58,7 +65,7 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("Section", "Section", "Steel section from the library (I, O, [], or 2L)");
+            pManager.Register_GenericParam("Section", "Section", "Steel section from the library (I, O, [], or 2L). With Section set to All, every section of the family - or of the whole library, with Family set to All - as a list, smallest area first.");
         }
 
         #region UI setup
@@ -132,7 +139,8 @@ namespace Alpaca4d.Gh
                 ? GetSelected(familyDrop, "I")  // Default to "I" family
                 : "I";
 
-            bool is2LFamily = selFamily.Equals("2L", StringComparison.OrdinalIgnoreCase);
+            // All takes in the angles too, which need their gap.
+            bool is2LFamily = selFamily.Equals("2L", StringComparison.OrdinalIgnoreCase) || selFamily == All;
             
             // Check if Gap parameter exists by looking for it by name
             IGH_Param gapParam = Params.Input.FirstOrDefault(p => p.Name == "Gap");
@@ -212,6 +220,7 @@ namespace Alpaca4d.Gh
                 var f = families[i];
                 familyDrop.AddItem(f, f);
             }
+            familyDrop.AddItem(All, All);
             
             // Set "I" as the default selection if no stored family exists
             if (string.IsNullOrEmpty(storedFamily) && familyDrop.Items.Count > 0)
@@ -293,7 +302,17 @@ namespace Alpaca4d.Gh
             if (familyDrop == null || sectionDrop == null) return;
             string selFamily = GetSelected(familyDrop, defaultName: familyToSections.Keys.FirstOrDefault() ?? "Unknown");
 
+            string previous = sectionDrop.Items.Count > 0 ? GetSelected(sectionDrop, null) : null;
             sectionDrop.Clear();
+            sectionDrop.AddItem(All, All);
+
+            // Every section in the library has nothing to choose between but All.
+            if (selFamily == All)
+            {
+                sectionDrop.Value = 0;
+                return;
+            }
+
             if (familyToSections.TryGetValue(selFamily, out var sections))
             {
                 for (int i = 0; i < sections.Count; i++)
@@ -302,6 +321,13 @@ namespace Alpaca4d.Gh
                     sectionDrop.AddItem(s, s);
                 }
             }
+
+            // What was chosen, if the new list still has it - All stays All across a change of
+            // family. Otherwise the first section, not All, so a new component or a new family
+            // gives one section as it always did. Callers restoring a saved choice set it by name
+            // after this.
+            int keep = previous != null ? sectionDrop.FindIndex(previous) : -1;
+            sectionDrop.Value = keep >= 0 ? keep : (sectionDrop.Items.Count > 1 ? 1 : 0);
         }
 
         /// <summary>
@@ -403,6 +429,12 @@ namespace Alpaca4d.Gh
             storedFamily = selFamily;
             storedSection = selSection;
 
+            if (selSection == All)
+            {
+                DA.SetDataList(0, AllSections(selFamily, material, gap));
+                return;
+            }
+
             // Create the appropriate section type based on the family
             IUniaxialSection section = CreateSection(selFamily, selSection, material, gap);
             if (section == null)
@@ -412,6 +444,63 @@ namespace Alpaca4d.Gh
             }
 
             DA.SetData(0, section);
+        }
+
+        /// <summary>
+        /// Every section of <paramref name="family"/>, or of every family for All, smallest area
+        /// first - so that walking a slider along the list walks from the lightest section to the
+        /// heaviest, rather than alphabetically from HEA100 to HEA1000 and back to HEA120.
+        /// The area is worked out from the database dimensions, the same plates the section is
+        /// built from, so the order costs no geometry.
+        /// </summary>
+        private List<IUniaxialSection> AllSections(string family, IUniaxialMaterial material, double gap)
+        {
+            var db = LoadJsonResourceOnce(ref steelSectionDb, "Alpaca4d.Resources.Section.section.json");
+            var families = family == All ? familyToSections.Keys.ToList() : new List<string> { family };
+
+            var found = new List<Tuple<double, string, IUniaxialSection>>();
+            foreach (var fam in families)
+            {
+                if (!familyToSections.TryGetValue(fam, out var names)) continue;
+                foreach (var name in names)
+                {
+                    var section = CreateSection(fam, name, material, gap);
+                    if (section == null) continue;
+                    found.Add(Tuple.Create(PlateArea(fam, FindSectionEntry(db, fam, name)), name, section));
+                }
+            }
+
+            return found.OrderBy(x => x.Item1)
+                        .ThenBy(x => x.Item2, StringComparer.OrdinalIgnoreCase)
+                        .Select(x => x.Item3)
+                        .ToList();
+        }
+
+        /// <summary>Cross-sectional area of a database entry, in mm², from the plates it is built of.</summary>
+        private static double PlateArea(string family, JObject entry)
+        {
+            if (entry == null) return double.MaxValue;
+
+            if (family.Equals("O", StringComparison.OrdinalIgnoreCase))
+            {
+                double d = TryGetDouble(entry, "d"), t = TryGetDouble(entry, "t");
+                double inner = d - 2.0 * t;
+                return Math.PI / 4.0 * (d * d - inner * inner);
+            }
+            if (family.Equals("[]", StringComparison.Ordinal))
+            {
+                double h = TryGetDouble(entry, "h"), b = TryGetDouble(entry, "b"), t = TryGetDouble(entry, "t");
+                return b * h - (b - 2.0 * t) * (h - 2.0 * t);
+            }
+            if (family.Equals("2L", StringComparison.OrdinalIgnoreCase))
+            {
+                double h = TryGetDouble(entry, "h"), b = TryGetDouble(entry, "b"), t = TryGetDouble(entry, "t");
+                return 2.0 * (h * t + (b - t) * t);
+            }
+
+            double hi = TryGetDouble(entry, "h"), bi = TryGetDouble(entry, "b");
+            double tw = TryGetDouble(entry, "tw"), tf = TryGetDouble(entry, "tf");
+            return 2.0 * bi * tf + (hi - 2.0 * tf) * tw;
         }
 
         /// <summary>

@@ -36,6 +36,12 @@ namespace Alpaca4d.Gh
 		private string storedGrade = "S235";
 		private string storedModel = "Uniaxial";
 
+		/// <summary>
+		/// The first entry of the Grade list, asking for every grade of the type rather than one: what
+		/// an optimisation wants to pick from, with List Item and a slider.
+		/// </summary>
+		private const string All = "All";
+
 		private bool TryLoadCustomDb(string path)
 		{
 			// Returns true only when the effective DB source changed (loaded, reloaded, or cleared)
@@ -150,7 +156,7 @@ namespace Alpaca4d.Gh
 
 		protected override void RegisterOutputParams(GH_OutputParamManager pManager)
 		{
-			pManager.Register_GenericParam("Material", "Material", "Material");
+			pManager.Register_GenericParam("Material", "Material", "Material. With Grade set to All, every grade of the type as a list, in the database's order - weakest first for steel.");
 		}
 
 		protected override void Setup(GH_ExtendableComponentAttributes attr)
@@ -278,7 +284,9 @@ namespace Alpaca4d.Gh
 		{
 			if (typeDrop == null || gradeDrop == null) return;
 			string selType = GetSelected(typeDrop, defaultName: "Steel");
+			string previous = gradeDrop.Items.Count > 0 ? GetSelected(gradeDrop, null) : null;
 			gradeDrop.Clear();
+			gradeDrop.AddItem(All, All);
 			if (typeToGrades.TryGetValue(selType, out var grades))
 			{
 				for (int i = 0; i < grades.Count; i++)
@@ -287,6 +295,12 @@ namespace Alpaca4d.Gh
 					gradeDrop.AddItem(g, g);
 				}
 			}
+
+			// What was chosen, if the new list still has it - a custom database reloading keeps the
+			// grade, and All stays All across a change of type. Otherwise the first grade, not All,
+			// so a new component or a new type gives one material as it always did.
+			int keep = previous != null ? gradeDrop.FindIndex(previous) : -1;
+			gradeDrop.Value = keep >= 0 ? keep : (gradeDrop.Items.Count > 1 ? 1 : 0);
 		}
 
 		/// <summary>
@@ -406,24 +420,33 @@ namespace Alpaca4d.Gh
 		storedGrade = selGrade;
 		storedModel = selModel;
 
-		// Compute properties in kN/m^2, unit system consistent with existing components (Force=kN, Length=m)
+		if (selGrade == All)
+		{
+			var grades = typeToGrades.TryGetValue(selType, out var names) ? names : new List<string>();
+			DA.SetDataList(0, grades.Select(grade => CreateMaterial(selType, grade, selModel)));
+			return;
+		}
+
+		DA.SetData(0, CreateMaterial(selType, selGrade, selModel));
+	}
+
+	/// <summary>One grade as the material the Model dropdown asks for, in kN and m.</summary>
+	private object CreateMaterial(string type, string grade, string model)
+	{
 		double E, nu, rho;
-		GetElasticParameters(selType, selGrade, out E, out nu, out rho);
+		GetElasticParameters(type, grade, out E, out nu, out rho);
 		double G = E / (2.0 * (1.0 + nu));
 
-		if (string.Equals(selModel, "Uniaxial", StringComparison.OrdinalIgnoreCase))
+		if (string.Equals(model, "Uniaxial", StringComparison.OrdinalIgnoreCase))
 		{
 			double eNeg = E;
 			double eta = 0.0;
-			var material = new Alpaca4d.Material.UniaxialMaterialElastic(selGrade, E, eNeg, eta, G, nu, rho);
-			material.Grade = DesignGradeOf(selType, selGrade);
-			DA.SetData(0, material);
+			var material = new Alpaca4d.Material.UniaxialMaterialElastic(grade, E, eNeg, eta, G, nu, rho);
+			material.Grade = DesignGradeOf(type, grade);
+			return material;
 		}
-		else
-		{
-			var material = new Alpaca4d.Material.ElasticIsotropicMaterial(selGrade, E, G, nu, rho);
-			DA.SetData(0, material);
-		}
+
+		return new Alpaca4d.Material.ElasticIsotropicMaterial(grade, E, G, nu, rho);
 	}
 
 		/// <summary>
