@@ -17,6 +17,9 @@ namespace Alpaca4d.Gh
         private List<Mesh> _shellMeshes = new List<Mesh>();
         private List<Mesh> _brickMeshes = new List<Mesh>();
 
+        // Beams with no outline to extrude, drawn as lines when Extruded is on rather than not at all.
+        private readonly List<Alpaca4d.Generic.IBeam> _lineBeams = new List<Alpaca4d.Generic.IBeam>();
+
         private int? _loadPatternId = null;
         private HashSet<int> _visibleElementIds = null; // null = show all
 
@@ -30,6 +33,13 @@ namespace Alpaca4d.Gh
         private MenuCheckBox _ckElementIds;
         private MenuCheckBox _ckSectionNames;
         private MenuCheckBox _ckLocalAxes;
+        private MenuStaticText _txTextSize;
+        private MenuSlider   _slTextSize;
+        private MenuStaticText _txAxesSize;
+        private MenuSlider   _slAxesSize;
+
+        // What the viewport draws, worked out in SolveInstance; see Extent.
+        private BoundingBox _box = BoundingBox.Empty;
 
         // Widget controls – Loads menu
         private MenuCheckBox _ckShowLoads;
@@ -87,7 +97,8 @@ namespace Alpaca4d.Gh
             elemMenu.Header = "Element display options";
 
             var elemPanel = new MenuPanel(0, "elements_panel");
-            _ckExtruded     = new MenuCheckBox(0, "Extruded",     "Extruded");
+            // On unless a saved file says otherwise: the section is the first thing to check.
+            _ckExtruded     = new MenuCheckBox(0, "Extruded",     "Extruded") { Active = true };
             _ckNodeIds      = new MenuCheckBox(1, "NodeIds",      "Node IDs");
             _ckElementIds   = new MenuCheckBox(2, "ElementIds",   "Element IDs");
             _ckSectionNames = new MenuCheckBox(3, "SectionNames", "Section Names");
@@ -104,6 +115,21 @@ namespace Alpaca4d.Gh
             elemPanel.AddControl(_ckElementIds);
             elemPanel.AddControl(_ckSectionNames);
             elemPanel.AddControl(_ckLocalAxes);
+
+            // Height of the ids and section names, in model units, as View Results sizes its
+            // values; and how long the local axes are drawn. Each shown only while it has
+            // something to size.
+            _txTextSize = new MenuStaticText { Text = "Text size" };
+            _slTextSize = new MenuSlider(0, "TextSize", 0.05, 5.0, 0.5, 2);
+            _slTextSize.ValueChanged += OnWidgetChanged;
+            _txAxesSize = new MenuStaticText { Text = "Axes size" };
+            _slAxesSize = new MenuSlider(1, "AxesSize", 0.1, 10.0, 1.0, 1);
+            _slAxesSize.ValueChanged += OnWidgetChanged;
+            elemPanel.AddControl(_txTextSize);
+            elemPanel.AddControl(_slTextSize);
+            elemPanel.AddControl(_txAxesSize);
+            elemPanel.AddControl(_slAxesSize);
+
             elemMenu.AddControl(elemPanel);
             _elemMenu = elemMenu;         // store for plug registration in CreateAttributes
             attr.AddMenu(elemMenu);
@@ -149,6 +175,8 @@ namespace Alpaca4d.Gh
             attr.AddMenu(supportsMenu);
 
             attr.MinWidth = 200f;
+
+            UpdateVisibility();
         }
 
         protected override void OnComponentLoaded()
@@ -166,9 +194,36 @@ namespace Alpaca4d.Gh
             _ckShowSupports.ValueChanged    += OnWidgetChanged;
             _slSupportScale.ValueChanged    += OnWidgetChanged;
             _ckShowConstraints.ValueChanged += OnWidgetChanged;
+            _slTextSize.ValueChanged        += OnWidgetChanged;
+            _slAxesSize.ValueChanged        += OnWidgetChanged;
+
+            // Visibility is not saved: it follows from the checkboxes.
+            UpdateVisibility();
         }
 
-        private void OnWidgetChanged(object sender, EventArgs e) => ExpireSolution(true);
+        private void OnWidgetChanged(object sender, EventArgs e)
+        {
+            UpdateVisibility();
+            ExpireSolution(true);
+        }
+
+        /// <summary>The text and axes size sliders, each put away while it has nothing to size.</summary>
+        private void UpdateVisibility()
+        {
+            if (_slTextSize == null) return;
+
+            bool labelled = (_ckNodeIds?.Active ?? false) || (_ckElementIds?.Active ?? false)
+                         || (_ckSectionNames?.Active ?? false);
+            bool axes = _ckLocalAxes?.Active ?? false;
+
+            _txTextSize.Visible = labelled;
+            _slTextSize.Visible = labelled;
+            _txAxesSize.Visible = axes;
+            _slAxesSize.Visible = axes;
+
+            Attributes?.ExpireLayout();
+            Grasshopper.Instances.ActiveCanvas?.Refresh();
+        }
 
         #endregion
 
@@ -177,6 +232,8 @@ namespace Alpaca4d.Gh
             _beamMeshes.Clear();
             _shellMeshes.Clear();
             _brickMeshes.Clear();
+            _lineBeams.Clear();
+            _box = BoundingBox.Empty;
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -206,29 +263,13 @@ namespace Alpaca4d.Gh
             {
                 if (_visibleElementIds != null && item.Id.HasValue && !_visibleElementIds.Contains(item.Id.Value)) continue;
 
-                var curves = item.Section?.Curves;
-                if (curves == null || curves.Count == 0) continue;
+                var beamMesh = ExtrudedBeam(item);
+                if (beamMesh == null)
+                {
+                    _lineBeams.Add(item);
+                    continue;
+                }
 
-                var curve   = item.Curve;
-                var section = curves[0];
-
-                var localY = item.GeomTransf.LocalY;
-                var localZ = item.GeomTransf.LocalZ;
-                var planeStart = new Plane(curve.PointAtStart, localZ, localY);
-                var planeEnd   = new Plane(curve.PointAtEnd,   localZ, localY);
-
-                var transfEnd   = Transform.PlaneToPlane(Plane.WorldXY, planeStart);
-                var transfStart = Transform.PlaneToPlane(Plane.WorldXY, planeEnd);
-
-                var sectionStart = section.DuplicateCurve();
-                var sectionEnd   = section.DuplicateCurve();
-                sectionStart.Transform(transfStart);
-                sectionEnd.Transform(transfEnd);
-
-                var polyStart = sectionStart.ToPolyline(0, 0, 0, 0).ToPolyline();
-                var polyEnd   = sectionEnd.ToPolyline(0, 0, 0, 0).ToPolyline();
-
-                var beamMesh = Utils.CreateLoft(new List<Polyline> { polyStart, polyEnd });
                 beamMesh.VertexColors.CreateMonotoneMesh(item.Color);
                 _beamMeshes.Add(beamMesh);
             }
@@ -239,8 +280,11 @@ namespace Alpaca4d.Gh
                 var myMesh    = new Mesh();
                 var meshTop   = item.Mesh.Offset( item.Section.Thickness / 2, true);
                 var meshBottom= item.Mesh.Offset(-item.Section.Thickness / 2, true);
-                myMesh.Append(meshTop);
-                myMesh.Append(meshBottom);
+                if (meshTop != null) myMesh.Append(meshTop);
+                if (meshBottom != null) myMesh.Append(meshBottom);
+
+                // An offset Rhino could not make leaves the shell drawn flat, not missing.
+                if (myMesh.Vertices.Count == 0) myMesh = item.Mesh.DuplicateMesh();
                 myMesh.VertexColors.CreateMonotoneMesh(item.Color);
                 _shellMeshes.Add(myMesh);
             }
@@ -255,6 +299,8 @@ namespace Alpaca4d.Gh
 
             DA.SetData(0, _model);
             DA.SetDataList(1, _model.Tcl);
+
+            _box = Extent();
 
             Rhino.RhinoDoc.ActiveDoc?.Views?.Redraw();
         }
@@ -274,6 +320,8 @@ namespace Alpaca4d.Gh
             bool showLocalAxes  = _ckLocalAxes?.Active    ?? false;
             double loadScale    = _slLoadScale?.Value     ?? 1.0;
             double supportScale = _slSupportScale?.Value  ?? 1.0;
+            double textSize     = _slTextSize?.Value      ?? 0.5;
+            double axesSize     = _slAxesSize?.Value      ?? 1.0;
 
             // ── Elements ─────────────────────────────────────────────────────
             if (extruded)
@@ -283,6 +331,8 @@ namespace Alpaca4d.Gh
                     args.Display.DrawMeshFalseColors(mesh);
                     args.Display.DrawMeshWires(mesh, System.Drawing.Color.Black, 2);
                 }
+                foreach (var beam in _lineBeams)
+                    args.Display.DrawCurve(beam.Curve, beam.Color);
                 foreach (var mesh in _shellMeshes)
                 {
                     args.Display.DrawMeshFalseColors(mesh);
@@ -321,7 +371,7 @@ namespace Alpaca4d.Gh
             if (showNodeIds)
             {
                 foreach (var node in _model.Nodes)
-                    args.Display.Draw2dText($"N{node.Id}", System.Drawing.Color.White, node.Pos, true, 12);
+                    Label(args, $"N{node.Id}", AlpacaSettings.Colour(DisplayItem.NodeIds), node.Pos, textSize);
             }
 
             // ── Element IDs ──────────────────────────────────────────────────
@@ -331,19 +381,19 @@ namespace Alpaca4d.Gh
                 {
                     if (_visibleElementIds != null && beam.Id.HasValue && !_visibleElementIds.Contains(beam.Id.Value)) continue;
                     var mid = beam.Curve.PointAtNormalizedLength(0.5);
-                    args.Display.Draw2dText($"E{beam.Id}", System.Drawing.Color.Yellow, mid, true, 12);
+                    Label(args, $"E{beam.Id}", AlpacaSettings.Colour(DisplayItem.ElementIds), mid, textSize);
                 }
                 foreach (var shell in _model.Shells)
                 {
                     if (_visibleElementIds != null && shell.Id.HasValue && !_visibleElementIds.Contains(shell.Id.Value)) continue;
                     var centroid = AreaMassProperties.Compute(shell.Mesh).Centroid;
-                    args.Display.Draw2dText($"E{shell.Id}", System.Drawing.Color.Yellow, centroid, true, 12);
+                    Label(args, $"E{shell.Id}", AlpacaSettings.Colour(DisplayItem.ElementIds), centroid, textSize);
                 }
                 foreach (var brick in _model.Bricks)
                 {
                     if (_visibleElementIds != null && brick.Id.HasValue && !_visibleElementIds.Contains(brick.Id.Value)) continue;
                     var centroid = VolumeMassProperties.Compute(brick.Mesh).Centroid;
-                    args.Display.Draw2dText($"E{brick.Id}", System.Drawing.Color.Yellow, centroid, true, 12);
+                    Label(args, $"E{brick.Id}", AlpacaSettings.Colour(DisplayItem.ElementIds), centroid, textSize);
                 }
             }
 
@@ -357,7 +407,7 @@ namespace Alpaca4d.Gh
                     var name = (beam.Section as Alpaca4d.Section.ISection)?.SectionName
                             ?? (beam.Section as Alpaca4d.Section.ElasticSection)?.SectionName
                             ?? beam.Section.GetType().Name;
-                    args.Display.Draw2dText(name, System.Drawing.Color.Cyan, mid, true, 11);
+                    Label(args, name, AlpacaSettings.Colour(DisplayItem.SectionNames), mid, textSize);
                 }
             }
 
@@ -369,24 +419,16 @@ namespace Alpaca4d.Gh
                     if (_visibleElementIds != null && beam.Id.HasValue && !_visibleElementIds.Contains(beam.Id.Value)) continue;
 
                     var mid    = beam.Curve.PointAtNormalizedLength(0.5);
-                    var axLen  = beam.Curve.GetLength() * 0.2;
                     var localX = beam.Curve.PointAtEnd - beam.Curve.PointAtStart;
                     localX.Unitize();
-                    var localY = beam.GeomTransf.LocalY;
-                    var localZ = beam.GeomTransf.LocalZ;
 
-                    args.Display.DrawArrow(new Line(mid, mid + localX * axLen), System.Drawing.Color.Red,   12, 0);
-                    args.Display.DrawArrow(new Line(mid, mid + localY * axLen), System.Drawing.Color.Green, 12, 0);
-                    args.Display.DrawArrow(new Line(mid, mid + localZ * axLen), System.Drawing.Color.Blue,  12, 0);
-
-                    args.Display.Draw2dText("X", System.Drawing.Color.Red,   mid + localX * axLen * 1.1, true, 10);
-                    args.Display.Draw2dText("Y", System.Drawing.Color.Green, mid + localY * axLen * 1.1, true, 10);
-                    args.Display.Draw2dText("Z", System.Drawing.Color.Blue,  mid + localZ * axLen * 1.1, true, 10);
+                    DrawElementAxes(args, mid, localX, beam.GeomTransf.LocalY, beam.GeomTransf.LocalZ,
+                                    AxesReach(beam) * axesSize);
                 }
 
-                // Shells, labelled 1, 2 and 3 to match the components they belong to: fxx and
-                // sigma11 act along the red arrow, fyy and sigma22 along the green one, and the
-                // blue one is the normal the moments turn about.
+                // Shells: fxx, mxx and sigma11 act along the red arrow (axis 1), fyy, myy and
+                // sigma22 along the green one (axis 2), and the blue one is the normal (axis 3) -
+                // the side a positive mxx or myy puts in tension, and the side the Top layer is on.
                 //
                 // Utils.ShellFrame rather than anything worked out here, because which frame a
                 // shell reports in is not obvious - a quad's section axes are turned away from its
@@ -406,13 +448,11 @@ namespace Alpaca4d.Gh
                     }
 
                     DrawElementAxes(args, frame.Origin, frame.XAxis, frame.YAxis, frame.ZAxis,
-                                    Math.Sqrt(AreaMassProperties.Compute(shell.Mesh).Area) * 0.35);
+                                    AxesReach(shell) * axesSize);
                 }
 
-                // Solids, labelled 1, 2 and 3 rather than X, Y and Z, because that is what the
-                // stress components they belong to are called - sigma11 is the direct stress along
-                // this red arrow. A beam's are x, y and z because that is what OpenSees calls a
-                // beam's; the two conventions are different and are drawn differently.
+                // Solids: sigma11 is the direct stress along the red arrow, sigma22 the green and
+                // sigma33 the blue, when Brick Stresses reads them in local axes.
                 foreach (var brick in _model.Bricks)
                 {
                     if (_visibleElementIds != null && brick.Id.HasValue && !_visibleElementIds.Contains(brick.Id.Value)) continue;
@@ -440,11 +480,7 @@ namespace Alpaca4d.Gh
                         origin += node;
                     origin /= nodes.Length;
 
-                    // A quarter of the element's own reach, so the arrows stay inside a small brick
-                    // and are still visible on a large one.
-                    var axLen = brick.Mesh.GetBoundingBox(false).Diagonal.Length * 0.25;
-
-                    DrawElementAxes(args, origin, frame.X, frame.Y, frame.Z, axLen);
+                    DrawElementAxes(args, origin, frame.X, frame.Y, frame.Z, AxesReach(brick) * axesSize);
                 }
             }
 
@@ -518,31 +554,163 @@ namespace Alpaca4d.Gh
         public override bool IsPreviewCapable => true;
 
         /// <summary>
-        /// One set of element axes, drawn as three arrows numbered 1, 2 and 3.
+        /// A label squared to the camera, <paramref name="height"/> tall in model units - the Text
+        /// size slider, as View Results sizes its values.
         ///
-        /// Numbered rather than lettered because that is what the components they belong to are
-        /// called - sigma11 and fxx act along the red one. A beam's axes are drawn X, Y and Z next
-        /// to these, which is not an inconsistency: OpenSees names a beam's local axes that way and
-        /// a shell's and a solid's stress components the other, and pretending otherwise would make
-        /// one of the two labels wrong.
+        /// Drawn over the model rather than into it. An id sits on the axis of a beam or inside a
+        /// solid, and with Extruded on, depth testing would hide it in the very element it names.
+        /// </summary>
+        private static void Label(IGH_PreviewArgs args, string text, System.Drawing.Color colour, Point3d at, double height)
+        {
+            var plane = new Plane(at, args.Viewport.CameraX, args.Viewport.CameraY);
+
+            args.Display.PushDepthTesting(false);
+            args.Display.Draw3dText(text, colour, plane, height, "Arial", false, false,
+                                    Rhino.DocObjects.TextHorizontalAlignment.Center, Rhino.DocObjects.TextVerticalAlignment.Middle);
+            args.Display.PopDepthTesting();
+        }
+
+        /// <summary>
+        /// One set of element axes: red, green and blue for the first, second and third - x, y, z
+        /// on a beam, 1, 2, 3 on a shell or a solid. Unlabelled, because the colours say which is
+        /// which. Thick, with a head in proportion to the arrow, so Axes size makes the whole of
+        /// it bigger rather than a longer hairline.
         /// </summary>
         private static void DrawElementAxes(IGH_PreviewArgs args, Point3d origin,
                                             Vector3d x, Vector3d y, Vector3d z, double length)
         {
             if (!(length > 0.0)) return;
 
-            args.Display.DrawArrow(new Line(origin, origin + x * length), System.Drawing.Color.Red,   12, 0);
-            args.Display.DrawArrow(new Line(origin, origin + y * length), System.Drawing.Color.Green, 12, 0);
-            args.Display.DrawArrow(new Line(origin, origin + z * length), System.Drawing.Color.Blue,  12, 0);
-
-            args.Display.Draw2dText("1", System.Drawing.Color.Red,   origin + x * length * 1.1, true, 10);
-            args.Display.Draw2dText("2", System.Drawing.Color.Green, origin + y * length * 1.1, true, 10);
-            args.Display.Draw2dText("3", System.Drawing.Color.Blue,  origin + z * length * 1.1, true, 10);
+            DrawAxis(args, new Line(origin, origin + x * length), System.Drawing.Color.Red);
+            DrawAxis(args, new Line(origin, origin + y * length), System.Drawing.Color.Green);
+            DrawAxis(args, new Line(origin, origin + z * length), System.Drawing.Color.Blue);
         }
 
-        public override BoundingBox ClippingBox => new BoundingBox(
-            new Point3d(-1e9, -1e9, -1e9),
-            new Point3d( 1e9,  1e9,  1e9));
+        private static void DrawAxis(IGH_PreviewArgs args, Line line, System.Drawing.Color colour)
+        {
+            if (!line.IsValid || line.Length <= 0.0) return;
+
+            args.Display.DrawLine(line, colour, 3);
+            args.Display.DrawArrowHead(line.To, line.Direction, colour, 0.0, line.Length * 0.2);
+        }
+
+        /// <summary>
+        /// A beam as its cross-section carried from one end to the other, stood up in the beam's
+        /// local axes - the section's x along local z, its y along local y, as View Results and
+        /// Beam Stresses read it. Every outline, so a hollow section shows its inside and a double
+        /// angle both angles. Null when there is no outline to carry, and the beam is drawn as a line.
+        /// </summary>
+        private static Mesh ExtrudedBeam(Alpaca4d.Generic.IBeam beam)
+        {
+            var curves = beam.Section?.Curves;
+            if (curves == null || curves.Count == 0 || beam.GeomTransf == null) return null;
+
+            var localY = beam.GeomTransf.LocalY;
+            var localZ = beam.GeomTransf.LocalZ;
+            var toStart = Transform.PlaneToPlane(Plane.WorldXY, new Plane(beam.Curve.PointAtStart, localZ, localY));
+            var toEnd   = Transform.PlaneToPlane(Plane.WorldXY, new Plane(beam.Curve.PointAtEnd,   localZ, localY));
+
+            var mesh = new Mesh();
+            foreach (var curve in curves)
+            {
+                var outline = curve?.ToPolyline(0, 0, 0, 0)?.ToPolyline();
+                if (outline == null || outline.Count < 2) continue;
+
+                var start = new Polyline(outline);
+                var end   = new Polyline(outline);
+                start.Transform(toStart);
+                end.Transform(toEnd);
+                mesh.Append(Utils.CreateLoft(new List<Polyline> { start, end }));
+            }
+
+            return mesh.Vertices.Count > 0 ? mesh : null;
+        }
+
+        /// <summary>How long an element's axes are drawn at Axes size 1: in proportion to the element.</summary>
+        private static double AxesReach(Alpaca4d.Generic.IBeam beam) => beam.Curve.GetLength() * 0.2;
+
+        private static double AxesReach(Alpaca4d.Generic.IShell shell) => Math.Sqrt(AreaMassProperties.Compute(shell.Mesh).Area) * 0.35;
+
+        // A quarter of the element's own reach, so the arrows stay inside a small brick and are
+        // still visible on a large one.
+        private static double AxesReach(Alpaca4d.Generic.IBrick brick) => brick.Mesh.GetBoundingBox(false).Diagonal.Length * 0.25;
+
+        /// <summary>
+        /// Everything this component draws, with the scales and toggles in force, so Rhino can set
+        /// its clipping planes around it.
+        ///
+        /// This used to be a box two billion units across, so that nothing could fall outside it.
+        /// But Rhino places its near clipping plane by the size of the scene, and a scene that big
+        /// put it far out in front of the camera: zoomed in, the model was cut away - and with it
+        /// everything else in the viewport, View Results included, since the planes are shared.
+        /// </summary>
+        private BoundingBox Extent()
+        {
+            var box = BoundingBox.Empty;
+            if (_model == null) return box;
+
+            foreach (var node in _model.Nodes) box.Union(new BoundingBox(node.Pos, node.Pos));
+            foreach (var beam in _model.Beams) box.Union(beam.Curve.GetBoundingBox(false));
+            foreach (var shell in _model.Shells) box.Union(shell.Mesh.GetBoundingBox(false));
+            foreach (var brick in _model.Bricks) box.Union(brick.Mesh.GetBoundingBox(false));
+            foreach (var mesh in _beamMeshes) box.Union(mesh.GetBoundingBox(false));
+            foreach (var mesh in _shellMeshes) box.Union(mesh.GetBoundingBox(false));
+            if (!box.IsValid) return box;
+
+            var geometry = box;
+
+            // A load is drawn as the geometry it acts on, moved back along it: arrows ending on a
+            // node or a beam, a sheet standing off a shell.
+            if (_ckShowLoads?.Active ?? false)
+            {
+                double scale = _slLoadScale?.Value ?? 1.0;
+                foreach (var load in _model.LoadPatterns.SelectMany(x => x.Load))
+                {
+                    Vector3d shift;
+                    if (load is Alpaca4d.Loads.PointLoad point) shift = -point.Force * scale;
+                    else if (load is Alpaca4d.Loads.LineLoad line) shift = -line.GlobalForce * scale;
+                    else if (load is Alpaca4d.Loads.MeshLoad sheet) shift = sheet.GlobalForce * scale;
+                    else continue;
+
+                    var moved = geometry;
+                    moved.Transform(Transform.Translation(shift));
+                    box.Union(moved);
+                }
+            }
+
+            if (_ckShowSupports?.Active ?? false)
+            {
+                double scale = _slSupportScale?.Value ?? 1.0;
+                foreach (var support in _model.Supports)
+                {
+                    box.Union(new BoundingBox(support.Pos, support.Pos));
+                    if (support.Geometry is Mesh mesh)
+                    {
+                        var symbol = mesh.GetBoundingBox(false);
+                        symbol.Transform(Transform.Scale(Point3d.Origin, scale));
+                        symbol.Transform(Transform.Translation(new Vector3d(support.Pos)));
+                        box.Union(symbol);
+                    }
+                }
+            }
+
+            // The axes stick out of their elements, and the labels out of their points.
+            double reach = 0.0;
+            if (_ckLocalAxes?.Active ?? false)
+            {
+                double size = _slAxesSize?.Value ?? 1.0;
+                foreach (var beam in _model.Beams) reach = Math.Max(reach, AxesReach(beam) * size);
+                foreach (var shell in _model.Shells) reach = Math.Max(reach, AxesReach(shell) * size);
+                foreach (var brick in _model.Bricks) reach = Math.Max(reach, AxesReach(brick) * size);
+            }
+            if ((_ckNodeIds?.Active ?? false) || (_ckElementIds?.Active ?? false) || (_ckSectionNames?.Active ?? false))
+                reach = Math.Max(reach, 2.0 * (_slTextSize?.Value ?? 0.5));
+
+            box.Inflate(reach);
+            return box;
+        }
+
+        public override BoundingBox ClippingBox => _box.IsValid ? _box : base.ClippingBox;
 
         private static void VisualisePointLoad(IGH_PreviewArgs args, Point3d position, Vector3d magnitude)
         {
@@ -550,12 +718,12 @@ namespace Alpaca4d.Gh
             var line = new Line(position, magnitude);
             var offset = new Vector3d(position.X - line.To.X, position.Y - line.To.Y, position.Z - line.To.Z);
             line.Transform(Transform.Translation(offset));
-            args.Display.DrawArrow(line, System.Drawing.Color.IndianRed, 24, 0);
+            args.Display.DrawArrow(line, AlpacaSettings.Colour(DisplayItem.PointLoads), 24, 0);
         }
 
         private static void VisualiseLineLoad(IGH_PreviewArgs args, Curve lineGeometry, Vector3d forceVector, double scale)
         {
-            var color = System.Drawing.Color.DarkSeaGreen;
+            var color = AlpacaSettings.Colour(DisplayItem.LineLoads);
             const int divisions = 6;
             for (double t = 0.0; t <= 1.0; t += 1.0 / divisions)
             {
@@ -572,10 +740,10 @@ namespace Alpaca4d.Gh
         {
             var meshPos  = meshGeometry.Offset(forceValue * scale, true, unitVector);
             meshPos.Faces.DeleteFaces(new List<int>(1));
-            var color    = System.Drawing.Color.OrangeRed;
+            var color    = AlpacaSettings.Colour(DisplayItem.AreaLoads);
             var material = new Rhino.Display.DisplayMaterial(color, color, color, color, 0.0, 0.8);
             args.Display.DrawMeshShaded(meshPos, material);
-            args.Display.DrawMeshWires(meshPos, System.Drawing.Color.OrangeRed, 2);
+            args.Display.DrawMeshWires(meshPos, color, 2);
         }
 
         public override GH_Exposure Exposure => GH_Exposure.primary;
