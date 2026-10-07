@@ -154,10 +154,11 @@ def collect_files(paths: dict, version: str) -> Path:
     #
     # OpenSees-Solvers is deliberately not packaged. The solver is chosen by the user -
     # Alpaca4d > Settings > Set OpenSees Executable - and Application.OpenSees reads that
-    # path and nothing else, so a bundled copy was never loaded at runtime. It stays in
-    # the repo and in the build output for local development; shipping it only added
-    # ~114 MB to every download, and on macOS a bundled unsigned solver arrives
-    # quarantined and gets SIGKILLed anyway.
+    # path and nothing else, so a bundled copy was never loaded at runtime. The project
+    # file keeps it out of the build output as well (None Remove="OpenSees-Solvers\**"),
+    # so it cannot reach the package by that road either; shipping it only added ~114 MB
+    # to every download, and on macOS a bundled unsigned solver arrives quarantined and
+    # gets SIGKILLed anyway.
     #
     # Dropped from a version dir an older script already filled: the directory is reused,
     # not rebuilt, so a leftover copy would go on being packaged and quietly undo this.

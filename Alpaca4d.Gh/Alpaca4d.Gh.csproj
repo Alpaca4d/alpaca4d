@@ -435,30 +435,10 @@
     <None Update="License.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- macos only -->
-    <None Update="OpenSees-Solvers\mac\bin\OpenSees">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="OpenSees-Solvers\mac\library\init.tcl">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <!-- windows only -->
-    <None Update="OpenSees-Solvers\win\bin\libiomp5md.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="OpenSees-Solvers\win\bin\OpenSees.exe">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="OpenSees-Solvers\win\bin\vc_redist.x64.exe">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="OpenSees-Solvers\win\lib\tcl8.6\init.tcl">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <!-- License -->
-    <None Update="OpenSees-Solvers\LICENSE.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <!-- OpenSees is not shipped. Alpaca4d runs the solver set in Alpaca4d > Settings > Set
+         OpenSees Executable and nothing else, so OpenSees-Solvers is kept out of the build
+         output, and with it out of the Libraries folder and the Yak package. -->
+    <None Remove="OpenSees-Solvers\**" />
   </ItemGroup>
 
   <!-- ==========================================
@@ -490,12 +470,6 @@
     </ItemGroup>
     <Copy SourceFiles="@(Dlls)" DestinationFolder="$(GrasshopperLibrariesPath)/Alpaca4d/" />
     <Copy SourceFiles="@(Ghas)" DestinationFolder="$(GrasshopperLibrariesPath)/Alpaca4d/" />
-    
-    <!-- Copy OpenSees-Solvers folder -->
-    <ItemGroup>
-      <OpenSeesFiles Include="$(OutDir)OpenSees-Solvers\**\*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(OpenSeesFiles)" DestinationFolder="$(GrasshopperLibrariesPath)/Alpaca4d/OpenSees-Solvers\%(RecursiveDir)" />
     
     <!-- Copy data.bin file -->
     <ItemGroup>
