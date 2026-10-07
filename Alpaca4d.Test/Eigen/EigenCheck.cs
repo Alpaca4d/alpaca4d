@@ -111,6 +111,25 @@ for {set i 2} {$i <= 11} {incr i} {
             Thread.CurrentThread.CurrentCulture = culture;
         }
 
+        Console.WriteLine("\nSplitting the modal report\n");
+        {
+            // Section 3 left out: before, the sections were taken in turn, and everything after a
+            // missing one landed on the output before its own.
+            var report = new[]
+            {
+                "# MODAL ANALYSIS REPORT", "",
+                "* 2. EIGENVALUE ANALYSIS:", "#          MODE        LAMBDA", "              1        3445.7", "", "",
+                "* 4. TOTAL FREE MASS OF THE STRUCTURE:", "# free masses", "              2             2", "", "",
+                "* 5. CENTER OF MASS:", "# centre", "            2.5             0             0", "",
+            };
+            var sections = Eigen.ReportSections(report);
+            Check("nine sections, whatever the report holds", sections.Count == 9);
+            Check("a missing section is empty, in its own place", sections[1].Count == 0);
+            Check("the ones after it stay on their own outputs",
+                  sections[2].Count == 3 && sections[2][0].StartsWith("* 4.") && sections[3].Count == 3 && sections[3][0].StartsWith("* 5."));
+            Check("a section ends at the blank line after it", sections[0].Count == 3 && sections[0][2].Trim() == "1        3445.7");
+        }
+
         string openSees = args.Length > 0 ? args[0] : "";
         if (!File.Exists(openSees))
         {
@@ -144,6 +163,30 @@ for {set i 2} {$i <= 11} {incr i} {
                 Check("-fullGenLapack   36 read, the first six those of -genBandArpack",
                       full != null && full.Count == 36 && six && full.Take(6).Zip(arpack, (a, b) => Close(a, b, 1e-6)).All(x => x),
                       full == null ? "none read" : $"{full.Count} read");
+
+                // The report, written the way Natural Vibration writes it, split into its sections.
+                RunOpenSees(openSees, Cantilever + Eigen.WriteTcl("-genBandArpack", 6) +
+                            "modalProperties -file \"ModalReport.txt\" -unorm\n", folder);
+                string reportFile = Path.Combine(folder, "ModalReport.txt");
+                if (!File.Exists(reportFile))
+                {
+                    Check("modalProperties wrote the report", false);
+                }
+                else
+                {
+                    var sections = Eigen.ReportSections(File.ReadAllLines(reportFile));
+                    bool titled = sections.Count == 9 && sections.Select((x, i) => x.Count > 0 &&
+                                  x[0].TrimStart().StartsWith("* " + Eigen.ReportSectionNumbers[i] + ".")).All(x => x);
+                    Check("all nine sections found, each under its own title", titled);
+
+                    // A row per mode under the eigenvalues and each per-mode table, and one row of
+                    // numbers under the masses and the centre: no section cut short or run on.
+                    Func<int, int> Rows = slot => sections[slot].Count(l => !l.TrimStart().StartsWith("#") && !l.TrimStart().StartsWith("*"));
+                    Check("six modes under the eigenvalues and every per-mode table",
+                          new[] { 0, 4, 5, 6, 7, 8 }.All(slot => Rows(slot) == 6),
+                          string.Join(" ", Enumerable.Range(0, 9).Select(Rows)));
+                    Check("one row under the masses and the centre of mass", new[] { 1, 2, 3 }.All(slot => Rows(slot) == 1));
+                }
 
                 // -symmBandLapack really does refuse, which is why Natural Vibration turns it away.
                 printed = RunOpenSees(openSees, Cantilever + Eigen.WriteTcl("-symmBandLapack", 6), folder);

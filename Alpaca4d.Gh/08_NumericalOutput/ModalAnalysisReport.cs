@@ -11,6 +11,12 @@ using Alpaca4d.Result;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>
+    /// Retired. The report is now outputs of Natural Vibration Analysis, in its Modal Report menu,
+    /// since it is written by that analysis and read by nothing else. Kept hidden so definitions
+    /// that already place it still open.
+    /// </summary>
+    [Obsolete]
     public class ModalAnalysisReport : GH_Component
     {
         public ModalAnalysisReport()
@@ -62,68 +68,11 @@ namespace Alpaca4d.Gh
             if (!DA.GetData(0, ref alpacaModel)) return;
 
 
-            var reportFile = alpacaModel.ModalAnalysisReportFile;
-            int numberEigen = alpacaModel.NumberOfModes;
-
-            string[] textFiles = System.IO.File.ReadAllLines(reportFile);
-
-            var modalAnalysisReportFile = new List<List<string>>();
-
-            int i = 0;
-            foreach (string line in textFiles)
-            {
-                if (line.Contains("2. EIGENVALUE ANALYSIS"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(4 + numberEigen).ToList());
-
-                else if (line.Contains("3. TOTAL MASS OF THE STRUCTURE"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(6).ToList());
-
-                else if (line.Contains("4. TOTAL FREE MASS OF THE STRUCTURE"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(6).ToList());
-
-                else if (line.Contains("5. CENTER OF MASS"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(5).ToList());
-
-                else if (line.Contains("6. MODAL PARTICIPATION FACTORS"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(6 + numberEigen).ToList());
-
-                else if (line.Contains("7. MODAL PARTICIPATION MASSES"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(4 + numberEigen).ToList());
-
-                else if (line.Contains("8. MODAL PARTICIPATION MASSES (cumulative)"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(4 + numberEigen).ToList());
-
-                else if (line.Contains("9. MODAL PARTICIPATION MASS RATIOS (%)"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(4 + numberEigen).ToList());
-
-                else if (line.Contains("10. MODAL PARTICIPATION MASS RATIOS (%) (cumulative)"))
-                    modalAnalysisReportFile.Add(textFiles.Skip(i).Take(4 + numberEigen).ToList());
-                i++;
-            }
-
-
-            var ModalAnalysisReportFile = Alpaca4d.Utils.DataTreeFromNestedList(modalAnalysisReportFile);
-
-            var EigenvalueAnalysis = ModalAnalysisReportFile.Branch(0);
-            var TotalMassStructure = ModalAnalysisReportFile.Branch(1);
-            var TotalFreeMassStructure = ModalAnalysisReportFile.Branch(2);
-            var CenterOfMass = ModalAnalysisReportFile.Branch(3);
-            var ModalParticipationFactors = ModalAnalysisReportFile.Branch(4);
-            var ModalParticipationMasses = ModalAnalysisReportFile.Branch(5);
-            var ModalParticipationMasses_cumulative = ModalAnalysisReportFile.Branch(6);
-            var ModalParticipationMassRatio = ModalAnalysisReportFile.Branch(7);
-            var ModalParticipationMassRatio_cumulative = ModalAnalysisReportFile.Branch(8);
-
-
-            DA.SetDataList(0, EigenvalueAnalysis);
-            DA.SetDataList(1, TotalMassStructure);
-            DA.SetDataList(2, TotalFreeMassStructure);
-            DA.SetDataList(3, CenterOfMass);
-            DA.SetDataList(4, ModalParticipationFactors);
-            DA.SetDataList(5, ModalParticipationMasses);
-            DA.SetDataList(6, ModalParticipationMasses_cumulative);
-            DA.SetDataList(7, ModalParticipationMassRatio);
-            DA.SetDataList(8, ModalParticipationMassRatio_cumulative);
+            // The same reading Natural Vibration's Modal Report menu does: each section found by
+            // its number, so one missing does not move the rest onto the wrong outputs.
+            var sections = Alpaca4d.Eigen.ReportSections(System.IO.File.ReadAllLines(alpacaModel.ModalAnalysisReportFile));
+            for (int i = 0; i < sections.Count; i++)
+                DA.SetDataList(i, sections[i]);
         }
 
 
@@ -133,7 +82,7 @@ namespace Alpaca4d.Gh
         /// each of which can be combined with the GH_Exposure.obscure flag, which 
         /// ensures the component will only be visible on panel dropdowns.
         /// </summary>
-        public override GH_Exposure Exposure => GH_Exposure.quinary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         /// <summary>
         /// Provides an Icon for every component that will be visible in the User Interface.

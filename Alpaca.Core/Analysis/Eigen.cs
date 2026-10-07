@@ -78,6 +78,66 @@ namespace Alpaca4d
                 .ToList();
         }
 
+        /// <summary>
+        /// The sections of the report <c>modalProperties</c> writes that Natural Vibration hands
+        /// out, by their number in it: 2, eigenvalues, to 10, cumulative mass ratios.
+        /// </summary>
+        public static readonly int[] ReportSectionNumbers = { 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+        /// <summary>
+        /// The report split into its sections, one list of lines per entry of
+        /// <see cref="ReportSectionNumbers"/>, each from its "* N. TITLE" line down to the blank
+        /// line that ends it. A section the report does not have is an empty list in its own
+        /// place.
+        ///
+        /// Found by number and ended by the blank line, rather than counted out a fixed number of
+        /// lines and taken in turn - the way this was read before, which put every section after
+        /// a missing one under the wrong output, and cut a section short if OpenSees added a line
+        /// of explanation to it.
+        /// </summary>
+        public static List<List<string>> ReportSections(IEnumerable<string> lines)
+        {
+            var sections = ReportSectionNumbers.Select(_ => new List<string>()).ToList();
+            List<string> current = null;
+
+            foreach (var line in lines ?? Enumerable.Empty<string>())
+            {
+                int number = SectionNumber(line);
+                if (number > 0)
+                {
+                    int slot = Array.IndexOf(ReportSectionNumbers, number);
+                    current = slot >= 0 ? sections[slot] : null;
+                    current?.Add(line);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    current = null;
+                    continue;
+                }
+
+                current?.Add(line);
+            }
+
+            return sections;
+        }
+
+        /// <summary>The N of a "* N. TITLE" line, or 0 for any other line.</summary>
+        private static int SectionNumber(string line)
+        {
+            if (line == null) return 0;
+
+            var text = line.TrimStart();
+            if (!text.StartsWith("*", StringComparison.Ordinal)) return 0;
+
+            text = text.Substring(1).TrimStart();
+            int dot = text.IndexOf('.');
+            return dot > 0 && int.TryParse(text.Substring(0, dot), NumberStyles.None, CultureInfo.InvariantCulture, out int number)
+                ? number
+                : 0;
+        }
+
         private static double Number(string text)
         {
             // Tcl prints its doubles the C way whatever the machine's locale, so they are read

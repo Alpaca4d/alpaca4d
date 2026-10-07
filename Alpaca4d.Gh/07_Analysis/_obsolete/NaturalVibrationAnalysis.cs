@@ -15,6 +15,13 @@ using System.Reflection;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>
+    /// Superseded by <see cref="NaturalVibration"/>, which gives the modal report as well, in a
+    /// Modal Report menu, in place of a separate Modal Analysis Report component. Kept hidden so
+    /// definitions saved before that change still open; Grasshopper's "Upgrade Components" swaps it
+    /// via <see cref="NaturalVibrationUpgrader"/>.
+    /// </summary>
+    [Obsolete]
     public class NaturalVibrationAnalysis : GH_Component
     {
         public NaturalVibrationAnalysis()
@@ -195,7 +202,7 @@ namespace Alpaca4d.Gh
         }
 
 
-        public override GH_Exposure Exposure => GH_Exposure.primary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Run_Natural_Vibration_Analysis__Alpaca4d_;
 

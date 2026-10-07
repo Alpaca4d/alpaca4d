@@ -50,6 +50,13 @@ try:
 
     # ------------------------------------------------------------------------------------ building
 
+    def output(component, name):
+        # By name, not position: Run Analysis and Natural Vibration have had their log moved.
+        for p in component.Params.Output:
+            if p.Name == name:
+                return p
+        raise Exception("no output %s on %s" % (name, component.Name))
+
     def proxy(name, category=None, guid=None):
         for p in server.ObjectProxies:
             if guid and str(p.Guid) == guid:
@@ -180,12 +187,12 @@ try:
         set_(nv.Params.Input[1], GH_Integer(modes))
         if solver:
             set_(nv.Params.Input[2], GH_String(solver))
-        d.panel(nv.Params.Output[4], x + 420, y, "Frequencies [Hz]", 180, 160)
+        d.panel(output(nv, "Frequencies"), x + 420, y, "Frequencies [Hz]", 180, 160)
         return nv
 
     def displacements(d, run, x, y):
         nd_ = d.comp("Nodal Displacements (Alpaca4d)", x, y)
-        link(nd_.Params.Input[0], run.Params.Output[1])
+        link(nd_.Params.Input[0], output(run, "AlpacaModel"))
         dz = d.comp("Deconstruct Vector", x + 220, y + 40, "Vector")
         link(dz.Params.Input[0], nd_.Params.Output[1])
         b = d.comp("Bounds", x + 400, y + 40, "Maths")
@@ -253,8 +260,8 @@ try:
         th = dict(V=q * L / 2, M=q * L * L / 8, db=5 * q * L ** 4 / (384 * EI), ds=q * L * L / (8 * GkA)) if kind == "simply" \
             else dict(V=q * L, M=q * L * L / 2, db=q * L ** 4 / (8 * EI), ds=q * L * L / (2 * GkA))
         return dict(name="beam-" + kind, file=name, messages=msgs,
-                    V=max(abs(v) for v in numbers(forces.Params.Output[2])),
-                    M=max(abs(v) for v in numbers(forces.Params.Output[4])),
+                    V=max(abs(v) for v in numbers(forces.Params.Output[1])),
+                    M=max(abs(v) for v in numbers(forces.Params.Output[5])),
                     d=abs(at(pos, dsp, rg.Point3d(x, 0, 0)).Z), theory=th)
 
     def beam_vibration(o):
@@ -284,7 +291,7 @@ try:
         m = rho * b * b                                # kg/m
         lam = [1.875104069, 4.694091133, 7.854757438]
         th = [l * l / (2 * math.pi * L * L) * math.sqrt(EI / m) for l in lam]
-        return dict(name="beam-vibration", file=name, messages=msgs, f=numbers(nv.Params.Output[4]), theory=th)
+        return dict(name="beam-vibration", file=name, messages=msgs, f=numbers(output(nv, "Frequencies")), theory=th)
 
     # ------------------------------------------------------------------------------------ shells
 
@@ -362,7 +369,7 @@ try:
         nv = modal(d, [shell.Params.Output[0]], [sup.Params.Output[0]], 6, 640, 60)
         name = "Alpaca4d_Benchmark_PlateVibration_FV16.gh"
         msgs = d.solve(name, o)
-        return dict(name="plate-vibration", file=name, messages=msgs, f=numbers(nv.Params.Output[4]),
+        return dict(name="plate-vibration", file=name, messages=msgs, f=numbers(output(nv, "Frequencies")),
                     theory=[0.421, 1.029, 2.582, 3.306, 3.753, 6.555], elements=n * n)
 
     # ------------------------------------------------------------------------------------ bricks
@@ -447,8 +454,8 @@ try:
         nv = modal(d, [brick.Params.Output[0]], [sup.Params.Output[0]], 10, 1300, 0, o.get("solver"))
         name = "Alpaca4d_Benchmark_SolidPlateVibration_FV52.gh"
         msgs = d.solve(name, o)
-        return dict(name="solid-plate-vibration", file=name, messages=msgs, f=numbers(nv.Params.Output[4]),
-                    eigen=numbers(nv.Params.Output[2]),
+        return dict(name="solid-plate-vibration", file=name, messages=msgs, f=numbers(output(nv, "Frequencies")),
+                    eigen=numbers(output(nv, "Eigenvalues")),
                     theory=[0, 0, 0, 44.092, 106.66, 106.66, 156.23, 193.58, 200.13, 200.13], elements=n * n * layers)
 
     # ------------------------------------------------------------------------------------ run
