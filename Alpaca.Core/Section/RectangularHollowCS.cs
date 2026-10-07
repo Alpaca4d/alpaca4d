@@ -118,6 +118,15 @@ namespace Alpaca4d.Section
             return this.Area * this.AlphaZ;
         }
 
+        /// <summary>
+        /// The section's name - what a Panel shows, so a list out of the Section Library reads as
+        /// the profiles it holds, in order.
+        /// </summary>
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(this.SectionName) ? base.ToString() : this.SectionName;
+        }
+
         public string WriteTcl()
         {
             string tclText = $"section Elastic {Id} {Material.E} {Area} {Izz} {Iyy} {Material.G} {J} {AlphaY} {AlphaZ}\n";

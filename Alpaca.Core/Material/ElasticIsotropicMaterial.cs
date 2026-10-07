@@ -29,6 +29,15 @@ namespace Alpaca4d.Material
             this.Rho = rho;
         }
 
+        /// <summary>
+        /// The material's name - what a Panel shows, so a list out of the Material Library reads
+        /// as the grades it holds, in order. A material with no name shows its Tcl, as before.
+        /// </summary>
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(this.MatName) ? base.ToString() : this.MatName;
+        }
+
         public override string WriteTcl()
         {
             string tclText = $"nDMaterial ElasticIsotropic {this.Id} {this.E} {this.Nu} {Alpaca4d.ModelMass.FromKg(this.Rho)}\n";

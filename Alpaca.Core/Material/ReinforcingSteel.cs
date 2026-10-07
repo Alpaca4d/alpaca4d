@@ -68,6 +68,15 @@ namespace Alpaca4d.Material
                 this.MinMax = new Alpaca4d.Material.MinMax(matName, this, -this.EpsilonUlt, this.EpsilonUlt);
         }
 
+        /// <summary>
+        /// The material's name - what a Panel shows, so a list out of the Material Library reads
+        /// as the grades it holds, in order. A material with no name shows its Tcl, as before.
+        /// </summary>
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(this.MatName) ? base.ToString() : this.MatName;
+        }
+
         public override string WriteTcl()
         {
             string tcl = $"uniaxialMaterial ReinforcingSteel {this.Id} {TclNumber.Write(this.Fy)} {TclNumber.Write(this.Fu)} {TclNumber.Write(this.Es)} {TclNumber.Write(this.Esh)} {TclNumber.Write(this.EpsilonSh)} {TclNumber.Write(this.EpsilonUlt)}\n";
