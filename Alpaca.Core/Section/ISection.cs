@@ -31,8 +31,12 @@ namespace Alpaca4d.Section
         }
 
 
-        public double AlphaY => (this.TopWidth * this.TopFlangeThickness + this.BottomWidth * this.BottomFlangeThickness)/this.Area;
-        public double AlphaZ => ((this.Height - this.TopFlangeThickness - this.BottomFlangeThickness)*this.Web)/this.Area;
+        // Shear area factors, as OpenSees reads them: alphaY scales the shear stiffness for Vy and
+        // alphaZ for Vz. The depth runs along local y, so Vy is carried by the web and Vz by the
+        // flanges. These were the other way round, which left an I about four times too stiff in
+        // shear about its strong axis - a 2 m HEA300 cantilever deflected 7.6 mm against 8.5 mm.
+        public double AlphaY => ((this.Height - this.TopFlangeThickness - this.BottomFlangeThickness)*this.Web)/this.Area;
+        public double AlphaZ => (this.TopWidth * this.TopFlangeThickness + this.BottomWidth * this.BottomFlangeThickness)/this.Area;
         public double Izz
         {
             get
