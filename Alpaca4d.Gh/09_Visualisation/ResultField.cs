@@ -12,9 +12,10 @@ namespace Alpaca4d.Gh
     /// <summary>
     /// The kinds of result View Results can draw.
     ///
-    /// The Result dropdown saves its choice as a position in this list, so a family is only ever
-    /// added at the end: one slipped in beside its neighbours would reopen every saved file one
-    /// family along.
+    /// Files saved before the menu had an order of its own hold the choice as a position in this
+    /// list, so a family is only ever added at the end: one slipped in beside its neighbours would
+    /// reopen those files one family along. The order the menu shows is
+    /// <see cref="ResultField.MenuOrder"/>.
     /// </summary>
     internal enum ResultFamily
     {
@@ -60,6 +61,23 @@ namespace Alpaca4d.Gh
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
         // The outputs of Beam Stresses, in the same order.
         private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
+
+        /// <summary>
+        /// The order the Result dropdown offers the families in: element by element, beams before
+        /// shells before solids, forces before the stresses they cause, reactions last. Free to
+        /// change - the dropdown's position is turned into a family through this list, and View
+        /// Results marks the files it saves so an older one is read in the order it was saved in.
+        /// </summary>
+        public static readonly ResultFamily[] MenuOrder =
+        {
+            ResultFamily.Displacement,
+            ResultFamily.BeamForce,
+            ResultFamily.BeamStress,
+            ResultFamily.ShellForce,
+            ResultFamily.ShellStress,
+            ResultFamily.BrickStress,
+            ResultFamily.Reaction
+        };
 
         /// <summary>What the Component dropdown offers for a given family.</summary>
         public static string[] ComponentNames(ResultFamily family)

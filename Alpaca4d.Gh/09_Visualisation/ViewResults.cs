@@ -39,6 +39,9 @@ namespace Alpaca4d.Gh
         private SortedDictionary<double, Color> _gradient;
         private double _min, _max;
 
+        /// <summary>The length one unit of beam force is drawn at; see <see cref="DiagramUnit"/>.</summary>
+        private double _diagramUnit;
+
         // What gets drawn, worked out in SolveInstance and held for the viewport.
         private readonly List<Mesh> _shaded = new List<Mesh>();
         private readonly List<Mesh> _ghostMeshes = new List<Mesh>();
@@ -46,7 +49,18 @@ namespace Alpaca4d.Gh
         private readonly List<Tuple<Curve, Color>> _curves = new List<Tuple<Curve, Color>>();
         private readonly List<Mesh> _diagrams = new List<Mesh>();
         private readonly List<Tuple<Line, Color>> _arrows = new List<Tuple<Line, Color>>();
-        private readonly List<Tuple<Point3d, string, Color>> _labels = new List<Tuple<Point3d, string, Color>>();
+
+        // How far it stands off towards the camera rides with each label, so a value on an extruded
+        // beam is not drawn inside the section it belongs to.
+        private readonly List<Tuple<Point3d, string, double>> _labels = new List<Tuple<Point3d, string, double>>();
+
+        // Beams drawn solid. The coloured one has a ring at every colour stop, so its edges are
+        // drawn from a second one with a ring at each end only - the stops would bury them in lines.
+        private readonly List<Mesh> _beamSolids = new List<Mesh>();
+        private readonly List<Mesh> _beamEdges = new List<Mesh>();
+
+        // A section's outline, flattened once per solve rather than once per beam that uses it.
+        private readonly Dictionary<IUniaxialSection, List<Polyline>> _outlines = new Dictionary<IUniaxialSection, List<Polyline>>();
 
         private MenuDropDown _ddFamily;
         private MenuDropDown _ddComponent;
@@ -56,6 +70,7 @@ namespace Alpaca4d.Gh
         private MenuCheckBox _ckDeformed;
         private MenuSlider _slDeformScale;
         private MenuCheckBox _ckAnimate;
+        private MenuCheckBox _ckExtruded;
         private MenuSlider _slDiagramScale;
         private MenuCheckBox _ckWires;
         private MenuCheckBox _ckValues;
@@ -122,8 +137,8 @@ namespace Alpaca4d.Gh
             var resultPanel = new MenuPanel(0, "result_panel");
 
             _ddFamily = new MenuDropDown(0, "Family", "Family") { VisibleItemCount = 6 };
-            foreach (var name in ResultField.FamilyNames)
-                _ddFamily.AddItem(name, name);
+            foreach (var family in ResultField.MenuOrder)
+                _ddFamily.AddItem(ResultField.FamilyNames[(int)family], ResultField.FamilyNames[(int)family]);
             _ddFamily.ValueChanged += OnFamilyChanged;
 
             _ddComponent = new MenuDropDown(1, "Component", "Component") { VisibleItemCount = 8 };
@@ -174,6 +189,9 @@ namespace Alpaca4d.Gh
             _ckAnimate = new MenuCheckBox(1, "Animate", AnimateLabel);
             _ckAnimate.ValueChanged += OnAnimateChanged;
 
+            _ckExtruded = new MenuCheckBox(4, "Extruded", "Extruded beams");
+            _ckExtruded.ValueChanged += OnWidgetChanged;
+
             _slDiagramScale = new MenuSlider(1, "DiagramScale", 0.0, 20.0, 1.0, 2);
             _slDiagramScale.ValueChanged += OnWidgetChanged;
 
@@ -194,6 +212,7 @@ namespace Alpaca4d.Gh
             displayPanel.AddControl(_txDeformScale);
             displayPanel.AddControl(_slDeformScale);
             displayPanel.AddControl(_ckAnimate);
+            displayPanel.AddControl(_ckExtruded);
             displayPanel.AddControl(_txDiagramScale);
             displayPanel.AddControl(_slDiagramScale);
             displayPanel.AddControl(_ckWires);
@@ -222,10 +241,23 @@ namespace Alpaca4d.Gh
             _ckDeformed.ValueChanged += OnWidgetChanged;
             _slDeformScale.ValueChanged += OnWidgetChanged;
             _ckAnimate.ValueChanged += OnAnimateChanged;
+            _ckExtruded.ValueChanged += OnWidgetChanged;
             _slDiagramScale.ValueChanged += OnWidgetChanged;
             _ckWires.ValueChanged += OnWidgetChanged;
             _ckValues.ValueChanged += OnWidgetChanged;
             _slTextSize.ValueChanged += OnWidgetChanged;
+
+            // Saved before the menu had an order of its own, the Result dropdown's position was
+            // the family's place in the enum. Turned into its place in the menu, before the
+            // Component list below is rebuilt for it.
+            if (_savedInEnumOrder)
+            {
+                var families = (ResultFamily[])Enum.GetValues(typeof(ResultFamily));
+                int saved = _ddFamily.Value;
+                if (saved >= 0 && saved < families.Length)
+                    _ddFamily.Value = Array.IndexOf(ResultField.MenuOrder, families[saved]);
+                _savedInEnumOrder = false;
+            }
 
             // A file never reopens mid-animation: the checkbox is saved, the timer is not.
             _ckAnimate.Active = false;
@@ -324,9 +356,30 @@ namespace Alpaca4d.Gh
             get
             {
                 int value = _ddFamily?.Value ?? 0;
-                var families = (ResultFamily[])Enum.GetValues(typeof(ResultFamily));
+                var families = ResultField.MenuOrder;
                 return value >= 0 && value < families.Length ? families[value] : ResultFamily.Displacement;
             }
+        }
+
+        /// <summary>
+        /// Marks a saved file as holding the Result dropdown in menu order. A file without it was
+        /// saved when the dropdown listed the families in enum order, and is converted on load.
+        /// </summary>
+        private const string MenuOrderKey = "ResultMenuOrder";
+
+        private bool _savedInEnumOrder;
+
+        public override bool Write(GH_IO.Serialization.GH_IWriter writer)
+        {
+            writer.SetInt32(MenuOrderKey, 1);
+            return base.Write(writer);
+        }
+
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            // Before base.Read, which reads the dropdown and then calls OnComponentLoaded.
+            _savedInEnumOrder = !reader.ItemExists(MenuOrderKey);
+            return base.Read(reader);
         }
 
         #endregion
@@ -437,6 +490,9 @@ namespace Alpaca4d.Gh
             _diagrams.Clear();
             _arrows.Clear();
             _labels.Clear();
+            _beamSolids.Clear();
+            _beamEdges.Clear();
+            _outlines.Clear();
         }
 
         // Animating re-solves twenty times a second, and every solve would otherwise reopen the
@@ -643,12 +699,16 @@ namespace Alpaca4d.Gh
         private void Build(ElementFilter filter, ResultFamily family, int component,
                            Dictionary<int, Vector3d> displacement)
         {
+            if (family == ResultFamily.BeamForce)
+                _diagramUnit = DiagramUnit(filter);
+
             foreach (var beam in _model.Beams)
                 BuildBeam(beam, filter.Matches(beam), family, component, displacement);
 
             foreach (var shell in _model.Shells)
                 BuildFace(shell.Mesh, shell.Id, shell.IndexNodes, filter.Matches(shell), family, displacement,
-                          family == ResultFamily.ShellForce || family == ResultFamily.ShellStress);
+                          family == ResultFamily.ShellForce || family == ResultFamily.ShellStress,
+                          midEdge: shell.ElementClass == Alpaca4d.Element.ElementClass.ASDShellT3);
 
             foreach (var brick in _model.Bricks)
                 BuildFace(brick.Mesh, brick.Id, brick.IndexNodes, filter.Matches(brick), family, displacement,
@@ -667,9 +727,24 @@ namespace Alpaca4d.Gh
 
             if (!kept)
             {
-                _ghostCurves.Add(line);
+                var ghosts = Rings(beam, start, end, new[] { 0.0, 1.0 });
+                if (ghosts == null)
+                {
+                    _ghostCurves.Add(line);
+                    return;
+                }
+
+                // Ghosts are drawn shaded rather than in false colour, and shading needs normals.
+                foreach (var stack in ghosts)
+                {
+                    var ghost = Alpaca4d.Utils.CreateLoft(stack);
+                    ghost.Normals.ComputeNormals();
+                    _ghostMeshes.Add(ghost);
+                }
                 return;
             }
+
+            double lift = Lift(beam);
 
             if (family == ResultFamily.Displacement && _field.ByNode != null)
             {
@@ -680,26 +755,23 @@ namespace Alpaca4d.Gh
                 double to = ValueAtNode(beam.JNode);
                 const int steps = 8;
 
-                for (int i = 0; i < steps; i++)
-                {
-                    double a = i / (double)steps;
-                    double b = (i + 1) / (double)steps;
-                    var segment = new LineCurve(start + (end - start) * a, start + (end - start) * b);
-                    _curves.Add(Tuple.Create((Curve)segment, Colour(from + (to - from) * (a + b) * 0.5)));
-                }
+                var samples = Enumerable.Range(0, steps + 1)
+                                        .Select(i => Tuple.Create(i / (double)steps, from + (to - from) * i / steps))
+                                        .ToList();
+                Paint(beam, start, end, samples);
 
-                Label((start + end) * 0.5, Math.Max(from, to), Color.Black);
+                Label((start + end) * 0.5, Math.Max(from, to), lift);
                 return;
             }
 
             if (family == ResultFamily.BeamForce)
             {
-                _curves.Add(Tuple.Create((Curve)line, Color.DimGray));
+                Plain(beam, start, end, line);
 
                 List<double> forces;
                 if (beam.Id.HasValue && _field.ByElement != null && _field.ByElement.TryGetValue(beam.Id.Value, out forces))
                 {
-                    var diagram = Diagram(beam, start, end, forces, component, _slDiagramScale?.Value ?? 1.0);
+                    var diagram = Diagram(beam, start, end, forces, component, _diagramUnit);
                     if (diagram != null) _diagrams.Add(diagram);
 
                     // One label per beam, at whichever station carries the most. Every station
@@ -710,8 +782,10 @@ namespace Alpaca4d.Gh
                         for (int i = 1; i < forces.Count; i++)
                             if (Math.Abs(forces[i]) > Math.Abs(forces[worst])) worst = i;
 
-                        double along = forces.Count > 1 ? worst / (double)(forces.Count - 1) : 0.5;
-                        Label(start + (end - start) * along, forces[worst], Color.Black);
+                        // At the tip of the diagram, where the value is drawn, not on the beam.
+                        var at = start + (end - start) * Stations(beam, forces.Count)[worst];
+                        Label(at + DiagramDirection(beam, start, end, component) * forces[worst] * _diagramUnit,
+                              forces[worst]);
                     }
                 }
 
@@ -724,14 +798,186 @@ namespace Alpaca4d.Gh
                 if (beam.Id.HasValue && _field.ByElement != null && _field.ByElement.TryGetValue(beam.Id.Value, out stresses)
                     && stresses != null && stresses.Count > 0)
                 {
-                    BuildBeamField(beam, start, end, stresses);
+                    BuildBeamField(beam, start, end, stresses, lift);
                     return;
                 }
             }
 
             // A beam under a shell or solid result has no value of its own. Drawn plain rather
             // than coloured, because colouring it would mean picking a number it does not have.
-            _curves.Add(Tuple.Create((Curve)line, Color.DimGray));
+            Plain(beam, start, end, line);
+        }
+
+        /// <summary>A beam with no value to show: a grey line, or the same light grey as a face with none.</summary>
+        private void Plain(IBeam beam, Point3d start, Point3d end, LineCurve line)
+        {
+            var grey = Color.FromArgb(210, 210, 210);
+            if (!Extrude(beam, start, end, new[] { 0.0, 1.0 }, new[] { grey, grey }))
+                _curves.Add(Tuple.Create((Curve)line, Color.DimGray));
+        }
+
+        /// <summary>
+        /// A value painted along a beam, given at points from 0 at its start to 1 at its end. Drawn
+        /// as short lines each in the colour of its middle, or with Extruded beams on, as the beam's
+        /// section carried along it with a ring at every point in the colour there.
+        /// </summary>
+        private void Paint(IBeam beam, Point3d start, Point3d end, List<Tuple<double, double>> samples)
+        {
+            if (Extrude(beam, start, end, samples.Select(x => x.Item1).ToList(),
+                        samples.Select(x => Colour(x.Item2)).ToList()))
+                return;
+
+            var axis = end - start;
+            for (int i = 0; i < samples.Count - 1; i++)
+            {
+                var segment = new LineCurve(start + axis * samples[i].Item1, start + axis * samples[i + 1].Item1);
+                _curves.Add(Tuple.Create((Curve)segment, Colour((samples[i].Item2 + samples[i + 1].Item2) * 0.5)));
+            }
+        }
+
+        /// <summary>
+        /// The beam's section carried from start to end with a ring at each of `at`, coloured with
+        /// the colour that goes with it. False, and nothing added, when the beam stays a line.
+        /// </summary>
+        private bool Extrude(IBeam beam, Point3d start, Point3d end, IList<double> at, IList<Color> colours)
+        {
+            var rings = Rings(beam, start, end, at);
+            if (rings == null) return false;
+
+            foreach (var stack in rings)
+            {
+                var solid = Alpaca4d.Utils.CreateLoft(stack);
+
+                // The loft lays its vertices down a ring at a time, so a vertex's ring is its index
+                // over the ring size.
+                int perRing = solid.Vertices.Count / stack.Count;
+                if (perRing == 0) continue;
+
+                var vertexColours = new Color[solid.Vertices.Count];
+                for (int v = 0; v < vertexColours.Length; v++)
+                    vertexColours[v] = colours[Math.Min(v / perRing, colours.Count - 1)];
+
+                solid.VertexColors.SetColors(vertexColours);
+                _beamSolids.Add(solid);
+
+                _beamEdges.Add(Alpaca4d.Utils.CreateLoft(new List<Polyline> { stack[0], stack[stack.Count - 1] }));
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Every outline of the beam's section stood up at each of `at` along it - one list of
+        /// rings per outline, because a hollow section has two and a double angle two apart.
+        ///
+        /// Square to the line from start to end, by <see cref="LocalAxes"/>, so a section on the
+        /// deformed shape stays a section and does not shear with the deformation.
+        ///
+        /// Null when the beam is to stay a line: Extruded beams is off, or there is no section
+        /// outline or local z to stand one up with.
+        /// </summary>
+        private List<List<Polyline>> Rings(IBeam beam, Point3d start, Point3d end, IList<double> at)
+        {
+            if (!(_ckExtruded?.Active ?? false)) return null;
+
+            var outlines = Outlines(beam);
+            if (outlines == null) return null;
+
+            Vector3d y, z;
+            if (!LocalAxes(beam, start, end, out y, out z)) return null;
+
+            // The same frame Model View stands a section in: its x along local z, its y along
+            // local y.
+            var axis = end - start;
+
+            var rings = new List<List<Polyline>>();
+            foreach (var outline in outlines)
+            {
+                var stack = new List<Polyline>();
+                foreach (var t in at)
+                {
+                    var ring = new Polyline(outline);
+                    ring.Transform(Transform.PlaneToPlane(Plane.WorldXY, new Plane(start + axis * t, z, y)));
+                    stack.Add(ring);
+                }
+                rings.Add(stack);
+            }
+
+            return rings;
+        }
+
+        /// <summary>
+        /// The beam's local y and z, the axes its forces are reported in, square to the line from
+        /// start to end rather than to the beam as it was - on the deformed shape, a diagram or a
+        /// section stays square to the beam that is drawn.
+        ///
+        /// z is the ZAxis the beam was given, projected off the beam, because OpenSees only asks
+        /// that vector to lie in the x-z plane; y is z cross x, as OpenSees makes it. False when
+        /// there is no z to start from, or it runs along the beam.
+        /// </summary>
+        private static bool LocalAxes(IBeam beam, Point3d start, Point3d end, out Vector3d y, out Vector3d z)
+        {
+            y = Vector3d.Unset;
+            z = Vector3d.Unset;
+            if (beam.GeomTransf == null) return false;
+
+            var x = end - start;
+            if (!x.Unitize()) return false;
+
+            z = beam.GeomTransf.LocalZ;
+            z -= x * (z * x);
+            if (!z.Unitize()) return false;
+
+            y = Vector3d.CrossProduct(z, x);
+            return true;
+        }
+
+        /// <summary>
+        /// Where each of a beam's sections sits, from 0 at its start to 1 at its end, by the beam's
+        /// own integration; evenly spaced when that does not say, or names a different count.
+        /// </summary>
+        private static IReadOnlyList<double> Stations(IBeam beam, int count)
+        {
+            IReadOnlyList<double> stations = null;
+            if (beam.BeamIntegration != null && beam.Curve != null)
+                stations = beam.BeamIntegration.SectionLocations(beam.Curve.PointAtStart.DistanceTo(beam.Curve.PointAtEnd));
+
+            if (stations == null || stations.Count != count)
+                stations = Enumerable.Range(0, count)
+                                     .Select(i => count > 1 ? i / (double)(count - 1) : 0.5)
+                                     .ToList();
+
+            return stations;
+        }
+
+        /// <summary>The section's outlines as polylines in its own plane, or null when it has none.</summary>
+        private List<Polyline> Outlines(IBeam beam)
+        {
+            if (beam.Section == null) return null;
+
+            List<Polyline> outlines;
+            if (_outlines.TryGetValue(beam.Section, out outlines)) return outlines;
+
+            outlines = (beam.Section.Curves ?? new List<Curve>())
+                .Where(x => x != null)
+                .Select(x => x.ToPolyline(0, 0, 0, 0)?.ToPolyline())
+                .Where(x => x != null && x.Count > 1)
+                .ToList();
+
+            if (outlines.Count == 0) outlines = null;
+            _outlines[beam.Section] = outlines;
+            return outlines;
+        }
+
+        /// <summary>How far a label on this beam stands off its axis: clear of the section when it is drawn solid.</summary>
+        private double Lift(IBeam beam)
+        {
+            if (!(_ckExtruded?.Active ?? false)) return 0.0;
+
+            var outlines = Outlines(beam);
+            if (outlines == null) return 0.0;
+
+            return outlines.SelectMany(x => x).Select(x => x.DistanceTo(Point3d.Origin)).DefaultIfEmpty(0.0).Max() * 1.2;
         }
 
         /// <summary>
@@ -743,22 +989,17 @@ namespace Alpaca4d.Gh
         /// middle, and at equal steps the section just inside a hinge would be drawn a fifth of the
         /// way along the beam rather than where it is.
         /// </summary>
-        private void BuildBeamField(IBeam beam, Point3d start, Point3d end, List<double> values)
+        private void BuildBeamField(IBeam beam, Point3d start, Point3d end, List<double> values, double lift)
         {
-            IReadOnlyList<double> stations = null;
-            if (beam.BeamIntegration != null && beam.Curve != null)
-                stations = beam.BeamIntegration.SectionLocations(beam.Curve.PointAtStart.DistanceTo(beam.Curve.PointAtEnd));
-
-            if (stations == null || stations.Count != values.Count)
-                stations = Enumerable.Range(0, values.Count)
-                                     .Select(i => values.Count > 1 ? i / (double)(values.Count - 1) : 0.5)
-                                     .ToList();
-
+            var stations = Stations(beam, values.Count);
             var axis = end - start;
+
+            var samples = new List<Tuple<double, double>>();
 
             if (values.Count == 1)
             {
-                _curves.Add(Tuple.Create((Curve)new LineCurve(start, end), Colour(values[0])));
+                samples.Add(Tuple.Create(0.0, values[0]));
+                samples.Add(Tuple.Create(1.0, values[0]));
             }
             else
             {
@@ -781,24 +1022,23 @@ namespace Alpaca4d.Gh
                     for (int k = 0; k < steps; k++)
                     {
                         double a = k / (double)steps;
-                        double b = (k + 1) / (double)steps;
-                        var from = start + axis * (at[i] + (at[i + 1] - at[i]) * a);
-                        var to = start + axis * (at[i] + (at[i + 1] - at[i]) * b);
-                        double mid = value[i] + (value[i + 1] - value[i]) * (a + b) * 0.5;
-                        _curves.Add(Tuple.Create((Curve)new LineCurve(from, to), Colour(mid)));
+                        samples.Add(Tuple.Create(at[i] + (at[i + 1] - at[i]) * a, value[i] + (value[i + 1] - value[i]) * a));
                     }
                 }
+                samples.Add(Tuple.Create(1.0, value[value.Count - 1]));
             }
+
+            Paint(beam, start, end, samples);
 
             int worst = 0;
             for (int i = 1; i < values.Count; i++)
                 if (Math.Abs(values[i]) > Math.Abs(values[worst])) worst = i;
 
-            Label(start + axis * stations[worst], values[worst], Color.Black);
+            Label(start + axis * stations[worst], values[worst], lift);
         }
 
         private void BuildFace(Mesh source, int? tag, List<int?> nodes, bool kept, ResultFamily family,
-                               Dictionary<int, Vector3d> displacement, bool coloured)
+                               Dictionary<int, Vector3d> displacement, bool coloured, bool midEdge = false)
         {
             if (source == null) return;
 
@@ -833,16 +1073,26 @@ namespace Alpaca4d.Gh
             }
             else if (coloured && tag.HasValue && _field.ByElement != null && _field.ByElement.ContainsKey(tag.Value))
             {
-                // One value per integration point, and a face with more corners than it has
-                // stations reuses the last - which is what a triangle with three stations and
-                // four vertices needs.
+                // One value per integration point, each painted on the corner it sits by - a
+                // quad's point i is next to its node i. A face with more corners than it has
+                // stations reuses the last.
+                //
+                // An ASDShellT3's three points are not by its corners but at the middles of its
+                // edges, point i on the edge opposite node i, so a corner takes the mean of the two
+                // on the edges that meet at it. Painted point i on corner i, every value sat at the
+                // far side of the triangle from where it was read.
                 var values = _field.ByElement[tag.Value];
+                bool edges = midEdge && values.Count == 3 && mesh.Vertices.Count == 3;
                 for (int i = 0; i < mesh.Vertices.Count; i++)
                 {
-                    double value = values[Math.Min(i, values.Count - 1)];
+                    double value = edges
+                        ? (values[0] + values[1] + values[2] - values[i]) * 0.5
+                        : values[Math.Min(i, values.Count - 1)];
                     mesh.VertexColors.Add(Colour(value));
-                    if (Math.Abs(value) > Math.Abs(label)) label = value;
                 }
+
+                foreach (var value in values)
+                    if (Math.Abs(value) > Math.Abs(label)) label = value;
 
                 hasLabel = true;
             }
@@ -855,7 +1105,7 @@ namespace Alpaca4d.Gh
             _shaded.Add(mesh);
 
             if (hasLabel)
-                Label(mesh.GetBoundingBox(false).Center, label, Color.Black);
+                Label(mesh.GetBoundingBox(false).Center, label);
         }
 
         /// <summary>
@@ -872,16 +1122,10 @@ namespace Alpaca4d.Gh
 
             int style = _ddReaction?.Value ?? 0;
 
-            // Scaled so the largest reaction is a fixed fraction of the model, which keeps the
-            // arrows readable whether the model is a bracket or a bridge.
             double largest = _field.Reactions.Select(x => Math.Abs(x.Item3)).DefaultIfEmpty(0.0).Max();
             if (largest <= 0.0) return;
 
-            var box = _model.UniquePoints != null && _model.UniquePoints.Count > 0
-                ? new BoundingBox(_model.UniquePoints)
-                : BoundingBox.Unset;
-            double reach = box.IsValid && box.Diagonal.Length > 0.0 ? box.Diagonal.Length * 0.08 : 1.0;
-            double scale = reach / largest * (_slDiagramScale?.Value ?? 1.0);
+            double scale = Reach() / largest * (_slDiagramScale?.Value ?? 1.0);
 
             // A moment is not a force, and pointing an arrow along one is already a convention
             // rather than a picture. It is at least drawn from the same axes.
@@ -931,14 +1175,59 @@ namespace Alpaca4d.Gh
             if (moment)
                 _arrows.Add(Tuple.Create(new Line(at + offset * 0.75, at + offset * 0.95), Colour(Math.Abs(value))));
 
-            Label(line.To, value, Color.Black);
+            Label(line.To, value);
         }
 
-        private void Label(Point3d at, double value, Color colour)
+        /// <summary>The way a positive value of a beam force is drawn; see <see cref="Diagram"/>.</summary>
+        private static Vector3d DiagramDirection(IBeam beam, Point3d start, Point3d end, int component)
+        {
+            Vector3d y, z;
+            if (!LocalAxes(beam, start, end, out y, out z)) return Vector3d.ZAxis;
+
+            return component == 2 || component == 4 ? z : component == 5 ? -y : y;
+        }
+
+        /// <summary>
+        /// The length one unit of beam force is drawn at: the largest force on the beams that passed
+        /// the filter stands off the model as far as the largest reaction arrow does.
+        ///
+        /// One scale for the whole model. Each beam used to be fitted to its own largest force, so
+        /// every element of a beam split into ten drew the same height - the end ones carrying the
+        /// full shear and the middle ones a tenth of it - and the diagram climbed in a sawtooth
+        /// the numbers beside it did not.
+        /// </summary>
+        private double DiagramUnit(ElementFilter filter)
+        {
+            if (_field.ByElement == null) return 0.0;
+
+            double largest = _model.Beams
+                .Where(beam => beam.Id.HasValue && filter.Matches(beam) && _field.ByElement.ContainsKey(beam.Id.Value))
+                .SelectMany(beam => _field.ByElement[beam.Id.Value])
+                .Select(Math.Abs)
+                .DefaultIfEmpty(0.0)
+                .Max();
+
+            return largest > 0.0 ? Reach() / largest * (_slDiagramScale?.Value ?? 1.0) : 0.0;
+        }
+
+        /// <summary>
+        /// How far the largest diagram or reaction arrow stands off the model: a fixed share of the
+        /// model's size, which keeps it readable whether the model is a bracket or a bridge.
+        /// </summary>
+        private double Reach()
+        {
+            var box = _model.UniquePoints != null && _model.UniquePoints.Count > 0
+                ? new BoundingBox(_model.UniquePoints)
+                : BoundingBox.Unset;
+
+            return box.IsValid && box.Diagonal.Length > 0.0 ? box.Diagonal.Length * 0.08 : 1.0;
+        }
+
+        private void Label(Point3d at, double value, double lift = 0.0)
         {
             if (!(_ckValues?.Active ?? false)) return;
 
-            _labels.Add(Tuple.Create(at, value.ToString("G4"), colour));
+            _labels.Add(Tuple.Create(at, value.ToString("G4"), lift));
         }
 
         private double ValueAtNode(int? node)
@@ -958,46 +1247,67 @@ namespace Alpaca4d.Gh
         }
 
         /// <summary>
-        /// A force diagram: the values stood off the beam along its local z, closed back onto it at
-        /// both ends so the area reads as the diagram it is.
+        /// A force diagram: the values stood off the beam in the plane the force acts in, closed
+        /// back onto it at both ends so the area reads as the diagram it is.
+        ///
+        /// Vy and Mz along local y, Vz and My along local z - Mz bends the beam in its x-y plane
+        /// and My in its x-z one. N and Torsion act in no plane of their own and go in the x-y
+        /// one, the plane of the strong-axis diagrams. Drawing all six along z, as the first cut
+        /// did, put Vy and Mz in the plane at right angles to the one they belong to.
+        ///
+        /// Moments on the side they put in tension. A positive My stretches the +z side, so it
+        /// is drawn towards +z; a positive Mz compresses the +y side, so it is drawn towards -y -
+        /// on a beam with local y up, sagging hangs below it. The others are drawn towards the
+        /// positive axis.
+        ///
+        /// <paramref name="unit"/> is the length one unit of force is drawn at, the same for every
+        /// beam - see <see cref="DiagramUnit"/>.
         /// </summary>
         private static Mesh Diagram(IBeam beam, Point3d start, Point3d end, List<double> forces,
-                                    int component, double scale)
+                                    int component, double unit)
         {
-            if (forces == null || forces.Count < 2 || scale <= 0.0) return null;
+            if (forces == null || forces.Count < 2 || unit <= 0.0) return null;
+            if (forces.All(x => x == 0.0)) return null;
 
-            double largest = forces.Select(Math.Abs).Max();
-            if (largest <= 0.0) return null;
+            var offset = DiagramDirection(beam, start, end, component);
 
-            // Sized against the beam rather than against the model, so a short member and a long
-            // one in the same model both read.
-            double reach = start.DistanceTo(end) * 0.25 * scale / largest;
-            var offset = beam.GeomTransf != null ? beam.GeomTransf.LocalZ : Vector3d.ZAxis;
-            offset.Unitize();
-
+            var stations = Stations(beam, forces.Count);
             var mesh = new Mesh();
+            var colours = new List<Color>();
             var axis = end - start;
 
-            for (int i = 0; i < forces.Count; i++)
+            int Vertex(Point3d at, Color colour)
             {
-                var at = start + axis * (i / (double)(forces.Count - 1));
                 mesh.Vertices.Add(at);
-                mesh.Vertices.Add(at + offset * forces[i] * reach);
+                colours.Add(colour);
+                return mesh.Vertices.Count - 1;
             }
 
             for (int i = 0; i < forces.Count - 1; i++)
             {
-                int a = 2 * i;
-                mesh.Faces.AddFace(a, a + 2, a + 3, a + 1);
+                var a = start + axis * stations[i];
+                var b = start + axis * stations[i + 1];
+                double fa = forces[i];
+                double fb = forces[i + 1];
+                var ca = ResultField.BeamForceColour(component, fa);
+                var cb = ResultField.BeamForceColour(component, fb);
+
+                if (fa * fb < 0.0)
+                {
+                    // Changing sign between the two: closed onto the beam where it crosses zero, as
+                    // a triangle either side. One quad would fold over itself across the beam.
+                    var zero = a + (b - a) * (fa / (fa - fb));
+                    mesh.Faces.AddFace(Vertex(a, ca), Vertex(zero, ca), Vertex(a + offset * fa * unit, ca));
+                    mesh.Faces.AddFace(Vertex(zero, cb), Vertex(b, cb), Vertex(b + offset * fb * unit, cb));
+                }
+                else
+                {
+                    mesh.Faces.AddFace(Vertex(a, ca), Vertex(b, cb),
+                                       Vertex(b + offset * fb * unit, cb), Vertex(a + offset * fa * unit, ca));
+                }
             }
 
-            var colours = forces.SelectMany(value => new[]
-            {
-                ResultField.BeamForceColour(component, value),
-                ResultField.BeamForceColour(component, value)
-            }).ToArray();
-
-            mesh.VertexColors.SetColors(colours);
+            mesh.VertexColors.SetColors(colours.ToArray());
             mesh.Normals.ComputeNormals();
 
             return mesh;
@@ -1016,6 +1326,9 @@ namespace Alpaca4d.Gh
             // what is already in the depth buffer, so drawing it first would let it hide the very
             // elements it is meant to sit behind.
             foreach (var mesh in _shaded)
+                args.Display.DrawMeshFalseColors(mesh);
+
+            foreach (var mesh in _beamSolids)
                 args.Display.DrawMeshFalseColors(mesh);
 
             foreach (var mesh in _diagrams)
@@ -1043,6 +1356,9 @@ namespace Alpaca4d.Gh
 
                 foreach (var mesh in _shaded)
                     args.Display.DrawMeshWires(mesh, Color.Black, 1);
+
+                foreach (var mesh in _beamEdges)
+                    args.Display.DrawMeshWires(mesh, Color.Black, 1);
             }
 
             foreach (var mesh in _diagrams)
@@ -1058,11 +1374,16 @@ namespace Alpaca4d.Gh
             {
                 double height = _slTextSize?.Value ?? 0.5;
 
+                var colour = AlpacaSettings.Colour(DisplayItem.Values);
+
+                var towardsCamera = -args.Viewport.CameraDirection;
+                towardsCamera.Unitize();
+
                 foreach (var label in _labels)
                 {
                     // Squared to the camera, so a number reads from wherever the model is spun to.
-                    var plane = new Plane(label.Item1, args.Viewport.CameraX, args.Viewport.CameraY);
-                    args.Display.Draw3dText(label.Item2, label.Item3, plane, height, "Arial", false, false);
+                    var plane = new Plane(label.Item1 + towardsCamera * label.Item3, args.Viewport.CameraX, args.Viewport.CameraY);
+                    args.Display.Draw3dText(label.Item2, colour, plane, height, "Arial", false, false);
                 }
             }
         }
@@ -1076,11 +1397,22 @@ namespace Alpaca4d.Gh
                 var box = BoundingBox.Empty;
 
                 foreach (var mesh in _shaded) box.Union(mesh.GetBoundingBox(false));
+                foreach (var mesh in _beamSolids) box.Union(mesh.GetBoundingBox(false));
                 foreach (var mesh in _ghostMeshes) box.Union(mesh.GetBoundingBox(false));
                 foreach (var mesh in _diagrams) box.Union(mesh.GetBoundingBox(false));
                 foreach (var curve in _ghostCurves) box.Union(curve.GetBoundingBox(false));
                 foreach (var curve in _curves) box.Union(curve.Item1.GetBoundingBox(false));
                 foreach (var arrow in _arrows) box.Union(arrow.Item1.BoundingBox);
+
+                // Labels too, grown by how far they stand off and how tall they are. A box that
+                // stops short of what is drawn lets Rhino put a clipping plane through it.
+                if (_labels.Count > 0)
+                {
+                    double reach = _labels.Max(x => x.Item3) + 2.0 * (_slTextSize?.Value ?? 0.5);
+                    foreach (var label in _labels)
+                        box.Union(new BoundingBox(label.Item1 - new Vector3d(reach, reach, reach),
+                                                  label.Item1 + new Vector3d(reach, reach, reach)));
+                }
 
                 return box.IsValid ? box : base.ClippingBox;
             }

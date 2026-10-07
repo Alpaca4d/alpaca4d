@@ -84,6 +84,21 @@ class ViewResultsTest
             Check(names[6] == "Beam stresses" && families[6] == "BeamStress", "6 is the beam stresses, added last");
         }
 
+        Section("The Result menu offers every family once, beams before shells before solids");
+        {
+            // The menu has an order of its own, and its position is turned into a family through
+            // it - so it must name every family, each once, or a family would be unreachable.
+            var order = ((Array)Field.GetField("MenuOrder", BindingFlags.Public | BindingFlags.Static).GetValue(null))
+                        .Cast<object>().Select(x => x.ToString()).ToArray();
+            var families = Enum.GetNames(Family);
+
+            Check(order.Length == families.Length && order.Distinct().Count() == families.Length
+                  && families.All(order.Contains), "every family, each once");
+
+            var expected = new[] { "Displacement", "BeamForce", "BeamStress", "ShellForce", "ShellStress", "BrickStress", "Reaction" };
+            Check(order.SequenceEqual(expected), "Displacement, beam forces, beam stresses, shell forces, shell stresses, brick stresses, reactions");
+        }
+
         Section("Beam forces, against what Beam Forces View offers");
         {
             // Read.ForceBeamColumn returns (n, mz, vy, my, vz, t). The menu is not in that order.
