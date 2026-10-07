@@ -52,12 +52,16 @@ namespace Alpaca4d.Gh
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("N", "N", $"[{Units.Force}]");
-            pManager.Register_GenericParam("Vy", "Vy", $"[{Units.Force}]");
-            pManager.Register_GenericParam("Vz", "Vz", $"[{Units.Force}]");
-            pManager.Register_GenericParam("Mx", "Mx", $"[{Units.Force}{Units.Length}]");
-            pManager.Register_GenericParam("My", "My", $"[{Units.Force}{Units.Length}]");
-            pManager.Register_GenericParam("Mz", "Mz", $"[{Units.Force}{Units.Length}]");
+            // Signed as OpenSees reports them, in the element's local axes - x from the I end to the
+            // J end, y and z as Model View's Local Axes draws them. The two shears do not follow the
+            // same rule, because OpenSees defines them as Vy = dMz/dx and Vz = dMy/dx; each is
+            // stated by the cantilever that reads positive, which is checked against the solver.
+            pManager.Register_GenericParam("N", "N", $"[{Units.Force}] Axial force. Positive is tension.");
+            pManager.Register_GenericParam("Vy", "Vy", $"[{Units.Force}] Shear along local y, Vy = dMz/dx. A cantilever fixed at I and loaded at J towards -y reads positive.");
+            pManager.Register_GenericParam("Vz", "Vz", $"[{Units.Force}] Shear along local z, Vz = dMy/dx. A cantilever fixed at I and loaded at J towards +z reads positive.");
+            pManager.Register_GenericParam("Mx", "Mx", $"[{Units.Force}{Units.Length}] Torsion about local x, right-hand rule: a torque about +x applied at the J end reads positive.");
+            pManager.Register_GenericParam("My", "My", $"[{Units.Force}{Units.Length}] Bending about local y. Positive puts the +z side in tension: σ = My·z/Iy.");
+            pManager.Register_GenericParam("Mz", "Mz", $"[{Units.Force}{Units.Length}] Bending about local z. Positive puts the +y side in compression: σ = -Mz·y/Iz. With local y up, sagging reads positive.");
             pManager.Register_GenericParam("Element", "Element", ElementIdentity.ElementOutput);
         }
 
