@@ -56,7 +56,7 @@ namespace Alpaca4d.Element
         public string WriteTcl()
         {
             string corotationalFlag = this.IsCorotational ? "-corotational" : string.Empty;
-            string localXString = this.LocalX == default ? string.Empty : $"-local {this.LocalX.X} {this.LocalX.Y} {this.LocalX.Z}";
+            string localXString = this.LocalX == default ? string.Empty : $"-local {TclNumber.Write(this.LocalX.X)} {TclNumber.Write(this.LocalX.Y)} {TclNumber.Write(this.LocalX.Z)}";
             string tcl = $"element ASDShellT3 {this.Id} {this.IndexNodes[0]} {this.IndexNodes[1]} {this.IndexNodes[2]} {this.Section.Id} {corotationalFlag} {localXString}\n";
 
             return tcl;

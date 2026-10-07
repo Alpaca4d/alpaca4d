@@ -65,7 +65,7 @@ namespace Alpaca4d.Element
 
         public override string WriteTcl()
         {
-            string tclText = $"geomTransf {Type} {Id} {LocalZ.X} {LocalZ.Y} {LocalZ.Z}\n";
+            string tclText = $"geomTransf {Type} {Id} {TclNumber.Write(LocalZ.X)} {TclNumber.Write(LocalZ.Y)} {TclNumber.Write(LocalZ.Z)}\n";
             return tclText;
         }
     }
