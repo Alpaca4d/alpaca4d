@@ -228,6 +228,33 @@ namespace Alpaca4d
             }
             return perpendicularFrames[1];
         }
+
+        /// <summary>
+        /// The local z a beam gets when it is given none: horizontal, so that local y - the axis an
+        /// I-section's depth and a rectangle's Height are laid along, and the one Izz bends about -
+        /// points as near straight up as the beam allows. A floor beam then carries gravity about
+        /// its strong axis, as Vy and Mz, which is how the steel check reads an I.
+        ///
+        /// This used to be the x axis of Rhino's perpendicular frame, which is whatever Rhino
+        /// picks: for a beam along world X it is vertical, and an HEA laid that way lay on its side.
+        ///
+        /// A vertical member has no "up" across it, so its local y is global X instead, the way
+        /// most frame programs settle it. Within about a twentieth of a degree of plumb counts as
+        /// vertical; past that, the part of global Z square to the beam is well defined.
+        /// </summary>
+        public static Vector3d DefaultLocalZ(Curve line)
+        {
+            var x = line.PointAtEnd - line.PointAtStart;
+            x.Unitize();
+
+            var up = Vector3d.CrossProduct(x, Vector3d.ZAxis).Length < 1e-3 ? Vector3d.XAxis : Vector3d.ZAxis;
+
+            // y = z × x, so z = x × up gives the part of up square to the beam for y.
+            var z = Vector3d.CrossProduct(x, up);
+            z.Unitize();
+            return z;
+        }
+
         public static Mesh CreateLoft(IList<Polyline> polylines)
         {
             if (Enumerable.All(polylines, p => p.IsClosed))

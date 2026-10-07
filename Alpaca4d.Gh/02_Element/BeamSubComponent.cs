@@ -28,7 +28,7 @@ namespace Alpaca4d.Gh
             evaluationUnit.RegisterInputParam(new Param_GenericObject(), "GeometricTransformation", "GeomTransf", "Optional geometric transformation. If omitted, Linear is used.", GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 
-            evaluationUnit.RegisterInputParam(new Param_Vector(), "ZAxis", "ZAxis", "Local Z-axis direction (optional).", GH_ParamAccess.item);
+            evaluationUnit.RegisterInputParam(new Param_Vector(), "ZAxis", "ZAxis", "Local z axis, squared off the beam. Left empty it is horizontal, so local y - the depth of an I-section, the Height of a rectangle - points as near straight up as the beam allows, and gravity bends a floor beam about its strong axis (Vy, Mz). A vertical member gets local y along global X.", GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 
             evaluationUnit.RegisterInputParam(new Param_Colour(), "Colour", "Colour", "", GH_ParamAccess.item, new GH_Colour(Alpaca4d.Colors.DefaultBeam));
@@ -57,8 +57,7 @@ namespace Alpaca4d.Gh
             }
             else
             {
-                Plane perpFrame = Alpaca4d.Utils.PerpendicularFrame(line);
-                zAxis = perpFrame.XAxis;
+                zAxis = Alpaca4d.Utils.DefaultLocalZ(line);
             }
 
             Alpaca4d.Element.GeomTransf geomTransf = null;

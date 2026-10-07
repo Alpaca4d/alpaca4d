@@ -236,8 +236,9 @@ try:
         link(load.Params.Input[0], beam.Params.Output[0]); link(load.Params.Input[1], pq)
         pat = d.comp("Load Pattern (Alpaca4d)", 960, -100); link(pat.Params.Input[1], load.Params.Output[0])
         run = static(d, [beam.Params.Output[0]], [s.Params.Output[0] for s in sups], [pat.Params.Output[0]], 1160, 60)
-        forces = d.comp("Beam Forces (Alpaca4d)", 1560, -140); link(forces.Params.Input[0], run.Params.Output[1])
-        for i, (k, label) in enumerate([(2, "Vz range [kN]"), (4, "My range [kNm]")]):
+        forces = d.comp("Beam Forces (Alpaca4d)", 1560, -140); link(forces.Params.Input[0], output(run, "AlpacaModel"))
+        # The beam lies along X with no ZAxis, so local y points up and gravity bends it about z.
+        for i, (k, label) in enumerate([(1, "Vy range [kN]"), (5, "Mz range [kNm]")]):
             b = d.comp("Bounds", 1780, -180 + 100 * i, "Maths")
             link(b.Params.Input[0], forces.Params.Output[k]); b.Params.Input[0].DataMapping = GH_DataMapping.Flatten
             d.panel(b.Params.Output[0], 1960, -200 + 100 * i, label)
