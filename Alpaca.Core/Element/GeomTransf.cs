@@ -35,11 +35,32 @@ namespace Alpaca4d.Element
         }
 
 
+        /// <summary>
+        /// <paramref name="refVector"/> is OpenSees's vecxz: any vector in the beam's local x-z
+        /// plane. It is kept squared off the beam and of unit length, which is the local z axis
+        /// itself, so everything that reads LocalZ - the axes Model View draws, a section stood up
+        /// on the beam, a load resolved onto it - uses the axes the solver does. A file read from
+        /// Tcl commonly gives vecxz = (0, 0, 1) for a sloping member, and taken as it was, the
+        /// local z drawn leaned along the beam and local y came out short. Squaring it off does
+        /// not change the plane, so what OpenSees builds from it is the same.
+        /// </summary>
         public GeomTransf(GeomTransfType type, Curve line, Vector3d refVector)
         {
             this.Type = type;
             this.Line = line;
             this.LocalZ = refVector;
+
+            if (line != null)
+            {
+                var x = line.PointAtEnd - line.PointAtStart;
+                var z = refVector;
+                if (x.Unitize())
+                {
+                    z -= x * (z * x);
+                    if (z.Unitize())
+                        this.LocalZ = z;
+                }
+            }
         }
 
         public override string WriteTcl()
