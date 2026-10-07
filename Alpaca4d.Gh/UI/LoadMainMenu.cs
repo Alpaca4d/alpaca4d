@@ -72,6 +72,8 @@ namespace Alpaca4d.Menu
             subMenuSettings.DropDown.Items.Add(new ToolStripSeparator());
             subMenuSettings.DropDown.Items.Add("Set OpenSees Executable...", null, SetOpenSeesPath);
             subMenuSettings.DropDown.Items.Add("Clear OpenSees Path", null, ClearOpenSeesPath);
+            subMenuSettings.DropDown.Items.Add(new ToolStripSeparator());
+            subMenuSettings.DropDown.Items.Add("Display...", null, ShowDisplaySettings);
             menuItem.DropDown.Items.Add(subMenuSettings);
 
             menuItem.DropDown.Items.Add(new ToolStripSeparator());
@@ -148,6 +150,18 @@ namespace Alpaca4d.Menu
             catch (Exception ex)
             {
                 MessageBox.Show($"Error opening license management: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static void ShowDisplaySettings(object sender, EventArgs e)
+        {
+            try
+            {
+                Alpaca4d.UI.DisplaySettingsForm.ShowForm();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening display settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
