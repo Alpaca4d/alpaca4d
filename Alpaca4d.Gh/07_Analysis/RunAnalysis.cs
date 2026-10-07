@@ -16,11 +16,16 @@ using System.Windows.Forms;
 
 namespace Alpaca4d.Gh
 {
-    public class RunAnalysis : GH_Component
+    /// <summary>
+    /// Run Analysis, as two components that differ only in where the log output sits:
+    /// <see cref="RunAnalysis"/>, with the model first, and the one it replaced, with the log
+    /// first, kept hidden so older definitions open (see <see cref="RunAnalysis_obsolete"/>).
+    /// </summary>
+    public abstract class RunAnalysisBase : GH_Component
     {
         // The leading space is on purpose: the ribbon sorts a panel by name, and it puts this
         // ahead of Natural Vibration Analysis, as the first component of 07_Analysis.
-        public RunAnalysis()
+        protected RunAnalysisBase()
           : base(" Run Analysis (Alpaca4d)", "Run Analysis",
             "Writes the assembled model out as an OpenSees script, solves it, and returns the model " +
             "with its results attached.\n" +
@@ -85,9 +90,20 @@ namespace Alpaca4d.Gh
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("log", "log", "What OpenSees printed while solving. Read it when the analysis fails or warns.");
+            if (LogFirst)
+                pManager.Register_GenericParam("log", "log", LogDescription);
             pManager.Register_GenericParam("AlpacaModel", "AlpacaModel", "The analysed model. Feed it to any of the 08_NumericalOutput components to read results. It comes out empty if the analysis failed.");
+            if (!LogFirst)
+                pManager.Register_GenericParam("log", "log", LogDescription);
         }
+
+        private const string LogDescription = "What OpenSees printed while solving. Read it when the analysis fails or warns.";
+
+        /// <summary>Whether the log is the first output, as it was before the model was put first.</summary>
+        protected abstract bool LogFirst { get; }
+
+        private int LogOutput => LogFirst ? 0 : 1;
+        private int ModelOutput => LogFirst ? 1 : 0;
 
         /// <summary>
         /// This is the method that actually does the work.
@@ -241,14 +257,24 @@ namespace Alpaca4d.Gh
                 }
             }
 
-            DA.SetData(0, log);
-            DA.SetData(1, analysisModel);
+            DA.SetData(ModelOutput, analysisModel);
+            DA.SetData(LogOutput, log);
         }
 
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Run_Analysis__Alpaca4d_;
+    }
 
-        public override Guid ComponentGuid => new Guid("46711AB3-D3BC-437B-A2DD-91BED579346D");
+    /// <summary>
+    /// Run Analysis with the analysed model as the first output and the log after it, so the
+    /// result comes first. Replaces <see cref="RunAnalysis_obsolete"/>, which had them the other
+    /// way round; <see cref="RunAnalysisUpgrader"/> swaps one for the other.
+    /// </summary>
+    public class RunAnalysis : RunAnalysisBase
+    {
+        protected override bool LogFirst => false;
+
+        public override Guid ComponentGuid => new Guid("{8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452}");
     }
 }
