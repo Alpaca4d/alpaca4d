@@ -40,6 +40,17 @@ namespace Alpaca4d.Section
                 var p12 = plane.PointAt(0.65998, -0.46282);
 
                 var wireframe = new List<Point3d>() { p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p1 };
+
+                // A section of properties has no shape, and this one stands in for it. Drawn at its
+                // own size it was a blob 1.5 m across whatever the section, so it is scaled to have
+                // the section's area: a small section draws small and a big one big.
+                const double placeholderArea = 1.7284251941805;
+                if (this.Area > 0.0)
+                {
+                    double scale = Math.Sqrt(this.Area / placeholderArea);
+                    wireframe = wireframe.Select(p => new Point3d(p.X * scale, p.Y * scale, 0.0)).ToList();
+                }
+
                 var boundaryCurves = new List<Curve>() { new Rhino.Geometry.Polyline(wireframe).ToNurbsCurve() };
 
                 return boundaryCurves;
