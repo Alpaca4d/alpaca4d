@@ -69,6 +69,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Alpaca.Core\Alpaca4d.Core.csproj" />
     <ProjectReference Include="..\Alpaca4d.Utils\Alpaca4d.Utils.csproj" />
+    <!-- Karamba3DToAlpaca4D. Only this project knows Karamba3D's API, and it ships none of Karamba's files. -->
+    <ProjectReference Include="..\Alpaca4d.Karamba\Alpaca4d.Karamba.csproj" />
   </ItemGroup>
 
   <!-- ==========================================

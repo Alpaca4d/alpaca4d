@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>Alpaca4d.Karamba3D</RootNamespace>
+    <AssemblyName>Alpaca4d.Karamba</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Compiled against Karamba3D's API, never shipped with it. At run time the KarambaCommon that
+      Karamba3D loaded for itself is the one used, and Karamba's licence does not allow passing its
+      files on - so no Karamba assembly, nor any of its dependencies, may land in this project's
+      output, in Alpaca4d.Gh's, or in the Yak package. IncludeAssets="compile" keeps the runtime
+      files out; PrivateAssets="all" keeps the package from flowing on to Alpaca4d.Gh.
+    -->
+    <PackageReference Include="KarambaCommon" Version="3.1.60921" IncludeAssets="compile" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Alpaca.Core\Alpaca4d.Core.csproj" />
+  </ItemGroup>
+
+</Project>

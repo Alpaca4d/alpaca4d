@@ -27,6 +27,9 @@ namespace Alpaca4d.Loads
         public PatternType PatternType;
         public double Factor;
 
+        /// <summary>An optional name - the load case an imported pattern holds, say. OpenSees never sees it.</summary>
+        public string Name { get; set; }
+
         // for UniformExcitation
         public Direction Dof { get; set; } = Direction.X;
         public double Velocity { get; set; } = 0.0;
@@ -56,6 +59,11 @@ namespace Alpaca4d.Loads
 
 
             return load;
+        }
+
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(this.Name) ? base.ToString() : $"LoadPattern {this.Name}";
         }
 
         public string WriteTcl()
