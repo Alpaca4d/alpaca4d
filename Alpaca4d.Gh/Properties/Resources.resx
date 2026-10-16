@@ -474,4 +474,19 @@ IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT
   <data name="Rigid_Link__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Rigid Link (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
+  <data name="Explorer_Inputs__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Explorer Inputs (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Explorer_Outputs__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Explorer Outputs (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Explorer_Record__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Explorer Record (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Explorer_Subset__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Explorer Subset (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Non_Linear_Optimisation__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Non-Linear Optimisation (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
 </root>

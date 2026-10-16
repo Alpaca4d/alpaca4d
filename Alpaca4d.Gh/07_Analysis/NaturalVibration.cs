@@ -165,16 +165,20 @@ namespace Alpaca4d.Gh
             var currentDir = System.IO.Path.GetDirectoryName(filePath);
             System.IO.Directory.SetCurrentDirectory(currentDir);
 
-            string recorderName = "recorder_eigen.mpco";
-            analysisModel.ModalAnalysisReportFile = "ModalReport.txt";
+            // A deck, a recorder and a report of its own for every run: the mode shapes and the
+            // report are read back later, by Nodal Displacements and Modal Analysis Report, so models
+            // solved side by side must not share them. See AnalysisFiles.
+            var files = AnalysisFiles.For(this, DA);
+            string recorderName = files.OwnFile("recorder_eigen", ".mpco");
+            analysisModel.ModalAnalysisReportFile = files.OwnFile("ModalReport", ".txt");
 
-            analysisModel.FileName = System.IO.Path.GetFullPath("AlpacaModel");
+            analysisModel.FileName = files.OwnFile("AlpacaModel_eigen", ".tcl");
 
             // Recorder. Mode shapes only, whatever Assemble Model was given: its recorders are
             // chosen for Run Analysis, and an eigen analysis has no steps for them to record.
             if (model.Recorders != null && model.Recorders.Count > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    $"The recorders from Assemble Model are for Run Analysis. The mode shapes are recorded to {recorderName} as always.");
+                    $"The recorders from Assemble Model are for Run Analysis. The mode shapes are recorded to {System.IO.Path.GetFileName(recorderName)} as always.");
             analysisModel.Recorders = new List<IRecorder>();
             var recorder = Alpaca4d.Recorder.MpcoEigen(recorderName);
             analysisModel.IsModal = true;
@@ -185,7 +189,7 @@ namespace Alpaca4d.Gh
 
             // Settings
             analysisModel.Tcl.Add(Alpaca4d.Eigen.WriteTcl(solver, vibrationNumber));
-            analysisModel.Tcl.Add($"modalProperties -file \"{analysisModel.ModalAnalysisReportFile}\" -unorm\n");
+            analysisModel.Tcl.Add($"modalProperties -file {TclPath.Write(analysisModel.ModalAnalysisReportFile)} -unorm\n");
             analysisModel.Tcl.Add("record\nwipe");
 
             analysisModel.Serialise();

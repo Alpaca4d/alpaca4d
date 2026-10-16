@@ -24,12 +24,27 @@ namespace Alpaca4d.Gh
         /// <summary>For a component that needs a license whatever the model.</summary>
         public static bool Allows(GH_Component component, string name)
         {
-            if (Alpaca4d.License.License.ValidateFeature(Alpaca4d.UI.LicenseManagementForm.ShowForm))
+            string refusal = Refusal(name);
+            if (refusal == null)
                 return true;
 
-            component.AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"{name} needs a license. {HowToLicense}");
+            component.AddRuntimeMessage(GH_RuntimeMessageLevel.Error, refusal);
             Remember(component);
             return false;
+        }
+
+        /// <summary>
+        /// For something that needs a license and is started outside a solution - Fly, or a run of
+        /// Non-Linear Optimisation - so has no runtime message to show: null when it may go ahead,
+        /// otherwise what to tell the user. <paramref name="showForm"/> opens the License window as
+        /// well, on the usual five-minute rule; leave it off where the component's own solution has
+        /// already done so.
+        /// </summary>
+        public static string Refusal(string name, bool showForm = true)
+        {
+            if (Alpaca4d.License.License.ValidateFeature(showForm ? Alpaca4d.UI.LicenseManagementForm.ShowForm : (Action)null))
+                return null;
+            return $"{name} needs a license. {HowToLicense}";
         }
 
         /// <summary>For an analysis, which is free up to the element limit.</summary>

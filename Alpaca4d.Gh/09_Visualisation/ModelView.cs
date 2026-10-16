@@ -599,8 +599,9 @@ namespace Alpaca4d.Gh
         /// local axes - the section's x along local z, its y along local y, as View Results and
         /// Beam Stresses read it. Every outline, so a hollow section shows its inside and a double
         /// angle both angles. Null when there is no outline to carry, and the beam is drawn as a line.
+        /// Explorer Record draws a model's beams with it too, so the 3D view matches this one.
         /// </summary>
-        private static Mesh ExtrudedBeam(Alpaca4d.Generic.IBeam beam)
+        internal static Mesh ExtrudedBeam(Alpaca4d.Generic.IBeam beam)
         {
             var curves = beam.Section?.Curves;
             if (curves == null || curves.Count == 0 || beam.GeomTransf == null) return null;

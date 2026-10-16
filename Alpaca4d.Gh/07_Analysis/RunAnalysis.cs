@@ -153,13 +153,16 @@ namespace Alpaca4d.Gh
             }
 
 
-            analysisModel.FileName = System.IO.Path.GetFullPath("AlpacaModel");
+            // A deck and a recorder of its own for every run, so that a tree of models - one per load
+            // case - keeps each branch's results apart. See AnalysisFiles.
+            var files = AnalysisFiles.For(this, DA);
+            analysisModel.FileName = files.OwnFile("AlpacaModel", ".tcl");
 
 
 
             if(settings != null)
             {
-                string recorderName = "recorder.mpco";
+                string recorderName = files.OwnFile("recorder", ".mpco");
                 analysisModel.Settings = settings;
                 // Recorder
                 var recorder = new Alpaca4d.Recorder();
@@ -175,11 +178,20 @@ namespace Alpaca4d.Gh
                     analysisModel.IsTransient = true;
                 }
 
-                // Recorders from Assemble Model are the user's choice and go in as they are, in
-                // place of the one picked above. The result components read the first of them.
-                analysisModel.Recorders = model.Recorders != null && model.Recorders.Count > 0
-                    ? new List<IRecorder>(model.Recorders)
+                // Recorders from Assemble Model are the user's choice and go in, in place of the one
+                // picked above, under the name the user gave - with "_" and the run added when this
+                // component solves more than one model, as every run would write the same file
+                // otherwise. They go in as copies, so the user's own recorders keep their name. The
+                // result components read the first of them.
+                bool userRecorders = model.Recorders != null && model.Recorders.Count > 0;
+                analysisModel.Recorders = userRecorders
+                    ? model.Recorders.Select(item => ForThisRun(item, files)).ToList()
                     : new List<IRecorder> { recorder };
+
+                if (userRecorders && files.Runs > 1 && files.Run == 0)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        "This component solves more than one model, so each run writes its recorders with \"_\" and its number added to the " +
+                        "file name - recorder_0.mpco, recorder_1.mpco - and keeps its own results.");
 
                 // Two recorders on one file would have the second overwrite the first.
                 var shared = analysisModel.Recorders
@@ -259,6 +271,15 @@ namespace Alpaca4d.Gh
 
             DA.SetData(ModelOutput, analysisModel);
             DA.SetData(LogOutput, log);
+        }
+
+        /// <summary>A copy of one of the user's recorders, writing to this run's file.</summary>
+        private static IRecorder ForThisRun(IRecorder recorder, AnalysisFiles files)
+        {
+            if (recorder is Recorder mpco)
+                return new Recorder(files.UserFile(mpco.FileName), mpco.NodeResults, mpco.ElementResults);
+
+            return recorder;
         }
 
         public override GH_Exposure Exposure => GH_Exposure.primary;

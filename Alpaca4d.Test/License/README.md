@@ -8,6 +8,7 @@ What a license allows, and what its absence stops.
 | --- | --- |
 | Run Analysis and Natural Vibration Analysis run models of up to **50 elements**, and refuse larger ones with an error | any size |
 | **View Results**, **Model View** and **Moment Curvature** refuse to run, whatever the model | they run |
+| **Explorer Inputs** refuses to run or fly, **Explorer Record** to write a study, and **Non-Linear Optimisation** to start | they run |
 | every other component runs | every component runs |
 
 A refusal also opens the License window, but at most once every five minutes: a refused

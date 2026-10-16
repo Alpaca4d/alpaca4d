@@ -105,7 +105,7 @@ namespace Alpaca4d
 
         public string WriteTcl()
         {
-            return $"recorder mpco {this.FileName} -N {string.Join(" ", this.NodeResults)} -E {string.Join(" ", this.ElementResults)}\n";
+            return $"recorder mpco {TclPath.Write(this.FileName)} -N {string.Join(" ", this.NodeResults)} -E {string.Join(" ", this.ElementResults)}\n";
         }
 
         public static Recorder MpcoStatic(string filePath)

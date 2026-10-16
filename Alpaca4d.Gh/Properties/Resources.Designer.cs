@@ -1220,5 +1220,54 @@ namespace Alpaca4d.Gh.Properties {
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Non_Linear_Optimisation__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Non_Linear_Optimisation__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Inputs__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Inputs__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Outputs__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Outputs__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Record__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Record__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Subset__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Subset__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
     }
 }

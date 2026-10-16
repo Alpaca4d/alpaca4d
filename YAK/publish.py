@@ -137,10 +137,25 @@ def collect_files(paths: dict, version: str) -> Path:
     print_status(f"Collecting files from {output_dir} to {version_dir}")
 
     # Copy DLLs
+    #
+    # Never Karamba3D's. Alpaca4d.Karamba is compiled against KarambaCommon and uses the copy
+    # Karamba3D loads for itself; Karamba's licence does not allow passing its files on, and a
+    # second, different KarambaCommon next to Alpaca4d would be loaded in place of Karamba's own.
+    # The project file keeps them out of the build output; this keeps a slip there out of the
+    # package. Stale copies from an earlier run are removed for the same reason as the solvers below.
+    karamba_files = {"karambacommon.dll", "karamba.gha", "piglet.dll", "newtonsoft.json.bson.dll"}
+    for stale in version_dir.glob("*"):
+        if stale.name.lower() in karamba_files:
+            stale.unlink()
+            print_status(f"Removed {stale.name} from {version_dir.name} (Karamba3D's, never packaged)")
+
     dlls = glob(str(output_dir / "*.dll"))
     if not dlls:
         print_status("No DLL files found")
     for dll in dlls:
+        if Path(dll).name.lower() in karamba_files:
+            print_status(f"Skipped {Path(dll).name}: Karamba3D's, never packaged")
+            continue
         shutil.copy2(dll, str(version_dir))
 
     # Copy GHA
@@ -169,6 +184,8 @@ def collect_files(paths: dict, version: str) -> Path:
 
     safe_copy_file(output_dir / "data.bin", version_dir)
     safe_copy_tree(output_dir / "UserObject", version_dir / "UserObject")
+    # The Explorer components follow Colibri, whose MIT license asks for its notice to travel along.
+    safe_copy_file(project_root / "THIRD-PARTY-NOTICES.md", version_dir)
 
     # Copy manifest + icon for yak build
     safe_copy_file(paths["manifest_file"], version_dir)

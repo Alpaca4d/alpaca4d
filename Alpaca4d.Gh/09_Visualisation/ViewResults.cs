@@ -115,7 +115,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
             pManager.Register_StringParam("Info", "Info", "What is drawn, and the range it spans.");
-            pManager.Register_DoubleParam("Values", "Values", "Every value drawn. Feed it to the Data input of Legend.");
+            pManager.Register_DoubleParam("Values", "Values", "Every value drawn. Feed it to the Data input of Legend - and when Range is set, give Legend the same Range, or its labels will not match.");
             pManager.Register_ColourParam("Colors", "Colors", "The gradient used. Feed it to the Colors input of Legend, so the legend and the model agree.");
         }
 
@@ -570,7 +570,7 @@ namespace Alpaca4d.Gh
                 _max = shown.Count > 0 ? shown.Max() : 0.0;
             }
 
-            _gradient = BuildGradient(palette, _min, _max);
+            _gradient = ColourScale.Stops(palette, _min, _max);
 
             Dictionary<int, Vector3d> displacement = null;
             if (_ckDeformed?.Active ?? false)
@@ -650,28 +650,6 @@ namespace Alpaca4d.Gh
             {
                 foreach (var tag in brick.IndexNodes.Where(x => x.HasValue)) yield return tag.Value;
             }
-        }
-
-        private static SortedDictionary<double, Color> BuildGradient(List<Color> palette, double min, double max)
-        {
-            var gradient = new SortedDictionary<double, Color>();
-
-            // A flat field - every value the same, which an unloaded component gives - would
-            // otherwise divide by zero and colour nothing.
-            double span = max - min;
-            double step = span > 0.0 ? span / (palette.Count - 1) : 1.0;
-            double at = min;
-
-            foreach (var colour in palette)
-            {
-                if (!gradient.ContainsKey(at))
-                {
-                    gradient.Add(at, colour);
-                    at += step;
-                }
-            }
-
-            return gradient;
         }
 
         private Point3d Move(Point3d point, int? node, Dictionary<int, Vector3d> displacement)
