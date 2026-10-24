@@ -4,16 +4,24 @@ using System.IO;
 using System;
 using System.Linq;
 using System.Net.NetworkInformation;
-using System.Reflection;
 
 
 namespace Alpaca4d.License
 {
     public static class License
     {
-        public static string assemblyLocation = Assembly.GetExecutingAssembly().Location;
-        public static string GhAlpacaFolder = System.IO.Path.GetDirectoryName(assemblyLocation);
-        public static string licenseLocation = System.IO.Path.Combine(GhAlpacaFolder, "data.bin");
+        /// <summary>
+        /// The license file, in <see cref="Application.UserFolder"/>. It used to be data.bin beside
+        /// the plugin, and was left behind by every update; <see cref="AdoptEarlierLicense"/>
+        /// brings it over.
+        /// </summary>
+        public static string licenseLocation = System.IO.Path.Combine(Application.UserFolder, "license.bin");
+
+        /// <summary>What the license file was called when it sat beside the plugin.</summary>
+        private const string PluginFolderLicense = "data.bin";
+
+        /// <summary>The <see cref="licenseLocation"/> an earlier license was last looked for at.</summary>
+        private static string adoptedFor = null;
 
         /// <summary>
         /// The most elements a model may have and still be analysed without a license. Past it,
@@ -32,36 +40,91 @@ namespace Alpaca4d.License
         {
             get
             {
+                AdoptEarlierLicense();
+                return IsLicense(licenseLocation);
+            }
+        }
+
+        /// <summary>Whether the file at <paramref name="filePath"/> licenses this computer today.</summary>
+        public static bool IsLicense(string filePath)
+        {
+            try
+            {
+                // if the file does not exist, it raise exception
+                var users = License.DeserializeBinary(filePath);
                 var addresses = GetMacAddress();
 
-                try
+                foreach (var user in users)
                 {
-                    // if data.bin does not exist, it raise exception
-                    var users = License.DeserializeBinary(licenseLocation);
-
-                    // check data.bin
-                    foreach (var user in users)
+                    if (user.user_name == "FreeVersion")
                     {
-                        if (user.user_name == "FreeVersion")
-                        {
-                            if (DateTime.Now < user.expiring_date)
-                                return true;
-                        }
+                        if (DateTime.Now < user.expiring_date)
+                            return true;
+                    }
 
-                        foreach (var macAdress in addresses)
-                        {
-                            if ((macAdress == user.mac_address) && (DateTime.Now < user.expiring_date))
-                                return true;
-                        }
+                    foreach (var macAdress in addresses)
+                    {
+                        if ((macAdress == user.mac_address) && (DateTime.Now < user.expiring_date))
+                            return true;
                     }
                 }
-                catch (Exception)
-                {
-                    // No licence file, an unreadable one, or one written by something else:
-                    // all of them mean the same thing here, so there is nothing to inspect.
-                    return false;
-                }
+            }
+            catch (Exception)
+            {
+                // No licence file, an unreadable one, or one written by something else:
+                // all of them mean the same thing here, so there is nothing to inspect.
                 return false;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Brings over the license an earlier version kept beside itself, when there is none at
+        /// <see cref="licenseLocation"/>: the newest of those copies that is still a license here,
+        /// so that the expired one the package used to ship is passed over. Looked for once a
+        /// session, as the license is read on every solve.
+        /// </summary>
+        public static void AdoptEarlierLicense()
+        {
+            if (adoptedFor == licenseLocation)
+                return;
+            adoptedFor = licenseLocation;
+            Application.AdoptFromPluginFolders(PluginFolderLicense, licenseLocation, IsLicense);
+        }
+
+        /// <summary>
+        /// Makes the license file at <paramref name="filePath"/> this computer's license, in place of
+        /// the one it had. Check it with <see cref="IsLicense"/> first: this replaces whatever is there.
+        /// </summary>
+        public static void Install(string filePath)
+        {
+            if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(licenseLocation), StringComparison.OrdinalIgnoreCase))
+                return;
+            Directory.CreateDirectory(Path.GetDirectoryName(licenseLocation));
+            File.Copy(filePath, licenseLocation, true);
+        }
+
+        /// <summary>
+        /// Removes the license from this computer: the file the License window adds, and the copies
+        /// earlier versions kept beside themselves, which would otherwise be brought back the next
+        /// time Alpaca4d starts.
+        /// </summary>
+        public static void Remove()
+        {
+            if (File.Exists(licenseLocation))
+                File.Delete(licenseLocation);
+
+            foreach (var copy in Application.PluginFolderCopies(PluginFolderLicense))
+            {
+                try
+                {
+                    File.Delete(copy);
+                }
+                catch
+                {
+                    // A folder that cannot be written to. A license left in it comes back at the
+                    // next start, as it would have stayed in use before.
+                }
             }
         }
 

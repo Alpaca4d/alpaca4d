@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using Eto.Forms;
 using Eto.Drawing;
 using Alpaca4d.License;
@@ -56,9 +55,7 @@ namespace Alpaca4d.UI
             }
 
             // Initialize license file path
-            string assemblyLocation = Assembly.GetExecutingAssembly().Location;
-            string alpacaFolder = Path.GetDirectoryName(assemblyLocation);
-            licenseFilePath = Path.Combine(alpacaFolder, "data.bin");
+            licenseFilePath = Alpaca4d.License.License.licenseLocation;
 
             // Create main layout
             Content = CreateMainLayout();
@@ -269,6 +266,10 @@ namespace Alpaca4d.UI
                 licenseListBox.Items.Clear();
                 currentLicenses = new List<User>();
 
+                // Opened from the menu before anything asked for the license, an earlier
+                // version's has not been brought over yet.
+                Alpaca4d.License.License.AdoptEarlierLicense();
+
                 if (File.Exists(licenseFilePath))
                 {
                     currentLicenses = Alpaca4d.License.License.DeserializeBinary(licenseFilePath);
@@ -369,13 +370,9 @@ namespace Alpaca4d.UI
 
                 if (result == DialogResult.Yes)
                 {
-                    // Remove the license file
-                    if (File.Exists(licenseFilePath))
-                    {
-                        File.Delete(licenseFilePath);
-                        UpdateStatus("License removed successfully", Eto.Drawing.Colors.DarkGreen);
-                        LoadLicenses(); // Refresh the list
-                    }
+                    Alpaca4d.License.License.Remove();
+                    LoadLicenses(); // Refresh the list
+                    UpdateStatus("License removed successfully", Eto.Drawing.Colors.DarkGreen);
                 }
             }
             catch (Exception ex)
