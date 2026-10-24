@@ -471,9 +471,6 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Alpaca4d.Utils\data.bin" Link="data.bin">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Include="..\Alpaca.Core\Resources\Material\custom_properties.json">
       <Link>custom_properties.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -523,12 +520,9 @@
     <Copy SourceFiles="@(Dlls)" DestinationFolder="$(GrasshopperLibrariesPath)/Alpaca4d/" />
     <Copy SourceFiles="@(Ghas)" DestinationFolder="$(GrasshopperLibrariesPath)/Alpaca4d/" />
     
-    <!-- Copy data.bin file -->
-    <ItemGroup>
-      <DataBin Include="$(OutDir)data.bin" />
-    </ItemGroup>
-    <Copy SourceFiles="@(DataBin)" DestinationFolder="$(GrasshopperLibrariesPath)/Alpaca4d/" SkipUnchangedFiles="true" />
-    
+    <!-- No data.bin: the license lives in the user's folder (License.licenseLocation), not beside
+         the plugin, and a copy here would only be an expired FreeVersion. -->
+
     <!-- Copy custom_properties.json file -->
     <ItemGroup>
       <CustomDb Include="$(OutDir)custom_properties.json" />

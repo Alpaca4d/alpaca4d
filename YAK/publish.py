@@ -182,7 +182,14 @@ def collect_files(paths: dict, version: str) -> Path:
         shutil.rmtree(stale_solvers)
         print_status(f"Removed stale OpenSees-Solvers from {version_dir.name} (no longer packaged)")
 
-    safe_copy_file(output_dir / "data.bin", version_dir)
+    # No data.bin. The license is kept in the user's folder, where an update leaves it, and the
+    # copy shipped here was a FreeVersion long expired - something to forge a license from, and
+    # nothing else. Dropped from a reused version dir for the same reason as the solvers above.
+    stale_license = version_dir / "data.bin"
+    if stale_license.exists():
+        stale_license.unlink()
+        print_status(f"Removed stale data.bin from {version_dir.name} (no longer packaged)")
+
     safe_copy_tree(output_dir / "UserObject", version_dir / "UserObject")
     # The Explorer components follow Colibri, whose MIT license asks for its notice to travel along.
     safe_copy_file(project_root / "THIRD-PARTY-NOTICES.md", version_dir)
