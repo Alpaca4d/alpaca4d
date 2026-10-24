@@ -971,6 +971,9 @@ namespace Alpaca4d
             // node block left behind.
             if (activeNdf != deckNdf)
                 this.Tcl.Add(deckNdf == 3 ? Model.Initialise3ndf() : Model.Initialise6ndf());
+
+            // Trusses make six degree of freedom nodes, so the builder is at six here.
+            this.RestrainTrussOnlyNodes();
         }
 
         /// <summary>
@@ -1012,6 +1015,77 @@ namespace Alpaca4d
                 support.SpringElementId = ++springElementTag;
                 support.TranslationSpring = SupportSpring(stiffness.translation);
                 support.RotationSpring = SupportSpring(stiffness.rotation);
+            }
+        }
+
+        /// <summary>
+        /// A truss carries no moment, so a node only trusses reach has three rotations that nothing
+        /// holds, and the stiffness matrix is singular. They are fixed here - all three, less any a
+        /// support on the node already fixes, since OpenSees refuses a second fix of the same degree
+        /// of freedom. A node with a beam, a shell, a link that turns, or any constraint on it is left
+        /// alone: something there either holds the rotations or decides them.
+        /// </summary>
+        private void RestrainTrussOnlyNodes()
+        {
+            var trussNodes = new HashSet<int>();
+            var heldNodes = new HashSet<int>();
+
+            int Tag(Point3d point)
+            {
+                int found = this.NodeIndexSixNDF.Nearest(point);
+                return found < 0 ? 0 : found + 1 + this.UniquePointsThreeNDF.Count;
+            }
+
+            foreach (var beam in this.Beams)
+            {
+                var into = beam is Truss ? trussNodes : heldNodes;
+                into.Add(Tag(beam.Curve.PointAtStart));
+                into.Add(Tag(beam.Curve.PointAtEnd));
+            }
+
+            if (trussNodes.Count == 0)
+                return;
+
+            foreach (var shell in this.Shells)
+                foreach (var point in shell.Mesh.Vertices.ToPoint3dArray())
+                    heldNodes.Add(Tag(point));
+
+            foreach (var link in this.Links.OfType<Link>().Where(link => link.Directions.Any(direction => direction > 3)))
+            {
+                heldNodes.Add(Tag(link.Line.From));
+                heldNodes.Add(Tag(link.Line.To));
+            }
+
+            foreach (var constraint in this.Constraint)
+            {
+                if (constraint is Alpaca4d.Constraints.RigidDiaphragm diaphragm)
+                {
+                    heldNodes.Add(Tag((Point3d)diaphragm.MasterNode));
+                    foreach (var point in diaphragm.SlaveNodes)
+                        heldNodes.Add(Tag(point));
+                }
+                else if (constraint is Alpaca4d.Constraints.EqualDOF tie)
+                {
+                    heldNodes.Add(Tag((Point3d)tie.MasterNode));
+                    heldNodes.Add(Tag(tie.SlaveNode));
+                }
+                else if (constraint is Alpaca4d.Constraints.RigidLink rigidLink)
+                {
+                    heldNodes.Add(Tag(rigidLink.RetainedNode));
+                    heldNodes.Add(Tag(rigidLink.ConstrainedNode));
+                }
+            }
+
+            foreach (int node in trussNodes.Where(node => node > 0 && !heldNodes.Contains(node)).OrderBy(node => node))
+            {
+                // What a support on the node already fixes: only an axis-aligned rigid one writes a fix there.
+                var fixedHere = this.Supports.Where(support => support.Id == node && support.ndf == 6 && !support.NeedsSpring).ToList();
+                bool rx = !fixedHere.Any(support => support.Rx);
+                bool ry = !fixedHere.Any(support => support.Ry);
+                bool rz = !fixedHere.Any(support => support.Rz);
+
+                if (rx || ry || rz)
+                    this.Tcl.Add($"fix {node} 0 0 0 {Convert.ToInt16(rx)} {Convert.ToInt16(ry)} {Convert.ToInt16(rz)}\n");
             }
         }
 

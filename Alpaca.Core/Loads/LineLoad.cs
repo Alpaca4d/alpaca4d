@@ -89,6 +89,10 @@ namespace Alpaca4d.Loads
         /// <exception cref="Exception"></exception>
         public string WriteTcl()
         {
+            // A truss has no bending to carry a load along it with: half the total goes to each end.
+            if (this.Element is Alpaca4d.Element.Truss truss)
+                return truss.LumpedLoadTcl(this.LocalForce);
+
             string tcl;
             tcl = $"\teleLoad -ele {this.Element.Id} -type -beamUniform {this.Wy} {this.Wz} {this.Wx}\n";
             return tcl;
