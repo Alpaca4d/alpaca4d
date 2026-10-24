@@ -315,31 +315,21 @@ namespace Alpaca4d.UI
                 if (openFileDialog.ShowDialog(this) == DialogResult.Ok)
                 {
                     string selectedFilePath = openFileDialog.FileName;
-                    string targetDirectory = Path.GetDirectoryName(licenseFilePath);
 
-                    // Ensure the target directory exists
-                    if (!Directory.Exists(targetDirectory))
+                    // Checked before it is copied: copying first put an invalid or expired file in
+                    // place of a license that worked.
+                    if (!Alpaca4d.License.License.IsLicense(selectedFilePath))
                     {
-                        Directory.CreateDirectory(targetDirectory);
+                        UpdateStatus("That file is not a license for this computer, or it has expired. Nothing was changed.", Eto.Drawing.Colors.Orange);
+                        return;
                     }
 
-                    // Copy the file to the target location
-                    File.Copy(selectedFilePath, licenseFilePath, true);
+                    Alpaca4d.License.License.Install(selectedFilePath);
+                    UpdateStatus("License added successfully!", Eto.Drawing.Colors.DarkGreen);
+                    LoadLicenses(); // Refresh the list
 
-                    // Verify the license is valid
-                    if (Alpaca4d.License.License.IsValid)
-                    {
-                        UpdateStatus("License added successfully!", Eto.Drawing.Colors.DarkGreen);
-                        LoadLicenses(); // Refresh the list
-
-                        // Whatever the missing license had stopped can run now.
-                        Alpaca4d.Gh.LicenseGate.RerunRefused();
-                    }
-                    else
-                    {
-                        UpdateStatus("License file added but appears to be invalid or expired", Eto.Drawing.Colors.Orange);
-                        LoadLicenses(); // Refresh the list anyway
-                    }
+                    // Whatever the missing license had stopped can run now.
+                    Alpaca4d.Gh.LicenseGate.RerunRefused();
                 }
             }
             catch (Exception ex)
