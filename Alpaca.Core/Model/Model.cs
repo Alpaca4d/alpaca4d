@@ -1034,6 +1034,16 @@ namespace Alpaca4d
         public List<string> Warnings { get; } = new List<string>();
 
         /// <summary>
+        /// True when a bar or a support spring works one way only - a tension-only or compression-only
+        /// truss, a compression-only or gap spring. Its stiffness then depends on where the model is,
+        /// so it needs Newton iterations: a Linear algorithm solves once with the stiffness at zero
+        /// load and never finds out that a bar went slack.
+        /// </summary>
+        public bool HasOneWay =>
+            this.Beams.OfType<Truss>().Any(truss => truss.WorksIn != AxialBehaviour.Both) ||
+            this.Supports.Any(support => support.IsOneWay);
+
+        /// <summary>
         /// Says so when a spring support and an ordinary one on the same node act along the same axis:
         /// the rigid one then takes the whole load in that direction, and the spring does nothing.
         /// Two springs on one axis are not a mistake - they act side by side.

@@ -99,7 +99,7 @@ namespace Alpaca4d.Gh
 
             ///
             var test = Alpaca4d.Test.EnergyIncr();
-            DA.GetData(4, ref test);
+            bool testGiven = DA.GetData(4, ref test);
 
             ///
             var algorithm = "Newton";
@@ -154,6 +154,7 @@ namespace Alpaca4d.Gh
             }
             
             var settings = new Settings(constraintObj, numbererObj, systemObj, test, algorithmObj, integrator, analysisObj, analysisStep, damping);
+            settings.TestIsDefault = !testGiven;
 
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, settings);

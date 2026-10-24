@@ -160,6 +160,28 @@ namespace Alpaca4d.Gh
 
 
 
+            if (settings?.Algorithm?.Type == Alpaca4d.Algorithm.AlgorithmType.Linear && model.HasOneWay)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "The model has tension-only or compression-only bars or one-way supports, and the Linear algorithm solves once " +
+                    "with them all holding both ways. Pick Newton in Analysis Settings, with several steps, so that they can let go.");
+
+            if (settings != null && model.HasOneWay)
+            {
+                var safer = settings.WithTestFor(model);
+                if (safer != null)
+                {
+                    settings = safer;
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        "The model has one-way bars or supports, so the convergence test checks the unbalanced force too " +
+                        "(NormDispAndUnbalance): an energy test alone can pass the first iteration while a support is still pulling.");
+                }
+                else if (settings.TestIgnoresUnbalance)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        $"The convergence test ({settings.Test.Type}) looks only at how far an iteration moves. With one-way bars or " +
+                        "supports a first iteration that barely moves can pass it while a support is still pulling, and the results " +
+                        "are wrong. Pick NormUnbalance or NormDispAndUnbalance in the Test component.");
+            }
+
             if(settings != null)
             {
                 string recorderName = files.OwnFile("recorder", ".mpco");

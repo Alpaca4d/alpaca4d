@@ -20,6 +20,42 @@ namespace Alpaca4d
         public AnalysisStep AnalysisStep { get; set; }
         public Damping Damping { get; set; }
 
+        /// <summary>
+        /// True when nobody chose <see cref="Test"/>: Analysis Settings filled it in. Run Analysis may then
+        /// pick a safer one for the model it solves - see <see cref="WithTestFor"/>.
+        /// </summary>
+        public bool TestIsDefault { get; set; }
+
+        /// <summary>
+        /// Convergence tests that look only at how far an iteration moved, or how much energy it
+        /// moved, and never at the force left unbalanced.
+        /// </summary>
+        private static readonly Test.TestType[] Blind =
+        {
+            Test.TestType.EnergyIncr, Test.TestType.NormDispIncr, Test.TestType.RelativeEnergyIncr,
+            Test.TestType.RelativeNormDispIncr, Test.TestType.RelativeTotalNormDispIncr,
+        };
+
+        /// <summary>True when <see cref="Test"/> can pass while a force is still left unbalanced.</summary>
+        public bool TestIgnoresUnbalance => this.Test != null && Blind.Contains(this.Test.Type);
+
+        /// <summary>
+        /// These settings for a model with one-way bars or supports: the same, except that a default
+        /// test that ignores the unbalanced force is swapped for one that does not. A rigid one-way
+        /// spring starts stiff, so the first iteration barely moves the node; an energy or displacement
+        /// test passes it while the spring is still pulling, and the analysis reports a support that
+        /// never let go. Settings chosen by hand are left as they are; null when nothing changes.
+        /// </summary>
+        public Settings WithTestFor(Model model)
+        {
+            if (!this.TestIsDefault || !this.TestIgnoresUnbalance || model == null || !model.HasOneWay)
+                return null;
+
+            return new Settings(this.Constraint, this.Numberer, this.SystemEquation,
+                                Test.NormDispAndUnbalance(1e-8, 1e-8, Math.Max(this.Test.Iter, 25)),
+                                this.Algorithm, this.Integrator, this.Analysis, this.AnalysisStep, this.Damping);
+        }
+
         public Settings()
         {
 
