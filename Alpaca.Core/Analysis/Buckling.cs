@@ -102,6 +102,9 @@ namespace Alpaca4d
 
             public int Solids;
             public int PatternsDropped;
+
+            /// <summary>One-way materials - tension-only and compression-only bars, one-way and gap springs - made linear; see <see cref="Linearised"/>.</summary>
+            public int OneWayMaterials;
             public List<string> Warnings { get; } = new List<string>();
 
             /// <summary>The two end nodes of every beam element of the deck, pieces included, by tag.</summary>
@@ -186,6 +189,10 @@ namespace Alpaca4d
                             text.Append(RewriteElement(deck, t, divisions, ref nextNode, ref nextElement, ref ndf));
                             break;
 
+                        case "uniaxialMaterial":
+                            text.Append(Linearised(deck, t, indent, line));
+                            break;
+
                         case "equalDOF":
                         case "rigidLink":
                         case "rigidDiaphragm":
@@ -231,6 +238,37 @@ namespace Alpaca4d
                 .OrderBy(s => s));
 
             return deck;
+        }
+
+        /// <summary>
+        /// A one-way material as it is at zero load, and linear from there. The analysis prints the
+        /// stiffness twice, unloaded and loaded, and takes the difference for the geometric stiffness;
+        /// a bar that goes slack under the reference load would lose its material stiffness between
+        /// the two, and the difference would count it as geometric. So a tension-only or compression-only
+        /// bar, or a one-way spring, stays as stiff as it is at zero strain - every one of them is - and
+        /// a spring with an open gap stays free.
+        /// </summary>
+        private static string Linearised(Deck deck, string[] t, string indent, string line)
+        {
+            string type = t.Length > 1 ? t[1] : "";
+            if (t.Length > 3 && type == "ENT")
+            {
+                deck.OneWayMaterials++;
+                return $"{indent}uniaxialMaterial Elastic {t[2]} {t[3]}\n";
+            }
+            if (t.Length > 5 && type == "Elastic" && Number(t[5]) != Number(t[3]))
+            {
+                // uniaxialMaterial Elastic $tag $E $eta $Eneg: at zero strain it is E.
+                deck.OneWayMaterials++;
+                return $"{indent}uniaxialMaterial Elastic {t[2]} {t[3]} {t[4]} {t[3]}\n";
+            }
+            if (t.Length > 5 && type == "ElasticPPGap")
+            {
+                // uniaxialMaterial ElasticPPGap $tag $E $Fy $gap ...: free while the gap is open.
+                deck.OneWayMaterials++;
+                return $"{indent}uniaxialMaterial Elastic {t[2]} {(Number(t[5]) == 0.0 ? t[3] : "0.0")}\n";
+            }
+            return line + "\n";
         }
 
         /// <summary>The first entry of the deck that defines a load pattern; the count when none does.</summary>

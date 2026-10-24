@@ -176,6 +176,11 @@ namespace Alpaca4d.Gh
             if (deck.Solids > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                     "Solid elements have no geometric stiffness in OpenSees: they stiffen the model without ever softening under load.");
+            if (deck.OneWayMaterials > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    "Tension-only and compression-only bars and one-way springs are taken as they are at zero load, and linear: " +
+                    "every bar and spring holds both ways, and a spring with a gap holds nothing. Buckling is linear; whether a bar goes " +
+                    "slack is a question for a non-linear analysis.");
             if (deck.PatternsDropped > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                     $"{deck.PatternsDropped} ground motion pattern{(deck.PatternsDropped == 1 ? " was" : "s were")} left out: they load nothing in a static step.");
