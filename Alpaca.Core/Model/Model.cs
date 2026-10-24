@@ -972,6 +972,8 @@ namespace Alpaca4d
             if (activeNdf != deckNdf)
                 this.Tcl.Add(deckNdf == 3 ? Model.Initialise3ndf() : Model.Initialise6ndf());
 
+            this.WarnOfSpringsHeldRigidly();
+
             // Trusses make six degree of freedom nodes, so the builder is at six here.
             this.RestrainTrussOnlyNodes();
         }
@@ -1022,6 +1024,52 @@ namespace Alpaca4d
                     support.SpringMaterials = support.RestrainedDirections
                         .Select(direction => support.SpringAlong(direction).Material(direction <= 3 ? stiffness.translation : stiffness.rotation))
                         .ToList();
+            }
+        }
+
+        /// <summary>
+        /// What Assemble found worth saying: things the model goes ahead with but that are probably not
+        /// what was meant. Assemble Model shows them as warnings.
+        /// </summary>
+        public List<string> Warnings { get; } = new List<string>();
+
+        /// <summary>
+        /// Says so when a spring support and an ordinary one on the same node act along the same axis:
+        /// the rigid one then takes the whole load in that direction, and the spring does nothing.
+        /// Two springs on one axis are not a mistake - they act side by side.
+        /// </summary>
+        private void WarnOfSpringsHeldRigidly()
+        {
+            foreach (var node in this.Supports.Where(support => support.Id.HasValue).GroupBy(support => support.Id.Value))
+            {
+                var springs = node.Where(support => support.IsSpring).ToList();
+                var rigid = node.Where(support => !support.IsSpring).ToList();
+                if (springs.Count == 0 || rigid.Count == 0)
+                    continue;
+
+                foreach (var spring in springs)
+                foreach (int along in spring.RestrainedDirections)
+                {
+                    var springAxis = AxisOf(spring.Plane, along);
+                    bool held = rigid.Any(support => support.RestrainedDirections.Any(direction =>
+                        (direction <= 3) == (along <= 3) && Math.Abs(AxisOf(support.Plane, direction) * springAxis) > 1e-6));
+
+                    if (held)
+                        this.Warnings.Add($"The spring support at {spring.Pos} acts along an axis an ordinary support on the same node " +
+                                          "already holds, so the rigid support takes the whole load there and the spring does nothing. " +
+                                          "Free that direction on the ordinary support.");
+                }
+            }
+        }
+
+        /// <summary>The axis of <paramref name="plane"/> a support direction 1-6 runs along or turns about.</summary>
+        private static Vector3d AxisOf(Plane plane, int direction)
+        {
+            switch ((direction - 1) % 3)
+            {
+                case 0: return plane.XAxis;
+                case 1: return plane.YAxis;
+                default: return plane.ZAxis;
             }
         }
 
@@ -1328,6 +1376,7 @@ namespace Alpaca4d
 
         public void Assemble()
         {
+            this.Warnings.Clear();
             this.GetElements();
             
             this.GetUniquePoints(this.Beams, this.Shells, this.Bricks, this.Constraint);

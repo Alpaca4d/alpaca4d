@@ -111,6 +111,8 @@ namespace Alpaca4d.Gh
             model.Tollerance = tolerance;
             model.Assemble();
             WarnOfLoadsOnNothing(model);
+            foreach (var warning in model.Warnings.Distinct())
+                this.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, warning);
 
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, model);
