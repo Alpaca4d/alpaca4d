@@ -58,6 +58,32 @@ namespace Alpaca4d.Element
         public Alpaca4d.Material.UniaxialMaterialElastic RotationSpring { get; set; }
 
         /// <summary>
+        /// The springs of a spring support, one per direction of <see cref="Plane"/> it acts in; empty
+        /// for an ordinary support. A spring support holds nothing rigidly - its Tx to Rz are all
+        /// false - and a direction with no spring is free. It goes the way a skewed support goes:
+        /// a fixed node of its own and a zeroLength to the support's node, which is where its
+        /// reaction is read. It never fixes the support's node itself, so an ordinary support on the
+        /// same node can hold the directions it leaves free.
+        /// </summary>
+        public List<SupportSpring> Springs { get; set; } = new List<SupportSpring>();
+
+        /// <summary>The materials of <see cref="Springs"/>, in the order of <see cref="RestrainedDirections"/>; set during assembly.</summary>
+        public List<IMaterial> SpringMaterials { get; set; }
+
+        public bool IsSpring => this.Springs != null && this.Springs.Count > 0;
+
+        /// <summary>A support of springs on <paramref name="frame"/>, one spring per direction at most.</summary>
+        public static Support WithSprings(Plane frame, IEnumerable<SupportSpring> springs)
+        {
+            var list = springs.ToList();
+            var repeated = list.GroupBy(spring => spring.Direction).FirstOrDefault(group => group.Count() > 1);
+            if (repeated != null)
+                throw new ArgumentException($"Direction {repeated.Key} has {repeated.Count()} springs; give it one.");
+
+            return new Support(frame, false, false, false, false, false, false) { Springs = list };
+        }
+
+        /// <summary>
         /// Two frames count as the same one when their axes agree to this much. Well
         /// inside anything a user can dial in, and far outside the rounding a plane
         /// picks up being passed around Grasshopper.
@@ -90,6 +116,15 @@ namespace Alpaca4d.Element
             {
                 var directions = new List<int>();
 
+                if (this.IsSpring)
+                {
+                    // The springs' own directions, in order; a solid's node has no rotations to spring.
+                    return this.Springs.Select(spring => spring.Direction)
+                                       .Where(direction => this.ndf != 3 || direction <= 3)
+                                       .OrderBy(direction => direction)
+                                       .ToList();
+                }
+
                 if (this.Tx) directions.Add(1);
                 if (this.Ty) directions.Add(2);
                 if (this.Tz) directions.Add(3);
@@ -105,11 +140,20 @@ namespace Alpaca4d.Element
             }
         }
 
-        /// <summary>True when this support is written as a penalty spring rather than a <c>fix</c>.</summary>
+        /// <summary>True when this support is written as a zeroLength to a node of its own rather than a <c>fix</c>.</summary>
         public bool NeedsSpring
         {
-            get { return !this.IsAxisAligned && this.RestrainedDirections.Count != 0; }
+            get { return (this.IsSpring || !this.IsAxisAligned) && this.RestrainedDirections.Count != 0; }
         }
+
+        /// <summary>The spring acting in <paramref name="direction"/>, or null.</summary>
+        public SupportSpring SpringAlong(int direction)
+        {
+            return this.Springs?.FirstOrDefault(spring => spring.Direction == direction);
+        }
+
+        /// <summary>True when a spring of this support pushes back one way only: it needs a non-linear analysis.</summary>
+        public bool IsOneWay => this.IsSpring && this.Springs.Any(spring => spring.IsOneWay);
 
         public dynamic Geometry
         {
@@ -137,7 +181,8 @@ namespace Alpaca4d.Element
         /// </summary>
         public SupportPreset Preset
         {
-            get { return SupportPreset.Match(this); }
+            // A spring support's six states are all false, which is the Free preset; it is not free.
+            get { return this.IsSpring ? null : SupportPreset.Match(this); }
         }
 
         /// <summary>The preset name where there is one, and the six states either way.</summary>
@@ -145,6 +190,10 @@ namespace Alpaca4d.Element
         {
             get
             {
+                if (this.IsSpring)
+                    return "Spring support" + Environment.NewLine +
+                           string.Join(Environment.NewLine, this.Springs.OrderBy(spring => spring.Direction).Select(spring => spring.Describe()));
+
                 var preset = this.Preset;
                 var dof = SupportPreset.DofSummary(this.Tx, this.Ty, this.Tz, this.Rx, this.Ry, this.Rz);
 
@@ -166,6 +215,14 @@ namespace Alpaca4d.Element
         {
             get
             {
+                // A spring support is drawn as a tag, short enough for a dot: "k z" or "comp z".
+                if (this.IsSpring)
+                {
+                    var names = new[] { "x", "y", "z", "rx", "ry", "rz" };
+                    return string.Join(" ", this.Springs.OrderBy(spring => spring.Direction).Select(spring =>
+                        (spring.IsOneWay ? "comp " : "k ") + names[spring.Direction - 1]));
+                }
+
                 // One of the seven gets its own symbol. Anything else falls through to the
                 // short text tag, which is what a support outside the presets has always
                 // been drawn as.
@@ -254,18 +311,29 @@ namespace Alpaca4d.Element
         private string WriteSpringTcl()
         {
             var directions = this.RestrainedDirections;
-            var materials = directions.Select(direction =>
-                direction <= 3 ? this.TranslationSpring.Id : this.RotationSpring.Id);
-
             var x = this.Plane.XAxis;
             var y = this.Plane.YAxis;
 
             var tcl = new StringBuilder();
+            IEnumerable<int?> materials;
 
-            if (directions.Any(direction => direction <= 3))
-                tcl.Append(this.TranslationSpring.WriteTcl());
-            if (directions.Any(direction => direction > 3))
-                tcl.Append(this.RotationSpring.WriteTcl());
+            if (this.IsSpring)
+            {
+                // The springs' own materials, one per direction; see SupportSpring.Material.
+                foreach (var material in this.SpringMaterials)
+                    tcl.Append(material.WriteTcl());
+                materials = this.SpringMaterials.Select(material => material.Id);
+            }
+            else
+            {
+                materials = directions.Select(direction =>
+                    direction <= 3 ? this.TranslationSpring.Id : this.RotationSpring.Id);
+
+                if (directions.Any(direction => direction <= 3))
+                    tcl.Append(this.TranslationSpring.WriteTcl());
+                if (directions.Any(direction => direction > 3))
+                    tcl.Append(this.RotationSpring.WriteTcl());
+            }
 
             tcl.Append($"node {this.AuxiliaryNodeId} {this.Pos.X} {this.Pos.Y} {this.Pos.Z}\n");
             tcl.Append(this.ndf == 3

@@ -1015,6 +1015,13 @@ namespace Alpaca4d
                 support.SpringElementId = ++springElementTag;
                 support.TranslationSpring = SupportSpring(stiffness.translation);
                 support.RotationSpring = SupportSpring(stiffness.rotation);
+
+                // A spring support's own springs, a rigid one standing for the same penalty stiffness
+                // a skewed support is held with.
+                if (support.IsSpring)
+                    support.SpringMaterials = support.RestrainedDirections
+                        .Select(direction => support.SpringAlong(direction).Material(direction <= 3 ? stiffness.translation : stiffness.rotation))
+                        .ToList();
             }
         }
 
