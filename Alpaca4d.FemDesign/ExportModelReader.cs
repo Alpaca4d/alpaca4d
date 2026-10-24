@@ -85,8 +85,16 @@ namespace Alpaca4d.FemDesign
                     YAxis = plane.YAxis,
                     Tx = support.Tx, Ty = support.Ty, Tz = support.Tz,
                     Rx = support.Rx, Ry = support.Ry, Rz = support.Rz,
+                    Stiffness = support.IsSpring
+                        ? Enumerable.Range(1, 6).Select(direction => support.SpringAlong(direction) is SupportSpring spring
+                            ? spring.Stiffness ?? double.PositiveInfinity : 0.0).ToArray()
+                        : null,
                     Description = support.Description,
                 });
+
+                if (support.IsOneWay)
+                    report.Warning("A compression-only spring support is exported as a spring that holds both ways, and without its gap: " +
+                                   "set it to compression only in FEM-Design.", support.Description.Replace(Environment.NewLine, ", "));
             }
 
             foreach (var constraint in model.Constraint ?? new List<IConstraint>())

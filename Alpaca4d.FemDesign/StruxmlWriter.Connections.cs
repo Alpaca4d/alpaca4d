@@ -18,16 +18,19 @@ namespace Alpaca4d.FemDesign
         {
             foreach (var support in model.Supports)
             {
-                if (!(support.Tx || support.Ty || support.Tz || support.Rx || support.Ry || support.Rz))
+                // The stiffness along and about each axis: a spring support's own, or rigid where an
+                // ordinary one holds.
+                var k = support.Stiffness?.Select(value => double.IsPositiveInfinity(value) ? Rigid : value).ToArray()
+                        ?? new[] { support.Tx, support.Ty, support.Tz, support.Rx, support.Ry, support.Rz }.Select(held => held ? Rigid : 0.0).ToArray();
+
+                if (!k.Any(value => value > 0.0))
                 {
                     report.Remark("A support that holds nothing is not exported.", support.Description);
                     continue;
                 }
 
                 // The restraints are read in the support's own axes, as in Alpaca.
-                var springs = Springs(
-                    support.Tx ? Rigid : 0, support.Ty ? Rigid : 0, support.Tz ? Rigid : 0,
-                    support.Rx ? Rigid : 0, support.Ry ? Rigid : 0, support.Rz ? Rigid : 0);
+                var springs = Springs(k[0], k[1], k[2], k[3], k[4], k[5]);
                 var fdSupport = Point_support_type.Create(P(support.Position), V(support.XAxis), V(support.YAxis), springs, name: NextName("S"));
                 Add(fdSupport, fdSupport.Guid);
                 supportCount++;

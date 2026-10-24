@@ -170,6 +170,11 @@ namespace Alpaca4d.FemDesign
         public bool Rx { get; set; }
         public bool Ry { get; set; }
         public bool Rz { get; set; }
+        /// <summary>
+        /// A spring support's stiffness along and about each axis [kN/m, kNm/rad]: 0 where it is free,
+        /// infinity where it is rigid. Null for an ordinary support, which holds what Tx to Rz say.
+        /// </summary>
+        public double[] Stiffness { get; set; }
         /// <summary>Where it is and what it holds, for a message.</summary>
         public string Description { get; set; }
     }
