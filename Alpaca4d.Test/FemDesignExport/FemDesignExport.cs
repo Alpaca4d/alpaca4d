@@ -106,6 +106,7 @@ class FemDesignExportCheck
         {
             Frame();
             Trusses();
+            AlpacaTrussesAndSpringSupports();
             Sections();
             Shells();
             ShellEdgeCases();
@@ -207,6 +208,43 @@ class FemDesignExportCheck
 
         var weak = bars.Single(b => (string)b.Attribute("name") == "B.2").Element(Fd + "bar_part").Elements(Fd + "connectivity").ToList();
         Check("Alpaca's Ry release is FEM-Design's r_z", weak.Count == 2 && !Free(weak[0], "r_z") && Free(weak[1], "r_z") && !Free(weak[1], "r_y"), string.Join(" ", weak));
+    }
+
+    /// <summary>
+    /// What ExportModelReader makes of Alpaca's Truss and Spring Support (checked in Rhino, see
+    /// TrussAndSpringSupport/rhino.sh) as FEM-Design receives it: a truss unless a line load is on it, and a
+    /// point support with the spring's stiffness.
+    /// </summary>
+    static void AlpacaTrussesAndSpringSupports()
+    {
+        Console.WriteLine("\nAlpaca trusses and spring supports");
+        var m = new ExportModel();
+        int steel = AddMaterial(m, Steel());
+        int hea = AddSection(m, Hea200(steel));
+        var bar = Beam(m, new Point3d(0, 0, 0), new Point3d(4, 0, 3), hea, Pin(true), Pin(false), "bracing");
+        bar.IsTruss = true;
+        var loadedBar = Beam(m, new Point3d(0, 0, 3), new Point3d(4, 0, 3), hea, Pin(true), Pin(false), "chord");
+        loadedBar.IsTruss = true;
+        var live = new ExportLoadCase { Name = "Live" };
+        live.BeamLoads.Add(new ExportBeamLoad { Beam = 1, Force = new Vector3d(0, 0, -2) });
+        m.LoadCases.Add(live);
+
+        m.Supports.Add(new ExportSupport { Position = new Point3d(0, 0, 0), Stiffness = new[] { 0.0, 500.0, double.PositiveInfinity, 0.0, 0.0, 0.0 }, Description = "spring" });
+        m.Supports.Add(new ExportSupport { Position = new Point3d(4, 0, 0), Stiffness = new double[6], Description = "nothing" });
+        m.Supports.Add(Fixed(new Point3d(4, 0, 3)));
+
+        var (root, result) = Export("alpaca-trusses", m);
+        var bars = All(root, "bar").ToList();
+        Check("an Alpaca truss is a FEM-Design truss", bars.Count(b => (string)b.Attribute("type") == "truss") == 1, string.Join(", ", bars.Select(b => (string)b.Attribute("name") + " " + (string)b.Attribute("type"))));
+        Check("one with a line load on it is a beam pinned at both ends", bars.Count(b => (string)b.Attribute("type") == "beam") == 1);
+        Check("and the report says why", Messages(result).Contains("A truss with a line load"), Messages(result));
+
+        var supports = All(root, "point_support").ToList();
+        Check("a support of springs, and the fixed one; the one holding nothing is left out", supports.Count == 2);
+        var springs = supports[0].Descendants(Fd + "springs").First();
+        Check("its stiffness: free along X, 500 along Y, rigid along Z, free to turn",
+            D(springs, "Kx_pos") == 0 && D(springs, "Ky_pos") == 500 && D(springs, "Ky_neg") == 500 && D(springs, "Kz_pos") == 1e10 &&
+            D(springs, "Cx_pos") == 0 && D(springs, "Cz_neg") == 0, springs.ToString());
     }
 
     /// <summary>Library profiles by name or size, outlines for the rest, fictitious bars for A-I-J, custom materials.</summary>
