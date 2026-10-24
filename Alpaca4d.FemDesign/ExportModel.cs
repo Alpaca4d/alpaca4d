@@ -142,6 +142,8 @@ namespace Alpaca4d.FemDesign
         public Release ReleaseJ { get; set; }
         /// <summary>False when the beam's curve is not a straight line; it is exported as its chord.</summary>
         public bool IsStraight { get; set; } = true;
+        /// <summary>True for an Alpaca truss: pinned at both ends, so it goes out as a FEM-Design truss.</summary>
+        public bool IsTruss { get; set; }
     }
 
     public class ExportShell

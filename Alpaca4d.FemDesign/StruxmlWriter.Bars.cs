@@ -77,6 +77,10 @@ namespace Alpaca4d.FemDesign
             else
                 kind = BarKind.Beam;
 
+            if (beam.IsTruss && loaded && kind != BarKind.Fictitious)
+                report.Warning("A truss with a line load on it is exported as a beam pinned at both ends: a FEM-Design truss takes no " +
+                               "line load. Alpaca puts that load on the truss's end nodes instead.", label);
+
             if (kind == BarKind.Column && axis.Z < 0)
             {
                 // A FEM-Design column runs upwards. Turning it round, and its local y with it, keeps local z

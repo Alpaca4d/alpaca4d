@@ -136,6 +136,20 @@ namespace Alpaca4d.FemDesign
                 exportBeam.ReleaseJ = BeamWithHinges.ReleaseOf(hinges.SectionJ, beam.Section);
             }
 
+            if (beam is Truss truss)
+            {
+                // A bar: free to turn at both ends, its twist held at one so that it does not spin.
+                exportBeam.IsTruss = true;
+                exportBeam.ReleaseI = new Release(true, true, true, true, false, false);
+                exportBeam.ReleaseJ = new Release(true, true, true, false, false, false);
+
+                if (truss.WorksIn != AxialBehaviour.Both)
+                    report.Warning($"A {(truss.WorksIn == AxialBehaviour.Tension ? "tension" : "compression")}-only truss is exported as an ordinary " +
+                                   "truss, which carries both: set its limit in FEM-Design.", exportBeam.Label ?? $"truss {exportBeam.Id}");
+                if (truss.Prestress != 0.0)
+                    report.Warning("A truss's prestress is not exported.", exportBeam.Label ?? $"truss {exportBeam.Id}");
+            }
+
             return exportBeam;
         }
 
