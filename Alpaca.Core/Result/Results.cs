@@ -236,6 +236,7 @@ namespace Alpaca4d.Result
             // that fall outside it, so enumerate whatever the file actually holds and key the
             // rows by element ID, which is unique across the whole model.
             const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force";
+            const string TRUSS_BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/axialForce";
             const string BEAM_CLASS = "ForceBeamColumn";
             const int SECTIONFORCES = 6;
 
@@ -250,18 +251,49 @@ namespace Alpaca4d.Result
 
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
 
-            if (!h5File.LinkExists(BASE))
+            // Trusses answer "axialForce" and nothing else does; beams answer "section.force". A file
+            // needs only what the model has.
+            bool hasTrusses = alpacaModel.Beams.Any(beam => beam is Alpaca4d.Element.Truss);
+            bool hasFrames = alpacaModel.Beams.Any(beam => !(beam is Alpaca4d.Element.Truss));
+
+            if (hasFrames && !h5File.LinkExists(BASE))
                 throw new Exception(
                     "The recorder file holds no section forces. Switch \"section.force\" on in the MPCO Recorder component.");
+            if (hasTrusses && !h5File.LinkExists(TRUSS_BASE))
+                throw new Exception(
+                    "The recorder file holds no truss forces. Switch \"axialForce\" on in the MPCO Recorder component.");
 
             // Map: element ID -> row data (all columns for that element)
             var rowById = new Dictionary<int, double[]>();
 
-            var beamGroups = h5File.Group(BASE)
+            var beamGroups = !h5File.LinkExists(BASE) ? new List<PureHDF.IH5Group>() :
+                             h5File.Group(BASE)
                                    .Children()
                                    .OfType<PureHDF.IH5Group>()
                                    .Where(group => group.Name.Contains(BEAM_CLASS))
                                    .ToList();
+
+            // A truss writes one number, its axial force, under axialForce/<tag>-CorotTruss[...].
+            var axialById = new Dictionary<int, double>();
+            if (hasTrusses)
+            {
+                foreach (var group in h5File.Group(TRUSS_BASE).Children().OfType<PureHDF.IH5Group>())
+                {
+                    var stepGroup = group.Group("DATA");
+                    if (!stepGroup.LinkExists($"STEP_{step}"))
+                        throw new Exception($"STEP_{step} not defined!");
+
+                    var idDataset = group.Dataset("ID");
+                    var dataDataset = stepGroup.Dataset($"STEP_{step}");
+                    long rows = (long)dataDataset.Space.Dimensions[0];
+                    long cols = (long)dataDataset.Space.Dimensions[1];
+                    double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                    int[,] ids = idDataset.Read<int>().ToArray2D((long)idDataset.Space.Dimensions[0], 1L);
+
+                    for (int r = 0; r < rows; r++)
+                        axialById[ids[r, 0]] = data[r, 0];
+                }
+            }
 
             foreach (var group in beamGroups)
             {
@@ -300,7 +332,18 @@ namespace Alpaca4d.Result
                     var vz = new List<double>();
                     var t  = new List<double>();
 
-                    if (rowById.TryGetValue(beam.Id.Value, out double[] row))
+                    // A truss reports its axial force at both ends, which is where its two stations are
+                    // (Truss.BeamIntegration), and no shear, moment or torsion.
+                    if (beam is Alpaca4d.Element.Truss && axialById.TryGetValue(beam.Id.Value, out double axial))
+                    {
+                        n.AddRange(new[] { axial, axial });
+                        mz.AddRange(new[] { 0.0, 0.0 });
+                        vy.AddRange(new[] { 0.0, 0.0 });
+                        my.AddRange(new[] { 0.0, 0.0 });
+                        vz.AddRange(new[] { 0.0, 0.0 });
+                        t.AddRange(new[] { 0.0, 0.0 });
+                    }
+                    else if (rowById.TryGetValue(beam.Id.Value, out double[] row))
                     {
                         // Derive the number of integration points from the column count
                         int numIP = row.Length / SECTIONFORCES;
