@@ -140,6 +140,12 @@ namespace Alpaca4d.Element
                 Held(hinge.Izz, interior.Izz));
         }
 
+        /// <summary>The release at the I end, read back off its hinge section.</summary>
+        public Release ReleaseI => ReleaseOf(this.HingeIntegration.SectionI, this.HingeIntegration.Section);
+
+        /// <summary>The release at the J end, read back off its hinge section.</summary>
+        public Release ReleaseJ => ReleaseOf(this.HingeIntegration.SectionJ, this.HingeIntegration.Section);
+
         /// <summary>
         /// The releases and hinge lengths are read back off the hinge sections, which are made again
         /// from the new section.

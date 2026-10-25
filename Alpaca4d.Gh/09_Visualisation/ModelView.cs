@@ -39,6 +39,12 @@ namespace Alpaca4d.Gh
         private MenuSlider   _slTextSize;
         private MenuStaticText _txAxesSize;
         private MenuSlider   _slAxesSize;
+        private MenuCheckBox _ckReleases;
+        private MenuStaticText _txReleaseSize;
+        private MenuSlider   _slReleaseSize;
+
+        // The radius of a release circle at Release size 1; see ReleaseSymbols.Size.
+        private double _releaseSize;
 
         // What the viewport draws, worked out in SolveInstance; see Extent.
         private BoundingBox _box = BoundingBox.Empty;
@@ -108,18 +114,22 @@ namespace Alpaca4d.Gh
             _ckElementIds   = new MenuCheckBox(2, "ElementIds",   "Element IDs");
             _ckSectionNames = new MenuCheckBox(3, "SectionNames", "Section Names");
             _ckLocalAxes    = new MenuCheckBox(4, "LocalAxes",    "Local Axes");
+            // On unless a saved file says otherwise: it draws nothing where nothing is released.
+            _ckReleases     = new MenuCheckBox(5, "Releases",     "End Releases") { Active = true };
 
             _ckExtruded.ValueChanged     += OnWidgetChanged;
             _ckNodeIds.ValueChanged      += OnWidgetChanged;
             _ckElementIds.ValueChanged   += OnWidgetChanged;
             _ckSectionNames.ValueChanged += OnWidgetChanged;
             _ckLocalAxes.ValueChanged    += OnWidgetChanged;
+            _ckReleases.ValueChanged     += OnWidgetChanged;
 
             elemPanel.AddControl(_ckExtruded);
             elemPanel.AddControl(_ckNodeIds);
             elemPanel.AddControl(_ckElementIds);
             elemPanel.AddControl(_ckSectionNames);
             elemPanel.AddControl(_ckLocalAxes);
+            elemPanel.AddControl(_ckReleases);
 
             // Each element in its own colour, or every element of a section, or of a material, in
             // one - the one the Section or Material Library gave it, or one picked here. In the
@@ -145,6 +155,13 @@ namespace Alpaca4d.Gh
             elemPanel.AddControl(_slTextSize);
             elemPanel.AddControl(_txAxesSize);
             elemPanel.AddControl(_slAxesSize);
+
+            // How big the release circles and lines are drawn, against a twentieth of a typical beam.
+            _txReleaseSize = new MenuStaticText { Text = "Release size" };
+            _slReleaseSize = new MenuSlider(2, "ReleaseSize", 0.1, 5.0, 1.0, 1);
+            _slReleaseSize.ValueChanged += OnWidgetChanged;
+            elemPanel.AddControl(_txReleaseSize);
+            elemPanel.AddControl(_slReleaseSize);
 
             elemMenu.AddControl(elemPanel);
             _elemMenu = elemMenu;         // store for plug registration in CreateAttributes
@@ -218,6 +235,8 @@ namespace Alpaca4d.Gh
             _slTextSize.ValueChanged        += OnWidgetChanged;
             _slAxesSize.ValueChanged        += OnWidgetChanged;
             _ddColourBy.ValueChanged        += OnWidgetChanged;
+            _ckReleases.ValueChanged        += OnWidgetChanged;
+            _slReleaseSize.ValueChanged     += OnWidgetChanged;
 
             // Visibility is not saved: it follows from the checkboxes.
             UpdateVisibility();
@@ -237,11 +256,17 @@ namespace Alpaca4d.Gh
             bool labelled = (_ckNodeIds?.Active ?? false) || (_ckElementIds?.Active ?? false)
                          || (_ckSectionNames?.Active ?? false) || (_ckShowLoadValues?.Active ?? false);
             bool axes = _ckLocalAxes?.Active ?? false;
+            bool releases = _ckReleases?.Active ?? false;
 
             _txTextSize.Visible = labelled;
             _slTextSize.Visible = labelled;
             _txAxesSize.Visible = axes;
             _slAxesSize.Visible = axes;
+            if (_slReleaseSize != null)
+            {
+                _txReleaseSize.Visible = releases;
+                _slReleaseSize.Visible = releases;
+            }
 
             Attributes?.ExpireLayout();
             Grasshopper.Instances.ActiveCanvas?.Refresh();
@@ -283,6 +308,7 @@ namespace Alpaca4d.Gh
                 _visibleElementIds = new HashSet<int>(elemIdList);
 
             _colours = new Alpaca4d.Visualisation.ElementColours(_model, ColourBy);
+            _releaseSize = Alpaca4d.Visualisation.ReleaseSymbols.Size(_model);
 
             foreach (var item in _model.Beams)
             {
@@ -343,6 +369,7 @@ namespace Alpaca4d.Gh
             bool showElemIds    = _ckElementIds?.Active   ?? false;
             bool showSecNames   = _ckSectionNames?.Active ?? false;
             bool showLocalAxes  = _ckLocalAxes?.Active    ?? false;
+            bool showReleases   = _ckReleases?.Active     ?? false;
             double loadScale    = _slLoadScale?.Value     ?? 1.0;
             double supportScale = _slSupportScale?.Value  ?? 1.0;
             double textSize     = _slTextSize?.Value      ?? 0.5;
@@ -505,6 +532,28 @@ namespace Alpaca4d.Gh
 
                     DrawElementAxes(args, origin, frame.X, frame.Y, frame.Z, AxesReach(brick) * axesSize);
                 }
+            }
+
+            // ── End releases ─────────────────────────────────────────────────
+            if (showReleases)
+            {
+                double size = _releaseSize * (_slReleaseSize?.Value ?? 1.0);
+                var view = args.Viewport.CameraDirection;
+
+                // Over the model, as the labels are: a circle smaller than the section would
+                // otherwise vanish inside the extruded beam it marks.
+                args.Display.PushDepthTesting(false);
+                foreach (var beam in _model.Beams)
+                {
+                    if (_visibleElementIds != null && beam.Id.HasValue && !_visibleElementIds.Contains(beam.Id.Value)) continue;
+
+                    var (circles, lines) = Alpaca4d.Visualisation.ReleaseSymbols.For(beam, size, view);
+                    foreach (var (circle, colour) in circles)
+                        args.Display.DrawCircle(circle, colour, 2);
+                    foreach (var (line, colour) in lines)
+                        args.Display.DrawLine(line, colour, 3);
+                }
+                args.Display.PopDepthTesting();
             }
 
             // ── Loads ─────────────────────────────────────────────────────────
