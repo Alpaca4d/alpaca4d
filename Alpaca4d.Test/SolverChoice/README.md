@@ -129,7 +129,7 @@ the *Multi-core OpenSees* workflow measures it there.
 
 ## Running it
 
-    OPENSEES=../../Alpaca4d.Gh/OpenSees-Solvers/mac/bin/OpenSees ./run.sh
+    OPENSEES=/Applications/OpenSees3.8.0/bin/OpenSees ./run.sh
 
 With the OpenSees from `Tools/OpenSees` as `OPENSEES`, set `OPENSEES_WITHOUT_MUMPS` to an
 official one as well and `SystemChoice.cs` checks Auto's fallback on it; `MULTICORE=1` adds

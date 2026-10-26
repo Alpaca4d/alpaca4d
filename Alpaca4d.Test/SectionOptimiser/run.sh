@@ -10,7 +10,6 @@ CORE="$COREDIR/Alpaca4d.Core.dll"
 RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.dll 2>/dev/null | head -1)}
 [ -f "$CORE" ]  || { echo "build Alpaca.Core first, or set COREDIR=..."; exit 1; }
 [ -f "$RHINO" ] || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }
-SHIPPED="$(pwd)/../../Alpaca4d.Gh/OpenSees-Solvers/mac/bin/OpenSees"
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 cp SectionOptimiser.cs SimpleBeam.cs optimiser.tcl "$work/"
@@ -19,7 +18,7 @@ cp "$COREDIR"/*.dll "$work/" 2>/dev/null || true
 cp "$RHINO" "$work/"
 
 ( cd "$work"
-  OPENSEES=${OPENSEES:-$(command -v OpenSees || echo "$SHIPPED")}
+  OPENSEES=${OPENSEES:-$(command -v OpenSees)}
   if [ -x "$OPENSEES" ]; then
     for load in heavy light; do
       "$OPENSEES" optimiser.tcl $load > /dev/null 2>&1 || echo "warning: optimiser.tcl $load did not solve"

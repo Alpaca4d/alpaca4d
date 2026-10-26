@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Solver and algorithm benchmark. Needs python3 and an OpenSees binary.
-# Set OPENSEES to point at one, e.g. the bundled solver:
-#   OPENSEES=../../Alpaca4d.Gh/OpenSees-Solvers/mac/bin/OpenSees ./run.sh
+# Set OPENSEES to point at one, e.g. the official one:
+#   OPENSEES=/Applications/OpenSees3.8.0/bin/OpenSees ./run.sh
 # With an OpenSees built with Mumps (Tools/OpenSees), set OPENSEES_WITHOUT_MUMPS to an official
 # one as well, so Auto's fallback is run too, and MULTICORE=1 to time small and large models
 # on one core and on all of them (multicore.py; very large ones take it a while).
