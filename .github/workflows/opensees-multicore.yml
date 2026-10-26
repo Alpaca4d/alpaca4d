@@ -5,6 +5,9 @@ name: Multi-core OpenSees
 # Windows x64 and macOS arm64 are built from the same patches (Tools/OpenSees), checked
 # against UmfPack, timed, and uploaded laid out like OpenSees-Solvers/<platform>.
 # See Tools/OpenSees/README.md.
+#
+# GitHub starts a workflow by hand (workflow_dispatch) only once it is on the default branch. Until
+# then, a push that changes the paths below starts it - pushing a new branch alone does not.
 
 on:
   workflow_dispatch:
