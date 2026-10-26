@@ -68,7 +68,7 @@ namespace Alpaca4d.Gh
 
         private const string PerBeam = "One value for every beam, or one per beam, in the order of the model's beams.";
 
-        private const string DefaultSystem = "BandSPD", DefaultAlgorithm = "Newton";
+        private const string DefaultSystem = "Auto", DefaultAlgorithm = "Newton";
 
         protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
         {
@@ -151,9 +151,9 @@ namespace Alpaca4d.Gh
 
             unit.RegisterInputParam(new Param_String(), "System", "System",
                 "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "BandSPD is the default, fastest on every model measured. Reach for UmfPack if a model refuses to solve - it " +
-                "assumes nothing about the matrix.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral",
+                "Auto is the default: Mumps on every core when the OpenSees in use has it, BandSPD when it does not. " +
+                "Reach for UmfPack if a model refuses to solve - it assumes nothing about the matrix.\n" +
+                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
                 GH_ParamAccess.item, new GH_String(DefaultSystem));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 

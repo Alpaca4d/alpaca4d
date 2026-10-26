@@ -13,12 +13,15 @@ namespace Alpaca4d.Gh
     {
         private Alpaca4d.Model _model = null;
 
-        private List<Mesh> _beamMeshes = new List<Mesh>();
-        private List<Mesh> _shellMeshes = new List<Mesh>();
-        private List<Mesh> _brickMeshes = new List<Mesh>();
+        // The elements in the viewport, each kind joined into one mesh so that Rhino draws it in one
+        // call (see Joined): extruded beams and shells for Extruded on, flat shells for it off, and the
+        // bricks for both. Null when there are none.
+        private Mesh _beamsJoined, _shellsJoined, _flatShellsJoined, _bricksJoined;
 
-        // Beams with no outline to extrude, drawn as lines when Extruded is on rather than not at all.
-        private readonly List<Alpaca4d.Generic.IBeam> _lineBeams = new List<Alpaca4d.Generic.IBeam>();
+        // The beams as lines, with Extruded off; and with it on, the ones with no outline to extrude,
+        // drawn as lines rather than not at all.
+        private readonly JoinedLines _beamLines = new JoinedLines();
+        private readonly JoinedLines _lineBeams = new JoinedLines();
 
         private int? _loadPatternId = null;
         private HashSet<int> _visibleElementIds = null; // null = show all
@@ -276,9 +279,8 @@ namespace Alpaca4d.Gh
 
         protected override void BeforeSolveInstance()
         {
-            _beamMeshes.Clear();
-            _shellMeshes.Clear();
-            _brickMeshes.Clear();
+            _beamsJoined = _shellsJoined = _flatShellsJoined = _bricksJoined = null;
+            _beamLines.Clear();
             _lineBeams.Clear();
             _colours = null;
             _box = BoundingBox.Empty;
@@ -310,19 +312,26 @@ namespace Alpaca4d.Gh
             _colours = new Alpaca4d.Visualisation.ElementColours(_model, ColourBy);
             _releaseSize = Alpaca4d.Visualisation.ReleaseSymbols.Size(_model);
 
+            var beamMeshes = new List<Mesh>();
+            var shellMeshes = new List<Mesh>();
+            var flatShellMeshes = new List<Mesh>();
+            var brickMeshes = new List<Mesh>();
+
             foreach (var item in _model.Beams)
             {
                 if (_visibleElementIds != null && item.Id.HasValue && !_visibleElementIds.Contains(item.Id.Value)) continue;
 
+                _beamLines.Add(item.Curve, _colours.Of(item));
+
                 var beamMesh = ExtrudedBeam(item);
                 if (beamMesh == null)
                 {
-                    _lineBeams.Add(item);
+                    _lineBeams.Add(item.Curve, _colours.Of(item));
                     continue;
                 }
 
                 beamMesh.VertexColors.CreateMonotoneMesh(_colours.Of(item));
-                _beamMeshes.Add(beamMesh);
+                beamMeshes.Add(beamMesh);
             }
             foreach (var item in _model.Shells)
             {
@@ -337,16 +346,26 @@ namespace Alpaca4d.Gh
                 // An offset Rhino could not make leaves the shell drawn flat, not missing.
                 if (myMesh.Vertices.Count == 0) myMesh = item.Mesh.DuplicateMesh();
                 myMesh.VertexColors.CreateMonotoneMesh(_colours.Of(item));
-                _shellMeshes.Add(myMesh);
+                shellMeshes.Add(myMesh);
+
+                // Copies coloured, not the model's own meshes: other components draw those too.
+                var flat = item.Mesh.DuplicateMesh();
+                flat.VertexColors.CreateMonotoneMesh(_colours.Of(item));
+                flatShellMeshes.Add(flat);
             }
             foreach (var item in _model.Bricks)
             {
                 if (_visibleElementIds != null && item.Id.HasValue && !_visibleElementIds.Contains(item.Id.Value)) continue;
 
-                var brick = item.Mesh;
+                var brick = item.Mesh.DuplicateMesh();
                 brick.VertexColors.CreateMonotoneMesh(_colours.Of(item));
-                _brickMeshes.Add(brick);
+                brickMeshes.Add(brick);
             }
+
+            _beamsJoined = Joined.Of(beamMeshes);
+            _shellsJoined = Joined.Of(shellMeshes);
+            _flatShellsJoined = Joined.Of(flatShellMeshes);
+            _bricksJoined = Joined.Of(brickMeshes);
 
             DA.SetData(0, _model);
 
@@ -378,46 +397,16 @@ namespace Alpaca4d.Gh
             // ── Elements ─────────────────────────────────────────────────────
             if (extruded)
             {
-                foreach (var mesh in _beamMeshes)
-                {
-                    args.Display.DrawMeshFalseColors(mesh);
-                    args.Display.DrawMeshWires(mesh, System.Drawing.Color.Black, 2);
-                }
-                foreach (var beam in _lineBeams)
-                    args.Display.DrawCurve(beam.Curve, Colour(beam));
-                foreach (var mesh in _shellMeshes)
-                {
-                    args.Display.DrawMeshFalseColors(mesh);
-                    args.Display.DrawMeshWires(mesh, System.Drawing.Color.Black, 2);
-                }
-                foreach (var mesh in _brickMeshes)
-                {
-                    args.Display.DrawMeshFalseColors(mesh);
-                    args.Display.DrawMeshWires(mesh, System.Drawing.Color.Black, 2);
-                }
+                DrawElements(args, _beamsJoined);
+                _lineBeams.Draw(args.Display);
+                DrawElements(args, _shellsJoined);
             }
             else
             {
-                foreach (var beam in _model.Beams)
-                {
-                    if (_visibleElementIds != null && beam.Id.HasValue && !_visibleElementIds.Contains(beam.Id.Value)) continue;
-                    args.Display.DrawCurve(beam.Curve, Colour(beam));
-                }
-                foreach (var shell in _model.Shells)
-                {
-                    if (_visibleElementIds != null && shell.Id.HasValue && !_visibleElementIds.Contains(shell.Id.Value)) continue;
-                    var mesh = shell.Mesh;
-                    mesh.VertexColors.CreateMonotoneMesh(Colour(shell));
-                    args.Display.DrawMeshFalseColors(mesh);
-                    args.Display.DrawMeshWires(mesh, System.Drawing.Color.Black, 2);
-                }
-                foreach (var brick in _model.Bricks)
-                {
-                    if (_visibleElementIds != null && brick.Id.HasValue && !_visibleElementIds.Contains(brick.Id.Value)) continue;
-                    args.Display.DrawMeshFalseColors(brick.Mesh);
-                    args.Display.DrawMeshWires(brick.Mesh, System.Drawing.Color.Black, 2);
-                }
+                _beamLines.Draw(args.Display);
+                DrawElements(args, _flatShellsJoined);
             }
+            DrawElements(args, _bricksJoined);
 
             // ── Node IDs ─────────────────────────────────────────────────────
             if (showNodeIds)
@@ -632,6 +621,14 @@ namespace Alpaca4d.Gh
 
         public override bool IsPreviewCapable => true;
 
+        /// <summary>A joined mesh of elements, in their colours and with their edges.</summary>
+        private static void DrawElements(IGH_PreviewArgs args, Mesh joined)
+        {
+            if (joined == null) return;
+            args.Display.DrawMeshFalseColors(joined);
+            args.Display.DrawMeshWires(joined, System.Drawing.Color.Black, 2);
+        }
+
         private Alpaca4d.Visualisation.ColourBy ColourBy =>
             (Alpaca4d.Visualisation.ColourBy)Math.Max(0, Math.Min(2, _ddColourBy?.Value ?? 0));
 
@@ -740,8 +737,8 @@ namespace Alpaca4d.Gh
             foreach (var beam in _model.Beams) box.Union(beam.Curve.GetBoundingBox(false));
             foreach (var shell in _model.Shells) box.Union(shell.Mesh.GetBoundingBox(false));
             foreach (var brick in _model.Bricks) box.Union(brick.Mesh.GetBoundingBox(false));
-            foreach (var mesh in _beamMeshes) box.Union(mesh.GetBoundingBox(false));
-            foreach (var mesh in _shellMeshes) box.Union(mesh.GetBoundingBox(false));
+            if (_beamsJoined != null) box.Union(_beamsJoined.GetBoundingBox(false));
+            if (_shellsJoined != null) box.Union(_shellsJoined.GetBoundingBox(false));
             if (!box.IsValid) return box;
 
             var geometry = box;
