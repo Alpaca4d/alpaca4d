@@ -77,6 +77,12 @@ namespace Alpaca4d.Gh
         // A section's outline, flattened once per solve rather than once per beam that uses it.
         private readonly Dictionary<IUniaxialSection, List<Polyline>> _outlines = new Dictionary<IUniaxialSection, List<Polyline>>();
 
+        // And cut into points to work a stress out at, the same way; see Strips.
+        private readonly Dictionary<IUniaxialSection, List<Strip>> _strips = new Dictionary<IUniaxialSection, List<Strip>>();
+
+        // The beams whose stress is painted point by point over the section this solve, by tag.
+        private readonly Dictionary<int, Tuple<BeamSectionField, List<Strip>>> _sections = new Dictionary<int, Tuple<BeamSectionField, List<Strip>>>();
+
         private MenuDropDown _ddFamily;
         private MenuDropDown _ddComponent;
         private MenuDropDown _ddLayer;
@@ -115,6 +121,8 @@ namespace Alpaca4d.Gh
             "forces, shell stresses, solid stresses, reactions.\n" +
             "Pick the result, the component and the unit from the dropdowns. ElementId shows only some of the " +
             "elements and greys the rest, so what you are looking at stays in the model around it.\n" +
+            "With Extruded beams on, beam stresses that differ across a section - σx, σMy, σMz, τV, τT, Von Mises - " +
+            "are painted point by point over it; drawn as lines, each section shows its worst.\n" +
             "Work in progress, and meant to grow into the replacement for the separate view components.",
             "Alpaca4d", "09_Visualisation")
         {
@@ -598,7 +606,9 @@ namespace Alpaca4d.Gh
             _beamSolids.Clear();
             _beamEdges.Clear();
             _outlines.Clear();
-            _shadedJoined = _faceEdgesJoined = _ghostJoined = _diagramsJoined = _beamSolidsJoined = _beamEdgesJoined = null;
+            _strips.Clear();
+            _sections.Clear();
+            _shadedJoined = _faceEdgesJoined =_ghostJoined = _diagramsJoined = _beamSolidsJoined = _beamEdgesJoined = null;
             _box = BoundingBox.Empty;
         }
 
@@ -693,6 +703,23 @@ namespace Alpaca4d.Gh
 
             _field = _cachedField;
 
+            // Drawn solid, a beam has a section to paint a stress over, and one that differs across
+            // it is worked out point by point there - before the range, which has to span it.
+            if ((_ckExtruded?.Active ?? false) && ResultField.VariesOverSection(family, component) && _field.BySection != null)
+            {
+                foreach (var beam in _model.Beams)
+                {
+                    BeamSectionField section;
+                    if (!beam.Id.HasValue || beam.Curve == null || !_field.BySection.TryGetValue(beam.Id.Value, out section))
+                        continue;
+
+                    Vector3d y, z;
+                    var strips = Strips(beam, section.Shape);
+                    if (strips != null && LocalAxes(beam, beam.Curve.PointAtStart, beam.Curve.PointAtEnd, out y, out z))
+                        _sections[beam.Id.Value] = Tuple.Create(section, strips);
+                }
+            }
+
             // The range is fitted to what is on screen, not to the whole model: a filter narrowed
             // to one beam is asking about that beam, and a gradient stretched over a maximum
             // somewhere else would paint it all one colour.
@@ -753,10 +780,15 @@ namespace Alpaca4d.Gh
             return offsets;
         }
 
-        /// <summary>The values on the elements that passed the filter, which is what the range fits.</summary>
+        /// <summary>
+        /// The values on the elements that passed the filter, which is what the range fits. A beam
+        /// painted over its section gives every point of it at every integration section: drawn
+        /// in between, the stress is a blend of two sections' forces, and none of the values drawn
+        /// lies beyond the two it is blended from.
+        /// </summary>
         private IEnumerable<double> ShownValues(ElementFilter filter)
         {
-            if (filter.MatchesEverything || _field.Reactions != null)
+            if (_field.Reactions != null || (filter.MatchesEverything && _field.ByElement == null))
                 return _field.Values;
 
             if (_field.ByNode != null)
@@ -771,11 +803,19 @@ namespace Alpaca4d.Gh
                 return _field.ByNode.Where(entry => nodes.Contains(entry.Key)).Select(entry => entry.Value);
             }
 
-            var kept = new HashSet<int>(_model.Elements.Where(filter.Matches)
-                                                      .Where(x => x.Id.HasValue)
-                                                      .Select(x => x.Id.Value));
+            IEnumerable<KeyValuePair<int, List<double>>> entries = _field.ByElement;
+            if (!filter.MatchesEverything)
+            {
+                var kept = new HashSet<int>(_model.Elements.Where(filter.Matches)
+                                                          .Where(x => x.Id.HasValue)
+                                                          .Select(x => x.Id.Value));
+                entries = entries.Where(entry => kept.Contains(entry.Key));
+            }
 
-            return _field.ByElement.Where(entry => kept.Contains(entry.Key)).SelectMany(entry => entry.Value);
+            return entries.SelectMany(entry => _sections.TryGetValue(entry.Key, out var section)
+                ? section.Item1.Forces.SelectMany(forces => section.Item2.SelectMany(strip =>
+                      strip.Points.Select(point => section.Item1.At(point, forces, _field.Component))))
+                : entry.Value);
         }
 
         private static IEnumerable<int> NodesOf(IElement element)
@@ -922,6 +962,11 @@ namespace Alpaca4d.Gh
 
             if (family == ResultFamily.BeamStress)
             {
+                Tuple<BeamSectionField, List<Strip>> section;
+                if (beam.Id.HasValue && _sections.TryGetValue(beam.Id.Value, out section)
+                    && BuildBeamSection(beam, start, end, section.Item1, section.Item2, lift))
+                    return;
+
                 List<double> stresses;
                 if (beam.Id.HasValue && _field.ByElement != null && _field.ByElement.TryGetValue(beam.Id.Value, out stresses)
                     && stresses != null && stresses.Count > 0)
@@ -1139,39 +1184,9 @@ namespace Alpaca4d.Gh
             var stations = Stations(beam, values.Count);
             var axis = end - start;
 
-            var samples = new List<Tuple<double, double>>();
-
-            if (values.Count == 1)
-            {
-                samples.Add(Tuple.Create(0.0, values[0]));
-                samples.Add(Tuple.Create(1.0, values[0]));
-            }
-            else
-            {
-                // Out to the ends as well: the first and last section need not sit on them.
-                var at = new List<double> { 0.0 };
-                var value = new List<double> { values[0] };
-                for (int i = 0; i < values.Count; i++)
-                {
-                    at.Add(stations[i]);
-                    value.Add(values[i]);
-                }
-                at.Add(1.0);
-                value.Add(values[values.Count - 1]);
-
-                const int steps = 4;
-                for (int i = 0; i < at.Count - 1; i++)
-                {
-                    if (at[i + 1] - at[i] <= 0.0) continue;
-
-                    for (int k = 0; k < steps; k++)
-                    {
-                        double a = k / (double)steps;
-                        samples.Add(Tuple.Create(at[i] + (at[i + 1] - at[i]) * a, value[i] + (value[i + 1] - value[i]) * a));
-                    }
-                }
-                samples.Add(Tuple.Create(1.0, value[value.Count - 1]));
-            }
+            var samples = Samples(beam, values.Count)
+                .Select(x => Tuple.Create(x.At, values[x.From] + (values[x.To] - values[x.From]) * x.Share))
+                .ToList();
 
             Paint(beam, start, end, samples);
 
@@ -1180,6 +1195,201 @@ namespace Alpaca4d.Gh
                 if (Math.Abs(values[i]) > Math.Abs(values[worst])) worst = i;
 
             Label(start + axis * stations[worst], values[worst], lift);
+        }
+
+        /// <summary>
+        /// Where along a beam to sample something given at its integration sections, from 0 at its
+        /// start to 1 at its end, and what to blend there: section From with section To, the Share
+        /// of the way from one to the other. Each section where it sits, three more between each
+        /// pair so a colour walked between them has stops to walk through, and out to both ends,
+        /// which the first and last section need not sit on.
+        /// </summary>
+        private static List<(double At, int From, int To, double Share)> Samples(IBeam beam, int count)
+        {
+            var samples = new List<(double, int, int, double)>();
+
+            if (count == 1)
+            {
+                samples.Add((0.0, 0, 0, 0.0));
+                samples.Add((1.0, 0, 0, 0.0));
+                return samples;
+            }
+
+            var stations = Stations(beam, count);
+            var at = new List<double> { 0.0 };
+            var section = new List<int> { 0 };
+            for (int i = 0; i < count; i++)
+            {
+                at.Add(stations[i]);
+                section.Add(i);
+            }
+            at.Add(1.0);
+            section.Add(count - 1);
+
+            const int steps = 4;
+            for (int i = 0; i < at.Count - 1; i++)
+            {
+                if (at[i + 1] - at[i] <= 0.0) continue;
+
+                for (int k = 0; k < steps; k++)
+                {
+                    double a = k / (double)steps;
+                    samples.Add((at[i] + (at[i + 1] - at[i]) * a, section[i], section[i + 1], a));
+                }
+            }
+            samples.Add((1.0, count - 1, count - 1, 0.0));
+
+            return samples;
+        }
+
+        /// <summary>
+        /// One edge of a section's outline, cut into short pieces: where each point is in the
+        /// section's own drawing - x along local z, y along local y - and what each section force
+        /// does there.
+        /// </summary>
+        private class Strip
+        {
+            public Point2d[] At;
+            public SurfacePoint[] Points;
+        }
+
+        /// <summary>
+        /// The section's outline as points to work a stress out at, edge by edge, or null when it has
+        /// none. Each edge is cut into pieces no longer than a twelfth of the section, so a stress
+        /// running across a face has colours to walk through rather than going from one corner's
+        /// straight to the other's - the display blends between vertices without passing the
+        /// gradient's stops in between.
+        ///
+        /// An edge apiece rather than a ring round the outline, so a corner has a point on each face
+        /// meeting there: the shear running along one face need not be the one running along the
+        /// other.
+        /// </summary>
+        private List<Strip> Strips(IBeam beam, BeamSectionStress shape)
+        {
+            List<Strip> strips;
+            if (_strips.TryGetValue(beam.Section, out strips)) return strips;
+
+            var outlines = Outlines(beam);
+            if (outlines != null)
+            {
+                var box = new BoundingBox(outlines.SelectMany(x => x));
+                double longest = box.Diagonal.Length / 12.0;
+
+                strips = new List<Strip>();
+                foreach (var outline in outlines)
+                {
+                    for (int k = 0; k < outline.Count - 1; k++)
+                    {
+                        var a = outline[k];
+                        var b = outline[k + 1];
+                        double length = a.DistanceTo(b);
+                        if (length <= 0.0) continue;
+
+                        int pieces = longest > 0.0 ? Math.Max(1, Math.Min(24, (int)Math.Ceiling(length / longest))) : 1;
+                        var strip = new Strip { At = new Point2d[pieces + 1], Points = new SurfacePoint[pieces + 1] };
+
+                        // The outline is drawn with x along local z and y along local y, and the
+                        // stresses are measured from the centroid rather than from the drawing's origin.
+                        double ty = (b.Y - a.Y) / length, tz = (b.X - a.X) / length;
+                        for (int j = 0; j <= pieces; j++)
+                        {
+                            var p = a + (b - a) * (j / (double)pieces);
+                            strip.At[j] = new Point2d(p.X, p.Y);
+                            strip.Points[j] = shape.SurfaceAt(p.Y - shape.CentroidY, p.X - shape.CentroidZ, ty, tz);
+                        }
+
+                        strips.Add(strip);
+                    }
+                }
+
+                if (strips.Count == 0) strips = null;
+            }
+
+            _strips[beam.Section] = strips;
+            return strips;
+        }
+
+        /// <summary>
+        /// A beam stress painted point by point over the section: the section carried along the
+        /// beam, every point of it coloured with the stress the forces there put at that point.
+        /// Bending in two directions and an axial force make one corner of a section the worst and
+        /// the opposite one the least; shear peaks on the neutral axis and torsion on the faces.
+        ///
+        /// Along the beam it is sampled where <see cref="BuildBeamField"/> samples, the forces
+        /// blended between neighbouring sections - stress is linear in them, so that is the stress
+        /// blended, Von Mises included at each point.
+        ///
+        /// False, with nothing added, when the beam has no local axes to stand the section up in.
+        /// </summary>
+        private bool BuildBeamSection(IBeam beam, Point3d start, Point3d end, BeamSectionField section,
+                                      List<Strip> strips, double lift)
+        {
+            Vector3d y, z;
+            if (!LocalAxes(beam, start, end, out y, out z)) return false;
+
+            var forces = section.Forces;
+            var rings = Samples(beam, forces.Count)
+                .Select(x => Tuple.Create(x.At, forces[x.From].Zip(forces[x.To], (f, t) => f + (t - f) * x.Share).ToArray()))
+                .ToList();
+
+            var axis = end - start;
+            var mesh = new Mesh();
+            var values = new List<double>();
+            int worst = -1;
+            double worstAt = 0.0;
+
+            foreach (var strip in strips)
+            {
+                int first = mesh.Vertices.Count;
+                int count = strip.At.Length;
+
+                foreach (var ring in rings)
+                {
+                    // The same frame Model View stands a section in: its x along local z, its y along local y.
+                    var origin = start + axis * ring.Item1;
+                    for (int j = 0; j < count; j++)
+                    {
+                        mesh.Vertices.Add(origin + z * strip.At[j].X + y * strip.At[j].Y);
+                        double value = section.At(strip.Points[j], ring.Item2, _field.Component);
+                        if (worst < 0 || Math.Abs(value) > Math.Abs(values[worst]))
+                        {
+                            worst = values.Count;
+                            worstAt = ring.Item1;
+                        }
+                        values.Add(value);
+                    }
+                }
+
+                for (int r = 0; r < rings.Count - 1; r++)
+                {
+                    for (int j = 0; j < count - 1; j++)
+                    {
+                        int a = first + r * count + j;
+                        mesh.Faces.AddFace(a, a + 1, a + 1 + count, a + count);
+                    }
+                }
+            }
+
+            if (_banded)
+            {
+                _beamSolids.Add(IsoBands.Paint(mesh, values, _palette, _min, _max));
+            }
+            else
+            {
+                mesh.VertexColors.SetColors(values.Select(Colour).ToArray());
+                _beamSolids.Add(mesh);
+            }
+
+            // The outline at each end and the lines along the corners, as any solid beam has.
+            var ends = Rings(beam, start, end, new[] { 0.0, 1.0 });
+            if (ends != null)
+                foreach (var stack in ends)
+                    _beamEdges.Add(Alpaca4d.Utils.CreateLoft(stack));
+
+            if (worst >= 0)
+                Label(start + axis * worstAt, values[worst], lift);
+
+            return true;
         }
 
         private void BuildFace(Mesh source, int? tag, List<int?> nodes, bool kept, ResultFamily family,

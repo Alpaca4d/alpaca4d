@@ -116,6 +116,44 @@ namespace Alpaca4d.Gh
             }
         }
 
+        /// <summary>
+        /// Whether a component differs from one point of a beam's section to the next, and so is
+        /// painted point by point when beams are drawn solid. σN is the same all over the section by
+        /// what it is, and σmax and σmin are each the worst anywhere on it: one value per section.
+        /// </summary>
+        public static bool VariesOverSection(ResultFamily family, int component)
+        {
+            if (family != ResultFamily.BeamStress) return false;
+
+            switch (component)
+            {
+                case 0:
+                case 4:
+                case 5:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>
+        /// One component at one point of a beam's surface. The shears in size, as the section's own
+        /// τV and τT are, since the way a shear runs along the surface has no sign of its own.
+        /// </summary>
+        public static double AtPoint(Alpaca4d.Result.PointStress stress, int component)
+        {
+            switch (component)
+            {
+                case 1: return stress.SigmaMy;
+                case 2: return stress.SigmaMz;
+                case 6: return Math.Abs(stress.TauV);
+                case 7: return Math.Abs(stress.TauT);
+                case 8: return stress.VonMises;
+                case 0: return stress.Sigma - stress.SigmaMy - stress.SigmaMz;
+                default: return stress.Sigma;
+            }
+        }
+
         /// <summary>The ways a reaction can be drawn at a support.</summary>
         public static readonly string[] ReactionStyles = { "Selected component", "Resultant", "All three" };
 
@@ -192,6 +230,16 @@ namespace Alpaca4d.Gh
         /// <summary>Reaction at each support, in the support's own axes, paired with where it acts.</summary>
         public List<Tuple<Plane, Vector3d, double>> Reactions;
 
+        /// <summary>
+        /// Beam stresses only: what each beam needs for its stress to be worked out at any point of
+        /// its section rather than once per section, by element tag. Beams whose section has no shape
+        /// are left out. Null for every other family.
+        /// </summary>
+        public Dictionary<int, BeamSectionField> BySection;
+
+        /// <summary>The component read, which <see cref="BySection"/> is turned into a value with.</summary>
+        public int Component;
+
         /// <summary>What is being shown, for the Info output and the viewport caption.</summary>
         public string Label = "";
 
@@ -230,6 +278,9 @@ namespace Alpaca4d.Gh
             // The vector too, which the arrows are drawn and labelled from.
             if (this.Reactions != null)
                 this.Reactions = this.Reactions.Select(x => Tuple.Create(x.Item1, x.Item2 * factor, x.Item3 * factor)).ToList();
+
+            if (this.BySection != null)
+                this.BySection = this.BySection.ToDictionary(x => x.Key, x => x.Value.Scaled(factor));
         }
 
         public static ResultField Read(Alpaca4d.Model model, ResultFamily family, int component, int layer, int step,
@@ -313,28 +364,34 @@ namespace Alpaca4d.Gh
             var field = new ResultField
             {
                 ByElement = new Dictionary<int, List<double>>(),
+                BySection = new Dictionary<int, BeamSectionField>(),
+                Component = component,
                 Label = BeamStressNames[component]
             };
 
             if (model.Beams.Count == 0)
                 return field;
 
-            var read = Alpaca4d.Result.Read.BeamStresses(model, step);
+            var read = Alpaca4d.Result.Read.BeamSectionForces(model, step);
 
             for (int i = 0; i < model.Beams.Count && i < read.Count; i++)
             {
-                var stresses = read[i];
-                if (!model.Beams[i].Id.HasValue || stresses.Count == 0)
+                var (shape, forces) = read[i];
+                if (!model.Beams[i].Id.HasValue || forces.Count == 0)
                     continue;
 
                 // An Elastic Section has no shape, so N/A is all it has. Left out of everything else,
                 // its beams draw plain rather than in a colour standing for a number they do not have.
-                if (!stresses[0].HasShape && component != 0)
+                if (!shape.HasShape && component != 0)
                     continue;
 
                 // In the solver's kN/m², as every other family is: View Results turns them into the
                 // unit picked, which starts at MPa - the unit Beam Stresses gives them in.
-                field.ByElement[model.Beams[i].Id.Value] = stresses.Select(x => Of(x, component)).ToList();
+                int tag = model.Beams[i].Id.Value;
+                field.ByElement[tag] = forces.Select(f => Of(shape.At(f[0], f[1], f[2], f[3], f[4], f[5]), component)).ToList();
+
+                if (shape.HasShape)
+                    field.BySection[tag] = new BeamSectionField(shape, forces);
             }
 
             return field;
@@ -553,6 +610,37 @@ namespace Alpaca4d.Gh
             }
 
             return field;
+        }
+    }
+
+    /// <summary>
+    /// A beam's stress anywhere on its section: the section's shape and the section forces at each
+    /// of the beam's integration sections. See <see cref="ResultField.BySection"/>.
+    /// </summary>
+    internal class BeamSectionField
+    {
+        public readonly Alpaca4d.Result.BeamSectionStress Shape;
+
+        /// <summary>N, Vy, Vz, T, My, Mz at each integration section, from the I end.</summary>
+        public readonly List<double[]> Forces;
+
+        /// <summary>What every value is multiplied by on the way out, to show it in the unit picked.</summary>
+        public readonly double Factor;
+
+        public BeamSectionField(Alpaca4d.Result.BeamSectionStress shape, List<double[]> forces, double factor = 1.0)
+        {
+            this.Shape = shape;
+            this.Forces = forces;
+            this.Factor = factor;
+        }
+
+        public BeamSectionField Scaled(double factor) => new BeamSectionField(this.Shape, this.Forces, this.Factor * factor);
+
+        /// <summary>One component at a point of the surface, under one set of forces.</summary>
+        public double At(Alpaca4d.Result.SurfacePoint point, double[] forces, int component)
+        {
+            var stress = point.Under(forces[0], forces[1], forces[2], forces[3], forces[4], forces[5]);
+            return this.Factor * ResultField.AtPoint(stress, component);
         }
     }
 }
