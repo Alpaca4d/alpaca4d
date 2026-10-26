@@ -232,6 +232,117 @@ class ViewResultsTest
         }
     }
 
+    /// <summary>
+    /// Beam stresses drawn solid are painted point by point over the section: which components
+    /// are, which value of a point each component reads, what σx is drawn as a line, and that the
+    /// Unit reaches the points as it reaches everything else.
+    /// </summary>
+    static void BeamStressOverSection(Assembly assembly)
+    {
+        var core = assembly.GetReferencedAssemblies().First(x => x.Name == "Alpaca4d.Core");
+        var coreAssembly = Assembly.Load(core);
+        var pointType = coreAssembly.GetType("Alpaca4d.Result.PointStress", true);
+        var stressType = coreAssembly.GetType("Alpaca4d.Result.BeamStress", true);
+        var shapeType = coreAssembly.GetType("Alpaca4d.Result.BeamSectionStress", true);
+        var surfaceType = coreAssembly.GetType("Alpaca4d.Result.SurfacePoint", true);
+        var names = ComponentNames("BeamStress");
+
+        Section("Beam stresses painted over the section");
+        {
+            var varies = Field.GetMethod("VariesOverSection", BindingFlags.Public | BindingFlags.Static);
+            var beamStress = Enum.Parse(Family, "BeamStress");
+            for (int i = 0; i < names.Length; i++)
+            {
+                bool over = (bool)varies.Invoke(null, new[] { beamStress, (object)i });
+                bool expected = names[i] != "σN" && names[i] != "σmax" && names[i] != "σmin";
+                Check(over == expected, $"{names[i]}: {(over ? "point by point" : "one value per section")}");
+            }
+
+            foreach (var family in Enum.GetNames(Family).Where(x => x != "BeamStress"))
+            {
+                bool any = Enumerable.Range(0, ComponentNames(family).Length)
+                                     .Any(i => (bool)varies.Invoke(null, new[] { Enum.Parse(Family, family), (object)i }));
+                Check(!any, $"{family}: nothing, it has no beam section to paint");
+            }
+        }
+
+        Section("Which value of a point each component reads");
+        {
+            // Every value different, so a component reading the wrong one shows.
+            object point = Activator.CreateInstance(pointType);
+            pointType.GetField("Sigma").SetValue(point, 10.0);
+            pointType.GetField("SigmaMy").SetValue(point, 3.0);
+            pointType.GetField("SigmaMz").SetValue(point, -2.0);
+            pointType.GetField("TauV").SetValue(point, -4.0);
+            pointType.GetField("TauT").SetValue(point, 1.5);
+
+            var atPoint = Field.GetMethod("AtPoint", BindingFlags.Public | BindingFlags.Static);
+            Func<string, double> Read = name => (double)atPoint.Invoke(null, new[] { point, (object)Array.IndexOf(names, name) });
+
+            Check(Near(Read("σN"), 9.0), "σN, what is left of σ without the bending: 10 − 3 + 2");
+            Check(Near(Read("σMy"), 3.0) && Near(Read("σMz"), -2.0), "σMy and σMz with their signs, the side they stretch");
+            Check(Near(Read("σx"), 10.0), "σx, the direct stress at the point");
+            Check(Near(Read("τV"), 4.0) && Near(Read("τT"), 1.5), "τV and τT in size, as the section's own are");
+            Check(Near(Read("VonMises"), Math.Sqrt(100.0 + 3.0 * 2.5 * 2.5)),
+                  "Von Mises with the shears added with their signs: √(10² + 3·(−4 + 1.5)²)");
+        }
+
+        Section("σx drawn as a line is the worst of the section, with its sign");
+        {
+            var of = Field.GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { stressType, typeof(int) }, null);
+            Func<double, double, double> SigmaX = (max, min) =>
+            {
+                object stress = Activator.CreateInstance(stressType);
+                stressType.GetField("SigmaMax").SetValue(stress, max);
+                stressType.GetField("SigmaMin").SetValue(stress, min);
+                return (double)of.Invoke(null, new[] { stress, (object)3 });
+            };
+
+            Check(Near(SigmaX(120.0, -80.0), 120.0), "tension the larger: σmax");
+            Check(Near(SigmaX(30.0, -80.0), -80.0), "compression the larger: σmin, negative");
+
+            object full = Activator.CreateInstance(stressType);
+            var outputs = new[] { "SigmaN", "SigmaMy", "SigmaMz", "SigmaMax", "SigmaMin", "TauV", "TauT" };
+            var values = new[] { 1.0, 2.0, 3.0, 4.0, -5.0, 6.0, 7.0 };
+            for (int i = 0; i < outputs.Length; i++)
+                stressType.GetField(outputs[i]).SetValue(full, values[i]);
+            var read = names.Select((n, i) => (double)of.Invoke(null, new[] { full, (object)i })).ToArray();
+            Check(read.SequenceEqual(new[] { 1.0, 2.0, 3.0, -5.0, 4.0, -5.0, 6.0, 7.0,
+                                             (double)stressType.GetProperty("VonMises").GetValue(full) }),
+                  "and every other component still reads the output it is named after");
+        }
+
+        Section("The Unit reaches the points");
+        {
+            // A rectangle 0.2 wide by 0.4 tall, in metres; 20 kN·m of Mz puts 3750 kN/m² on its
+            // top face, compression, and MPa is a thousandth of that.
+            var rectangle = coreAssembly.GetType("Alpaca4d.Section.RectangleCS", true)
+                                        .GetConstructors().First(c => c.GetParameters().Length == 4)
+                                        .Invoke(new object[] { "r", 0.2, 0.4, null });
+            var shape = shapeType.GetMethod("Of").Invoke(null, new[] { rectangle });
+            var top = shapeType.GetMethod("SurfaceAt").Invoke(shape, new object[] { 0.2, 0.0, 0.0, 1.0 });
+
+            var sectionType = assembly.GetType("Alpaca4d.Gh.BeamSectionField", true);
+            var forces = new List<double[]> { new[] { 0.0, 0.0, 0.0, 0.0, 0.0, 20.0 } };
+            var section = sectionType.GetConstructors().First().Invoke(new object[] { shape, forces, 1.0 });
+
+            var field = Activator.CreateInstance(Field, true);
+            Field.GetField("ByElement").SetValue(field, new Dictionary<int, List<double>> { { 1, new List<double> { -3750.0 } } });
+            var bySection = Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(typeof(int), sectionType));
+            bySection.GetType().GetMethod("Add").Invoke(bySection, new[] { (object)1, section });
+            Field.GetField("BySection").SetValue(field, bySection);
+
+            Field.GetMethod("Scale").Invoke(field, new object[] { 1e-3 });
+
+            var scaled = bySection.GetType().GetProperty("Item").GetValue(Field.GetField("BySection").GetValue(field), new object[] { 1 });
+            var at = sectionType.GetMethod("At");
+            double before = (double)at.Invoke(section, new[] { top, forces[0], (object)3 });
+            double after = (double)at.Invoke(scaled, new[] { top, forces[0], (object)3 });
+            Check(Near(before, -3750.0), $"σx on the top face under +Mz: −3750 kN/m², compression ({before:G6})");
+            Check(Near(after, -3.75), $"−3.75 once the field is in MPa ({after:G6})");
+        }
+    }
+
     static void Main(string[] args)
     {
         var assembly = Assembly.LoadFrom(args.Length > 0 ? args[0] : "Alpaca4d.gha");
@@ -296,6 +407,8 @@ class ViewResultsTest
             int sigmaX = (int)Field.GetField("SigmaX", BindingFlags.Public | BindingFlags.Static).GetValue(null);
             Check(sigmaX == 3 && expected[sigmaX] == "σx", "σx is fourth, where σmax was");
         }
+
+        BeamStressOverSection(assembly);
 
         Section("Shell forces, against what Shell Forces View offers");
         {

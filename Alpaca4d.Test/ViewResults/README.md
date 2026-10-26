@@ -72,6 +72,34 @@ here for all six families. A rule that drifted would put a layer dropdown on a r
   question that produced it - family, component, layer and step. Only the scale changes between
   frames.
 
+## Beam stresses over the section
+
+Drawn as lines, a beam has no section to paint, so each integration section shows its worst. With
+Extruded beams on it has one, and a stress that differs across it is painted point by point:
+`VariesOverSection` says which, and `AtPoint` which value of a point each one reads.
+
+| component | drawn as a line | extruded |
+| --- | --- | --- |
+| σN | N/A | the same, all over the section |
+| σMy, σMz | the bending stress's worst, in size | My·z/Iy and −Mz·y/Iz at each point, with their signs |
+| σx | σmax or σmin, whichever is larger in size, with its sign | N, My and Mz together at each point |
+| σmax, σmin | the section's worst | the same, one colour round the section |
+| τV, τT | the section's peak | the shear along the surface at each point, in size |
+| VonMises | the bound √(σ² + 3τ²) of the worst σ and τ | √(σ² + 3τ²) of what meets at each point |
+
+The stresses at a point come from `BeamSectionStress.SurfaceAt` in Core, checked in `BeamStress`.
+Each edge of the section's outline is cut into pieces no longer than a twelfth of the section, so a
+stress running across a face has colours to walk through: the display blends straight between two
+vertices' colours, past the gradient's stops in between. Each edge has points of its own at the
+corners, since the shear running along one face need not be the one running along the next.
+
+The range spans every point at every integration section. Between sections the forces are blended,
+and every stress at a point is linear in them - Von Mises and the shears in size are convex - so
+nothing drawn in between lies beyond the two it is blended from.
+
+σx went into the list fourth, where σmax was, and `SigmaX` is that place. A file saved before it is
+moved on load; `ViewResultsFiles` checks that with the real component.
+
 ## The reaction direction
 
 The first cut always drew the resultant, whichever component was chosen. On a model with any
