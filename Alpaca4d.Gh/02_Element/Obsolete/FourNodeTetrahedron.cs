@@ -9,6 +9,13 @@ using Alpaca4d;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>
+    /// The linear tetrahedron, replaced by <see cref="TenNodeTetrahedron"/>: one constant strain, so it
+    /// locks in bending, where the ten node one, from the same mesh, bends. Kept hidden so definitions
+    /// that have it still open and solve; "Upgrade Components" swaps it via
+    /// <see cref="FourNodeTetrahedronUpgrader"/>.
+    /// </summary>
+    [Obsolete]
     public class FourNodeTetrahedron : GH_Component
     {
         /// <summary>
@@ -21,6 +28,8 @@ namespace Alpaca4d.Gh
         public FourNodeTetrahedron()
           : base("FourNodeTetrahedron (Alpaca4d)", "Four Node Tetrahedron",
             "Construct a FourNodeTetrahedron element from a four vertex mesh.\n" +
+            "Replaced by Ten Node Tetrahedron, from the same mesh: this one has a single constant strain, " +
+            "so it is stiff in bending. Upgrade Components swaps it.\n" +
             "The mesh is reordered into the node order OpenSees wants and checked for a positive " +
             "Jacobian - a tetrahedron wound the wrong way round is one the solver accepts and " +
             "answers with the wrong sign rather than rejecting.\n" +
@@ -87,7 +96,7 @@ namespace Alpaca4d.Gh
         }
 
 
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Four_Node_Tetrahedron__Alpaca4d_;
 

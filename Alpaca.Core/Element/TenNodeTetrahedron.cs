@@ -49,8 +49,7 @@ namespace Alpaca4d.Element
 
             return "This OpenSees does not know the Ten Node Tetrahedron. The element needs the fixes of OpenSees " +
                    "pull request #1833, merged on 16 October 2026: in OpenSees 3.8.0 and earlier it is six times too " +
-                   "soft. Use an OpenSees built from the master branch since then, or a release after 3.8.0, or use " +
-                   "Four Node Tetrahedron instead.";
+                   "soft. Use an OpenSees built from the master branch since then, or a release after 3.8.0.";
         }
 
         public TenNodeTetrahedron(Mesh mesh, IMultiDimensionMaterial material)

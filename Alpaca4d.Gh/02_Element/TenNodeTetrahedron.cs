@@ -19,7 +19,7 @@ namespace Alpaca4d.Gh
             "Node Tetrahedron, whose strain is constant, locks up - a cantilever of 60 of them is within " +
             "0.2% of beam theory, where 60 four node ones reach a quarter of the deflection.\n" +
             "The corners are reordered into the node order OpenSees wants and checked for a positive " +
-            "Jacobian, as on Four Node Tetrahedron.\n" +
+            "Jacobian. It replaces Four Node Tetrahedron.\n" +
             "\n" +
             "A support holds only the node at its point. A face supported at its mesh vertices is held at " +
             "its corners and free at the edge nodes between them, so support those too - Points has all " +
