@@ -112,7 +112,7 @@ jobs:
         run: |
           $deps = dumpbin /dependents dist\win\bin\OpenSees.exe | Select-String '^\s+\S+\.dll\s*$' | ForEach-Object { $_.Line.Trim() }
           $deps
-          $windows = '(?i)^(advapi32|kernel32|netapi32|user32|userenv|ws2_32|imagehlp|shell32|ole32|oleaut32|bcrypt|crypt32|gdi32|version|dbghelp|api-ms-win-.*)\.dll$'
+          $windows = '(?i)^(advapi32|kernel32|netapi32|user32|userenv|ws2_32|wsock32|imagehlp|shell32|ole32|oleaut32|bcrypt|crypt32|gdi32|version|dbghelp|api-ms-win-.*)\.dll$'
           $foreign = $deps | Where-Object { $_ -notmatch $windows -and $_ -ne 'libiomp5md.dll' }
           if ($foreign) { Write-Error "OpenSees.exe needs DLLs it will not find beside it: $foreign"; exit 1 }
 
