@@ -221,6 +221,14 @@ namespace Alpaca4d.Gh
 
             if (!DA.GetData(ModelInput, ref alpacaModel)) return;
             DA.GetData(StepInput, ref step);
+
+            // A response spectrum analysis gives each force's peak on its own, positive: the check would
+            // read them as forces acting together, every axial force as tension.
+            if (alpacaModel?.SpectrumCases != null)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "These are response spectrum results: each force a peak of its own, without a sign, so N reads as tension " +
+                    "and the forces as if they came together. They are the seismic action alone, too, without the gravity " +
+                    "loads it acts with. Read the utilisations as an indication, not a check.");
             var filter = ElementFilterInput.Read(DA, FilterInput, this);
             DA.GetDataList(LengthInput, lengthsY);
             DA.GetData(ReportInput, ref report);
