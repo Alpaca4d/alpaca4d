@@ -187,6 +187,12 @@ namespace Alpaca4d.Gh
             analysisModel.Recorders.Add(recorder);
             analysisModel.Tcl.Add(recorder.WriteTcl());
 
+            // ARPACK (-genBandArpack) does its shift-invert solves with the system set here: Mumps on
+            // every core where the OpenSees has it, BandSPD where not. Left unset, OpenSees falls back
+            // on ProfileSPD, a single-core profile solver. -fullGenLapack has a dense solver of its own.
+            if (solver.IndexOf("fullGenLapack", StringComparison.OrdinalIgnoreCase) < 0)
+                analysisModel.Tcl.Add(new Alpaca4d.SystemEquation("Auto").WriteTcl());
+
             // Settings
             analysisModel.Tcl.Add(Alpaca4d.Eigen.WriteTcl(solver, vibrationNumber));
             analysisModel.Tcl.Add($"modalProperties -file {TclPath.Write(analysisModel.ModalAnalysisReportFile)} -unorm\n");
