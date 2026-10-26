@@ -1,6 +1,7 @@
 name: Multi-core OpenSees
 
-# OpenSees 3.8.0 with `system Mumps` in the single-process interpreter: sequential MUMPS
+# OpenSees with `system Mumps` in the single-process interpreter - 3.8.0, and master for the Ten
+# Node Tetrahedron, which needs OpenSees PR #1833 (16 October 2026): sequential MUMPS
 # (libseq, no MPI) built with OpenMP, so one OpenSees process factorises on several cores.
 # Windows x64 and macOS arm64 are built from the same patches (Tools/OpenSees), checked
 # against UmfPack, timed, and uploaded laid out as an install: bin/ and lib/tcl8.6.
@@ -17,7 +18,6 @@ on:
       - .github/workflows/opensees-multicore.yml
 
 env:
-  OPENSEES_REF: v3.8.0
   # OpenSees/mumps: the CMake build of MUMPS the OpenSees CI uses, pinned
   MUMPS_CMAKE_COMMIT: ec5f340acabb29dc71c6ffde93b58bdcd04af083
   MUMPS_URL: https://mumps-solver.org/MUMPS_5.5.1.tar.gz
@@ -26,9 +26,16 @@ env:
 
 jobs:
   windows:
-    name: Windows x64
+    name: Windows x64, OpenSees ${{ matrix.opensees.name }}
     runs-on: windows-2022
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        opensees:
+          - { name: "3.8.0", ref: v3.8.0 }
+          # master by its full hash, the commit the Ten Node Tetrahedron's checks were run on
+          - { name: master-d0ac447, ref: d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61, tet10: true }
     steps:
       # The patches are LF; a CRLF checkout would not take them.
       - run: git config --global core.autocrlf false
@@ -40,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: OpenSees/OpenSees
-          ref: ${{ env.OPENSEES_REF }}
+          ref: ${{ matrix.opensees.ref }}
           path: opensees
 
       - name: Patch OpenSees
@@ -127,18 +134,35 @@ jobs:
           python multicore.py --tiers "small,large" --threads 2
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Ten Node Tetrahedron, with Mumps
+        if: matrix.opensees.tet10
+        shell: pwsh
+        env:
+          OPENSEES: ${{ github.workspace }}\dist\win\bin\OpenSees.exe
+        working-directory: Alpaca4d.Test/TenNodeTetrahedron
+        run: |
+          python solver_check.py --mumps
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       # uploaded whatever the checks said, so a failure can be looked into
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenSees-3.8.0-mumps-win-x64
+          name: OpenSees-${{ matrix.opensees.name }}-mumps-win-x64
           path: dist/win/
           if-no-files-found: ignore
 
   macos:
-    name: macOS arm64
+    name: macOS arm64, OpenSees ${{ matrix.opensees.name }}
     runs-on: macos-15
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        opensees:
+          - { name: "3.8.0", ref: v3.8.0 }
+          # master by its full hash, the commit the Ten Node Tetrahedron's checks were run on
+          - { name: master-d0ac447, ref: d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61, tet10: true }
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
@@ -149,7 +173,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: OpenSees/OpenSees
-          ref: ${{ env.OPENSEES_REF }}
+          ref: ${{ matrix.opensees.ref }}
           path: opensees
 
       - name: Patch OpenSees
@@ -210,9 +234,16 @@ jobs:
           python correctness.py
           python multicore.py --tiers "small,large" --threads 2
 
+      - name: Ten Node Tetrahedron, with Mumps
+        if: matrix.opensees.tet10
+        env:
+          OPENSEES: ${{ github.workspace }}/dist/mac/bin/OpenSees
+        working-directory: Alpaca4d.Test/TenNodeTetrahedron
+        run: python solver_check.py --mumps
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenSees-3.8.0-mumps-macos-arm64
+          name: OpenSees-${{ matrix.opensees.name }}-mumps-macos-arm64
           path: dist/mac/
           if-no-files-found: ignore

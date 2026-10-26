@@ -53,9 +53,11 @@ calls, and MSVC's `/openmp` would pull in a second runtime (vcomp) beside Intel'
 ## Building
 
 **GitHub Actions** - push a branch with `Tools/OpenSees/**` changed, or run *Multi-core OpenSees*
-from the Actions tab. Each platform is built, checked (`SolverChoice/correctness.py`, then
-`multicore.py` on small and large models) and uploaded as an artifact laid out like
-an OpenSees install: `bin/` and `lib/tcl8.6/init.tcl`. The Windows job also
+from the Actions tab. Each platform is built twice, from OpenSees 3.8.0 and from master d0ac447eb,
+checked (`SolverChoice/correctness.py`, then `multicore.py` on small and large models, and the
+master builds by `TenNodeTetrahedron/solver_check.py --mumps`) and uploaded as an artifact laid
+out like an OpenSees install, `bin/` and `lib/tcl8.6/init.tcl`, named after the OpenSees it was
+built from. The Windows job also
 fails if `OpenSees.exe` asks for any DLL but Windows' own and `libiomp5md.dll`; the Mac one if
 `OpenSees` needs anything macOS does not have.
 
