@@ -683,6 +683,9 @@ namespace Alpaca4d
                 ReadBrick(tokens, 8, type);
             else if (string.Equals(type, "FourNodeTetrahedron", StringComparison.OrdinalIgnoreCase))
                 ReadBrick(tokens, 4, type);
+            else if (string.Equals(type, TenNodeTetrahedron.Command, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(type, "TenNodeTetrahedron", StringComparison.OrdinalIgnoreCase))
+                ReadBrick(tokens, 10, type);
             else
                 Warn($"element {type} is not supported and was skipped.");
 
@@ -842,6 +845,15 @@ namespace Alpaca4d
         private void ReadBrick(string[] tokens, int vertexCount, string type)
         {
             int tag = Tag(tokens, 2);
+
+            // Plain TenNodeTetrahedron takes its last two edge nodes the other way round from
+            // TenNodeTetrahedronStd, which is the order the mesh is kept in.
+            if (string.Equals(type, "TenNodeTetrahedron", StringComparison.OrdinalIgnoreCase) && tokens.Length > 12)
+            {
+                tokens = (string[])tokens.Clone();
+                (tokens[11], tokens[12]) = (tokens[12], tokens[11]);
+            }
+
             var mesh = SolidMeshOf(tokens, 3, vertexCount);
 
             int materialTag = Tag(tokens, 3 + vertexCount);
@@ -852,6 +864,8 @@ namespace Alpaca4d
 
             if (string.Equals(type, "SSPbrick", StringComparison.OrdinalIgnoreCase))
                 _elements.Add(new SSPbrick(mesh, material) { BodyForce = bodyForce });
+            else if (vertexCount == 10)
+                _elements.Add(new TenNodeTetrahedron(mesh, material) { BodyForce = bodyForce });
             else
                 _elements.Add(new Tetrahedron(mesh, material) { BodyForce = bodyForce });
         }
