@@ -1,0 +1,215 @@
+name: Multi-core OpenSees
+
+# OpenSees 3.8.0 with `system Mumps` in the single-process interpreter: sequential MUMPS
+# (libseq, no MPI) built with OpenMP, so one OpenSees process factorises on several cores.
+# Windows x64 and macOS arm64 are built from the same patches (Tools/OpenSees), checked
+# against UmfPack, timed, and uploaded laid out like OpenSees-Solvers/<platform>.
+# See Tools/OpenSees/README.md.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Tools/OpenSees/**
+      - .github/workflows/opensees-multicore.yml
+
+env:
+  OPENSEES_REF: v3.8.0
+  # OpenSees/mumps: the CMake build of MUMPS the OpenSees CI uses, pinned
+  MUMPS_CMAKE_COMMIT: ec5f340acabb29dc71c6ffde93b58bdcd04af083
+  MUMPS_URL: https://mumps-solver.org/MUMPS_5.5.1.tar.gz
+  MUMPS_SHA256: 1abff294fa47ee4cfd50dfd5c595942b72ebfcedce08142a75a99ab35014fa15
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      # The patches are LF; a CRLF checkout would not take them.
+      - run: git config --global core.autocrlf false
+
+      - name: Alpaca4d
+        uses: actions/checkout@v4
+
+      - name: OpenSees
+        uses: actions/checkout@v4
+        with:
+          repository: OpenSees/OpenSees
+          ref: ${{ env.OPENSEES_REF }}
+          path: opensees
+
+      - name: Patch OpenSees
+        run: git -C opensees apply ../Tools/OpenSees/opensees-v3.8.0-mumps.patch
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          vsversion: 2022
+
+      - name: Intel oneAPI - MKL and the Fortran compiler
+        shell: pwsh
+        env:
+          WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/7dff44ba-e3af-4448-841c-0d616c8da6e7/w_BaseKit_p_2024.1.0.595_offline.exe
+          WINDOWS_BASEKIT_COMPONENTS: intel.oneapi.win.mkl.devel
+          WINDOWS_HPCKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/c95a3b26-fc45-496c-833b-df08b10297b9/w_HPCKit_p_2024.1.0.561_offline.exe
+          WINDOWS_HPCKIT_COMPONENTS: intel.oneapi.win.ifort-compiler
+        working-directory: opensees/.github/workflows
+        run: |
+          ./install_fortran.bat $env:WINDOWS_BASEKIT_URL $env:WINDOWS_BASEKIT_COMPONENTS
+          ./install_fortran.bat $env:WINDOWS_HPCKIT_URL $env:WINDOWS_HPCKIT_COMPONENTS
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Conan
+        run: |
+          pip install conan psutil
+          conan profile detect --force
+
+      - name: MUMPS 5.5.1 - sequential, OpenMP, static
+        shell: cmd
+        run: |
+          set T=%RUNNER_TEMP:\=/%
+          git clone https://github.com/OpenSees/mumps.git "%T%/mumps" || exit /b 1
+          git -C "%T%/mumps" checkout %MUMPS_CMAKE_COMMIT% || exit /b 1
+          git -C "%T%/mumps" apply "%GITHUB_WORKSPACE%/Tools/OpenSees/mumps-openmp.patch" || exit /b 1
+          mkdir "%RUNNER_TEMP%\mumps-archive"
+          curl.exe -L --fail --retry 5 -o "%RUNNER_TEMP%\mumps-archive\mumps_src.tar.gz" %MUMPS_URL% || exit /b 1
+          powershell -NoProfile -Command "if ((Get-FileHash '%RUNNER_TEMP%\mumps-archive\mumps_src.tar.gz' -Algorithm SHA256).Hash -ne '%MUMPS_SHA256%') { exit 1 }" || exit /b 1
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" intel64 mod
+          cmake -S "%T%/mumps" -B "%T%/mumps-seq" -G Ninja -Dlocal="%T%/mumps-archive" -Dparallel=OFF -Dopenmp=ON -Darith=d -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_Fortran_COMPILER=ifx -DCMAKE_INSTALL_PREFIX="%T%/mumps-seq-install" || exit /b 1
+          cmake --build "%T%/mumps-seq" || exit /b 1
+          cmake --install "%T%/mumps-seq" || exit /b 1
+
+      - name: OpenSees with system Mumps
+        shell: cmd
+        working-directory: opensees
+        run: |
+          set T=%RUNNER_TEMP:\=/%
+          conan install . -s arch=x86_64 -s compiler.runtime=static --build=missing -c tools.cmake.cmaketoolchain:generator=Ninja || exit /b 1
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" intel64 mod
+          cmake -S . -B build/Release -G Ninja -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_Fortran_COMPILER=ifx -DBLA_STATIC=ON -DMKL_LINK=static -DMKL_INTERFACE_FULL=intel_lp64 -DCMAKE_DISABLE_FIND_PACKAGE_MPI=ON -DMUMPS_SEQ_DIR="%T%/mumps-seq-install" -DCMAKE_EXE_LINKER_FLAGS=/FORCE:MULTIPLE -DCMAKE_NINJA_FORCE_RESPONSE_FILE=ON || exit /b 1
+          cmake --build build/Release --target OpenSees -j 4 || exit /b 1
+
+      - name: Package like OpenSees-Solvers/win
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/win/bin, dist/win/lib/tcl8.6 | Out-Null
+          Copy-Item opensees/build/Release/OpenSees.exe dist/win/bin/
+          Copy-Item "C:\Program Files (x86)\Intel\oneAPI\compiler\2024.1\bin\libiomp5md.dll" dist/win/bin/
+          $init = Get-ChildItem -Recurse "$env:USERPROFILE\.conan2" -Filter init.tcl | Where-Object { $_.FullName -match 'tcl8\.6' } | Select-Object -First 1
+          Copy-Item $init.FullName dist/win/lib/tcl8.6/
+
+      # It has to run with nothing beside it but libiomp5md.dll, as the OpenSees.exe Alpaca4d
+      # has shipped does: Windows' own DLLs, and MKL, MUMPS and the Fortran runtime linked in.
+      - name: What OpenSees.exe needs at run time
+        shell: pwsh
+        run: |
+          $deps = dumpbin /dependents dist\win\bin\OpenSees.exe | Select-String '^\s+\S+\.dll\s*$' | ForEach-Object { $_.Line.Trim() }
+          $deps
+          $windows = '(?i)^(advapi32|kernel32|netapi32|user32|userenv|ws2_32|imagehlp|shell32|ole32|oleaut32|bcrypt|crypt32|gdi32|version|dbghelp|api-ms-win-.*)\.dll$'
+          $foreign = $deps | Where-Object { $_ -notmatch $windows -and $_ -ne 'libiomp5md.dll' }
+          if ($foreign) { Write-Error "OpenSees.exe needs DLLs it will not find beside it: $foreign"; exit 1 }
+
+      - name: Correct, then fast
+        shell: pwsh
+        env:
+          OPENSEES: ${{ github.workspace }}\dist\win\bin\OpenSees.exe
+        working-directory: Alpaca4d.Test/SolverChoice
+        run: |
+          python correctness.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python multicore.py --tiers "small,large" --threads 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # uploaded whatever the checks said, so a failure can be looked into
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OpenSees-3.8.0-mumps-win-x64
+          path: dist/win/
+          if-no-files-found: ignore
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 150
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - name: Alpaca4d
+        uses: actions/checkout@v4
+
+      - name: OpenSees
+        uses: actions/checkout@v4
+        with:
+          repository: OpenSees/OpenSees
+          ref: ${{ env.OPENSEES_REF }}
+          path: opensees
+
+      - name: Patch OpenSees
+        run: git -C opensees apply ../Tools/OpenSees/opensees-v3.8.0-mumps.patch
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # OpenSees' CMake asks `gfortran` for its static runtime, so the newest one goes on PATH by that name.
+      - name: gfortran, conan
+        run: |
+          brew install gcc
+          GCCV=$(ls "$(brew --prefix)/bin" | sed -n 's/^gfortran-\([0-9][0-9]*\)$/\1/p' | sort -n | tail -1)
+          mkdir -p "$HOME/bin"
+          ln -sf "$(brew --prefix)/bin/gfortran-$GCCV" "$HOME/bin/gfortran"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          echo "GCCV=$GCCV" >> "$GITHUB_ENV"
+          pip install conan psutil
+          conan profile detect --force
+
+      - name: MUMPS 5.5.1 - sequential, OpenMP, static
+        run: |
+          git clone https://github.com/OpenSees/mumps.git "$RUNNER_TEMP/mumps"
+          git -C "$RUNNER_TEMP/mumps" checkout "$MUMPS_CMAKE_COMMIT"
+          git -C "$RUNNER_TEMP/mumps" apply "$GITHUB_WORKSPACE/Tools/OpenSees/mumps-openmp.patch"
+          mkdir -p "$RUNNER_TEMP/mumps-archive"
+          curl -L --fail --retry 5 -o "$RUNNER_TEMP/mumps-archive/mumps_src.tar.gz" "$MUMPS_URL"
+          echo "$MUMPS_SHA256  $RUNNER_TEMP/mumps-archive/mumps_src.tar.gz" | shasum -a 256 -c
+          CC=gcc-$GCCV FC=gfortran-$GCCV cmake -S "$RUNNER_TEMP/mumps" -B "$RUNNER_TEMP/mumps-seq" -Dlocal="$RUNNER_TEMP/mumps-archive" -Dparallel=OFF -Dopenmp=ON -Darith=d -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/mumps-seq-install"
+          cmake --build "$RUNNER_TEMP/mumps-seq" -j 3
+          cmake --install "$RUNNER_TEMP/mumps-seq"
+
+      - name: OpenSees with system Mumps
+        working-directory: opensees
+        run: |
+          conan install . --output-folder=build --build missing -s build_type=Release -s os.version=13.0
+          FC=gfortran CC=clang CXX=clang++ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build/build/Release/generators/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_DISABLE_FIND_PACKAGE_MPI=ON -DMUMPS_SEQ_DIR="$RUNNER_TEMP/mumps-seq-install"
+          cmake --build build --target OpenSees -j 3
+
+      - name: Package like OpenSees-Solvers/mac
+        run: |
+          mkdir -p dist/mac/bin dist/mac/lib/tcl8.6
+          cp opensees/build/OpenSees dist/mac/bin/
+          cp "$(find "$HOME/.conan2" -path '*tcl8.6/init.tcl' | head -1)" dist/mac/lib/tcl8.6/
+
+      # Nothing but what macOS has: libgfortran and libgomp are linked in, not referenced.
+      - name: What OpenSees needs at run time
+        run: |
+          otool -L dist/mac/bin/OpenSees
+          ! otool -L dist/mac/bin/OpenSees | tail -n +2 | grep -v -E '^[[:space:]]*(/usr/lib/|/System/Library/)'
+
+      - name: Correct, then fast
+        env:
+          OPENSEES: ${{ github.workspace }}/dist/mac/bin/OpenSees
+        working-directory: Alpaca4d.Test/SolverChoice
+        run: |
+          python correctness.py
+          python multicore.py --tiers "small,large" --threads 2
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OpenSees-3.8.0-mumps-macos-arm64
+          path: dist/mac/
+          if-no-files-found: ignore
