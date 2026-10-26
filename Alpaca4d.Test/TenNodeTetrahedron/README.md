@@ -2,6 +2,7 @@
 
     ./run.sh          # without Rhino
     ./grasshopper.sh  # in a running Rhino 8 with its script server started (StartScriptServer)
+    OPENSEES=... python3 solver_check.py [--mumps]  # whether an OpenSees runs the element right
 
 The quadratic tetrahedron: four corners and a node at the middle of each edge. Its displacement is
 quadratic and its strain linear, so it bends; the four node tetrahedron has one constant strain and
@@ -35,6 +36,11 @@ Alpaca4d writes `element TenNodeTetrahedronStd`, not `TenNodeTetrahedron`. Two r
   Analysis and Natural Vibration say why (`TenNodeTetrahedron.SolverTooOld`), where any other error in
   the deck only gets "OpenSees exited with an error". OpenSees itself exits 0 either way;
   `Model.RunOpenSees` reads the error off the log - see [DeckErrors](../DeckErrors/README.md).
+
+**solver_check.py** asks it of one OpenSees with Python alone, so the Multi-core OpenSees
+workflow runs it on the master builds, Windows included: the cantilever of 60 within 0.2 % of beam
+theory with BandSPD, and with `system Mumps` on every core (`--mumps` fails without it). 3.8.0 fails
+it: it does not know the element.
 
 ## What runs where
 
