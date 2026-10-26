@@ -286,10 +286,15 @@ class ViewResultsTest
         Section("Beam stresses, against what Beam Stresses offers");
         {
             // ResultField picks each one off the BeamStress struct by position in this list, so the
-            // list has to match the component's outputs or σMy draws as σMz.
-            var expected = new[] { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
+            // list has to match the component's outputs or σMy draws as σMz - with σx, which only
+            // View Results draws, after its three parts.
+            var expected = new[] { "σN", "σMy", "σMz", "σx", "σmax", "σmin", "τV", "τT", "VonMises" };
             Check(ComponentNames("BeamStress").SequenceEqual(expected),
-                  "σN, σMy, σMz, σmax, σmin, τV, τT, VonMises - the outputs of Beam Stresses, in order");
+                  "σN, σMy, σMz, σx, σmax, σmin, τV, τT, VonMises - Beam Stresses' outputs, σx after its parts");
+
+            // Files saved before σx are moved one along from here, so this is the place it went in.
+            int sigmaX = (int)Field.GetField("SigmaX", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            Check(sigmaX == 3 && expected[sigmaX] == "σx", "σx is fourth, where σmax was");
         }
 
         Section("Shell forces, against what Shell Forces View offers");
