@@ -115,8 +115,8 @@ The following files are automatically collected and included in the package:
 
 OpenSees is **not** included. Users install it themselves and point Alpaca4d at it with
 **Alpaca4d → Settings → Set OpenSees Executable**, which is the only solver Alpaca4d runs. The
-project file keeps `OpenSees-Solvers` out of the build output, and `publish.py` removes it from
-a version folder an older script filled.
+repository keeps no OpenSees either, and `publish.py` removes the `OpenSees-Solvers` folder an
+older script left in a version folder.
 
 `data.bin` is not included either. What the user sets - the license and `settings.json`, with the
 OpenSees path - is kept in `%APPDATA%\Alpaca4d` on Windows and `~/Library/Application Support/Alpaca4d`

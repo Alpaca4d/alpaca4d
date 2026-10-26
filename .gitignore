@@ -15,8 +15,6 @@ packages/
 # What an analysis writes next to the .gh it runs from
 AlpacaResults/
 
-#!**/Alpaca4d.Gh/OpenSees-Solvers
-
 Alpaca.Core/bin/
 Alpaca4d.Gh/bin/
 Alpaca4d.Karamba/bin/

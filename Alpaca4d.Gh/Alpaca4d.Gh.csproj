@@ -487,10 +487,6 @@
     <None Update="License.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- OpenSees is not shipped. Alpaca4d runs the solver set in Alpaca4d > Settings > Set
-         OpenSees Executable and nothing else, so OpenSees-Solvers is kept out of the build
-         output, and with it out of the Libraries folder and the Yak package. -->
-    <None Remove="OpenSees-Solvers\**" />
   </ItemGroup>
 
   <!-- ==========================================
