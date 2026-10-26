@@ -66,6 +66,14 @@ gfortran runtime from Homebrew in the same way. What they add to the executable'
 long-standing libSystem calls (`getentropy`, `posix_memalign`, `pthread_*`, ...), nothing newer
 than macOS 13 has.
 
+`OPENSEES_REF` builds another tag, branch or commit - a commit by its full hash, and on Windows
+from `set OPENSEES_REF=...` before `build-windows.bat`. The patch applies
+to master as it is, and a master build since 16 October 2026 is what the Ten Node Tetrahedron needs
+(`TenNodeTetrahedronStd`, OpenSees PR #1833). The one in /Applications/OpenSeesLatest-Mumps is
+master d0ac447eb, the commit the ten node tetrahedron's checks were run on:
+
+    OPENSEES_REF=d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61 Tools/OpenSees/build-mac.sh ~/opensees-mumps-master
+
 **A Windows machine** - `Tools\OpenSees\build-windows.bat [work dir] [out dir]`, from the
 *x64 Native Tools Command Prompt for VS 2022* with Intel oneAPI (oneMKL, ifx).
 

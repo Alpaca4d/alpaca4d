@@ -4,6 +4,9 @@ rem OpenSees workflow does, into <out>\bin\OpenSees.exe + libiomp5md.dll and <ou
 rem
 rem   Tools\OpenSees\build-windows.bat [work dir] [out dir]
 rem
+rem OPENSEES_REF picks another tag, branch or commit of OpenSees to patch - a commit by its full hash:
+rem   set OPENSEES_REF=d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61
+rem
 rem Run it from the "x64 Native Tools Command Prompt for VS 2022", with Intel oneAPI installed - oneMKL
 rem and the Fortran compiler (ifx) - and Git, Python 3 and curl on PATH. It mirrors the workflow's
 rem steps, but has not been run on a Windows machine itself: the workflow is the tested road.
@@ -17,7 +20,7 @@ if "%OUT%"=="" set "OUT=%WORK%\dist"
 rem forward slashes for CMake
 set "W=%WORK:\=/%"
 
-set OPENSEES_REF=v3.8.0
+if "%OPENSEES_REF%"=="" set OPENSEES_REF=v3.8.0
 set MUMPS_CMAKE_COMMIT=ec5f340acabb29dc71c6ffde93b58bdcd04af083
 set MUMPS_URL=https://mumps-solver.org/MUMPS_5.5.1.tar.gz
 set MUMPS_SHA256=1abff294fa47ee4cfd50dfd5c595942b72ebfcedce08142a75a99ab35014fa15
@@ -36,7 +39,10 @@ set "CONAN=%WORK%\venv\Scripts\conan.exe"
 
 rem --- OpenSees, patched ---------------------------------------------------------------------
 if not exist "%WORK%\opensees" (
-  git -c core.autocrlf=false clone --depth 1 --branch %OPENSEES_REF% https://github.com/OpenSees/OpenSees.git "%WORK%\opensees" || exit /b 1
+  rem Fetched rather than cloned, so that a commit will do as well as a tag or a branch.
+  git -c core.autocrlf=false init -q "%WORK%\opensees" || exit /b 1
+  git -C "%WORK%\opensees" -c core.autocrlf=false fetch -q --depth 1 https://github.com/OpenSees/OpenSees.git %OPENSEES_REF% || exit /b 1
+  git -C "%WORK%\opensees" -c core.autocrlf=false checkout -q FETCH_HEAD || exit /b 1
   git -C "%WORK%\opensees" apply "%HERE%opensees-v3.8.0-mumps.patch" || exit /b 1
 )
 

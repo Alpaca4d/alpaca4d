@@ -4,6 +4,10 @@
 #
 #   Tools/OpenSees/build-mac.sh [work dir] [out dir]
 #
+# OPENSEES_REF picks another tag, branch or commit of OpenSees to patch, master for one:
+#   OPENSEES_REF=d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61 Tools/OpenSees/build-mac.sh ~/opensees-mumps-master
+# (a commit by its full hash: GitHub fetches no shortened one)
+#
 # Needs Homebrew's gcc (for gfortran), cmake, git, curl and python3. Everything else - conan,
 # its packages, the sources - goes in the work dir (default ~/opensees-mumps), not in ~/.conan2.
 set -euo pipefail
@@ -12,7 +16,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 work=${1:-$HOME/opensees-mumps}
 out=${2:-$work/dist}
 
-OPENSEES_REF=v3.8.0
+OPENSEES_REF=${OPENSEES_REF:-v3.8.0}
 MUMPS_CMAKE_COMMIT=ec5f340acabb29dc71c6ffde93b58bdcd04af083
 MUMPS_URL=https://mumps-solver.org/MUMPS_5.5.1.tar.gz
 MUMPS_SHA256=1abff294fa47ee4cfd50dfd5c595942b72ebfcedce08142a75a99ab35014fa15
@@ -44,7 +48,10 @@ fi
 
 # --- OpenSees, patched -------------------------------------------------------------------
 if [ ! -d "$work/opensees" ]; then
-  git clone --depth 1 --branch "$OPENSEES_REF" https://github.com/OpenSees/OpenSees.git "$work/opensees"
+  # Fetched rather than cloned, so that a commit will do as well as a tag or a branch.
+  git init -q "$work/opensees"
+  git -C "$work/opensees" fetch -q --depth 1 https://github.com/OpenSees/OpenSees.git "$OPENSEES_REF"
+  git -C "$work/opensees" checkout -q FETCH_HEAD
   git -C "$work/opensees" apply "$here/opensees-v3.8.0-mumps.patch"
 fi
 
