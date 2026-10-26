@@ -102,6 +102,12 @@ namespace Alpaca4d
             }
         }
         public List<Alpaca4d.Loads.MassLoad> Mass { get; set; } = new List<Alpaca4d.Loads.MassLoad> { };
+
+        /// <summary>Loads whose weight is to be mass as well, from Mass from Loads. Assemble lumps them onto the nodes.</summary>
+        public List<Alpaca4d.Loads.MassFromLoads> MassFromLoads { get; set; } = new List<Alpaca4d.Loads.MassFromLoads> { };
+
+        /// <summary>The masses Assemble made of <see cref="MassFromLoads"/>, in kg, kept apart from <see cref="Mass"/> so a model assembled again does not count them twice.</summary>
+        public List<Alpaca4d.Loads.MassLoad> LumpedMass { get; private set; } = new List<Alpaca4d.Loads.MassLoad> { };
         public List<Support> Supports { get; set; } = new List<Support> { };
         public List<IConstraint> Constraint { get; set; } = new List<IConstraint> { };
         public List<IRecorder> Recorders { get; set; } = new List<IRecorder> { };
@@ -156,7 +162,7 @@ namespace Alpaca4d
                     }
                 }
 
-                foreach (var pointMass in this.Mass)
+                foreach (var pointMass in this.Mass.Concat(this.LumpedMass))
                 {
                     mass += pointMass.TransMass.Z;
                 }
@@ -544,6 +550,7 @@ namespace Alpaca4d
                                   this.Constraint, this.Recorders)
             {
                 Mass = this.Mass,
+                MassFromLoads = this.MassFromLoads,
                 Tollerance = this.Tollerance,
             };
             model.Assemble();
@@ -1385,14 +1392,17 @@ namespace Alpaca4d
         }
 
         /// <summary>
-        /// The point masses, a "mass" line per node.
+        /// The point masses and the masses made of loads, a "mass" line per node.
         ///
         /// Added up per node first: "mass" sets a node's mass rather than adding to it, so of two masses
-        /// on one node only the last used to count.
+        /// on one node only the last used to count - and the masses made of loads land on shared nodes
+        /// all the time, a beam end where two beams meet, a corner four shells share.
         /// </summary>
         private void WriteMasses()
         {
-            var masses = this.Mass.ToList();
+            this.LumpedMass = this.MassFromLoads.SelectMany(source => source.Lump(this)).ToList();
+
+            var masses = this.Mass.Concat(this.LumpedMass).ToList();
             foreach (var mass in masses)
             {
                 // SetTag leaves the tag alone when it finds no node, and a Mass Point is the same object
