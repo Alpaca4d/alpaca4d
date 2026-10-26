@@ -172,8 +172,10 @@ namespace Alpaca4d.Section
             result.Log = string.Join(Environment.NewLine, new[] { curvesLog, log }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
             // Read in both streams: OpenSees 3.8 sends a deck's puts to stderr.
-            if (exitCode != 0 || log.Contains(Template.MomentCurvature.AxialFailedMarker))
+            if (log.Contains(Template.MomentCurvature.AxialFailedMarker))
                 throw new InvalidOperationException("The axial step did not converge, so no curvature was applied. See the log output.");
+            if (exitCode != 0)
+                throw new InvalidOperationException("OpenSees stopped on an error in the deck. See the log output.");
 
             result.Incomplete = log.Contains(Template.MomentCurvature.CurvatureIncompleteMarker);
             result.StoppedAtUltimate = log.Contains(Template.MomentCurvature.UltimateMarker);

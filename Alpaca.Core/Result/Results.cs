@@ -880,17 +880,42 @@ namespace Alpaca4d.Result
         /// is run in the global axes whatever this says.
         /// </param>
         private static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>)
-            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local)
+            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local, int points = 1)
         {
-            const string BASE = ON_ELEMENTS + "/stresses";
             const int COMPONENTS = 6;
 
             var sigma = new List<double>[COMPONENTS];
             for (int c = 0; c < COMPONENTS; c++)
                 sigma[c] = new List<double>();
 
+            // One value per element: the mean over its integration points, which for a single
+            // point is that point, and for the four of a ten node tetrahedron is the stress at its
+            // centre - the points sit symmetrically about it and the stress there is linear.
+            foreach (var atPoints in SolidStressAtPoints(alpacaModel, step, className, elements, local, points))
+                for (int c = 0; c < COMPONENTS; c++)
+                    sigma[c].Add(atPoints.Average(point => point[c]));
+
+            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+        }
+
+        /// <summary>
+        /// What <see cref="SolidStress"/> reads, before it is averaged: for each element, the six
+        /// components at each of its <paramref name="points"/> integration points.
+        ///
+        /// A row of the file holds one block per point, one after the other, and each block is
+        /// whatever the material answers to "stresses" - six numbers for every material Alpaca4d
+        /// writes, but more for some, so only the first six of each block are taken.
+        /// </summary>
+        private static List<double[][]> SolidStressAtPoints(Model alpacaModel, int step, string className,
+            IReadOnlyList<Generic.IBrick> elements, bool local, int points)
+        {
+            const string BASE = ON_ELEMENTS + "/stresses";
+            const int COMPONENTS = 6;
+
+            var stresses = new List<double[][]>();
+
             if (elements.Count == 0)
-                return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+                return stresses;
 
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
 
@@ -934,7 +959,7 @@ namespace Alpaca4d.Result
 
             foreach (var element in elements)
             {
-                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS)
+                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS * points)
                     throw new Exception(
                         $"The recorder file holds no stresses for {className} {element.Id}. The file was " +
                         "written by a different model from the one being read - re-run the analysis.");
@@ -943,18 +968,20 @@ namespace Alpaca4d.Result
                 // the element's own frame is done here rather than by the caller because the six
                 // numbers only mean anything together, and a caller holding six separate lists has
                 // already lost the tensor.
-                var values = row;
-                if (local)
+                var frame = local ? Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray()) : default;
+                int block = row.Length / points;
+
+                var atPoints = new double[points][];
+                for (int p = 0; p < points; p++)
                 {
-                    var frame = Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray());
-                    values = Utils.StressInFrame(row, frame.X, frame.Y, frame.Z);
+                    var values = row.Skip(p * block).Take(COMPONENTS).ToArray();
+                    atPoints[p] = local ? Utils.StressInFrame(values, frame.X, frame.Y, frame.Z) : values;
                 }
 
-                for (int c = 0; c < COMPONENTS; c++)
-                    sigma[c].Add(values[c]);
+                stresses.Add(atPoints);
             }
 
-            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+            return stresses;
         }
 
         /// <summary>
@@ -989,6 +1016,56 @@ namespace Alpaca4d.Result
                 .ToList();
 
             return SolidStress(alpacaModel, step, "SSPbrick", bricks, local);
+        }
+
+        /// <summary>
+        /// The stress in every ten node tetrahedron, one value per element, in the order the model
+        /// lists them: the mean of its four integration points, which is the stress at its centre.
+        /// Same six components and same axes as <see cref="TetrahedronStress"/>. The recorder
+        /// files them under TenNodeTetrahedron, the element's class, whichever of its two commands
+        /// built it.
+        /// </summary>
+        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TenNodeTetrahedronStress(Model alpacaModel, int step, string resultType = null, bool local = false)
+        {
+            return SolidStress(alpacaModel, step, "TenNodeTetrahedron", TenNodeTetrahedra(alpacaModel),
+                               local, Element.TenNodeTetrahedron.GaussPoints);
+        }
+
+        /// <summary>
+        /// The stress in every ten node tetrahedron at each of its ten nodes, in the order the model
+        /// lists the elements and each element its nodes: six components per node, the field of the
+        /// element alone, since a stress jumps from one element to the next. See
+        /// Element.TenNodeTetrahedron.AtNodes for how four integration points make ten nodes.
+        /// </summary>
+        public static List<double[][]> TenNodeTetrahedronStressAtNodes(Model alpacaModel, int step, bool local = false)
+        {
+            var atNodes = new List<double[][]>();
+
+            foreach (var atPoints in SolidStressAtPoints(alpacaModel, step, "TenNodeTetrahedron", TenNodeTetrahedra(alpacaModel),
+                                                         local, Element.TenNodeTetrahedron.GaussPoints))
+            {
+                var nodes = new double[10][];
+                for (int n = 0; n < nodes.Length; n++)
+                    nodes[n] = new double[6];
+
+                for (int c = 0; c < 6; c++)
+                {
+                    var component = Element.TenNodeTetrahedron.AtNodes(atPoints.Select(point => point[c]).ToList());
+                    for (int n = 0; n < nodes.Length; n++)
+                        nodes[n][c] = component[n];
+                }
+
+                atNodes.Add(nodes);
+            }
+
+            return atNodes;
+        }
+
+        private static List<Generic.IBrick> TenNodeTetrahedra(Model alpacaModel)
+        {
+            return alpacaModel.Bricks
+                .Where(x => x.ElementClass == Element.ElementClass.TenNodeTetrahedron)
+                .ToList();
         }
 
 

@@ -444,6 +444,9 @@ IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT
   <data name="Tab" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Tab.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
+  <data name="Ten_Node_Tetrahedron__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Ten Node Tetrahedron (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
   <data name="Text_to_model__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Text to model (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
