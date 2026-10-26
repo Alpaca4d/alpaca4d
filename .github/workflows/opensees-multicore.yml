@@ -3,7 +3,7 @@ name: Multi-core OpenSees
 # OpenSees 3.8.0 with `system Mumps` in the single-process interpreter: sequential MUMPS
 # (libseq, no MPI) built with OpenMP, so one OpenSees process factorises on several cores.
 # Windows x64 and macOS arm64 are built from the same patches (Tools/OpenSees), checked
-# against UmfPack, timed, and uploaded laid out like OpenSees-Solvers/<platform>.
+# against UmfPack, timed, and uploaded laid out as an install: bin/ and lib/tcl8.6.
 # See Tools/OpenSees/README.md.
 #
 # GitHub starts a workflow by hand (workflow_dispatch) only once it is on the default branch. Until
@@ -96,7 +96,7 @@ jobs:
           cmake -S . -B build/Release -G Ninja -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_Fortran_COMPILER=ifx -DBLA_STATIC=ON -DMKL_LINK=static -DMKL_INTERFACE_FULL=intel_lp64 -DCMAKE_DISABLE_FIND_PACKAGE_MPI=ON -DMUMPS_SEQ_DIR="%T%/mumps-seq-install" -DCMAKE_EXE_LINKER_FLAGS=/FORCE:MULTIPLE -DCMAKE_NINJA_FORCE_RESPONSE_FILE=ON || exit /b 1
           cmake --build build/Release --target OpenSees -j 4 || exit /b 1
 
-      - name: Package like OpenSees-Solvers/win
+      - name: Package as bin/ and lib/tcl8.6
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/win/bin, dist/win/lib/tcl8.6 | Out-Null
@@ -105,8 +105,8 @@ jobs:
           $init = Get-ChildItem -Recurse "$env:USERPROFILE\.conan2" -Filter init.tcl | Where-Object { $_.FullName -match 'tcl8\.6' } | Select-Object -First 1
           Copy-Item $init.FullName dist/win/lib/tcl8.6/
 
-      # It has to run with nothing beside it but libiomp5md.dll, as the OpenSees.exe Alpaca4d
-      # has shipped does: Windows' own DLLs, and MKL, MUMPS and the Fortran runtime linked in.
+      # It has to run with nothing beside it but libiomp5md.dll: Windows' own DLLs, and MKL,
+      # MUMPS and the Fortran runtime linked in.
       - name: What OpenSees.exe needs at run time
         shell: pwsh
         run: |
@@ -190,7 +190,7 @@ jobs:
           FC=gfortran CC=clang CXX=clang++ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build/build/Release/generators/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_DISABLE_FIND_PACKAGE_MPI=ON -DMUMPS_SEQ_DIR="$RUNNER_TEMP/mumps-seq-install"
           cmake --build build --target OpenSees -j 3
 
-      - name: Package like OpenSees-Solvers/mac
+      - name: Package as bin/ and lib/tcl8.6
         run: |
           mkdir -p dist/mac/bin dist/mac/lib/tcl8.6
           cp opensees/build/OpenSees dist/mac/bin/
