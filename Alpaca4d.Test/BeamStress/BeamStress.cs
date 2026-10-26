@@ -461,6 +461,218 @@ class BeamStressTest
         Close(signs.SigmaMax, -all.SigmaMin, 1e-12, "and reversing every force swaps σmax and σmin");
     }
 
+    // ---------------------------------------------------------------- point by point
+
+    // What View Results paints a solid beam with: the stress at one point of the surface, the shear
+    // the one running along it. Forces in OpenSees' convention, whose Vy acts down -y - so a load
+    // pushing up along +y reads as a negative Vy - and whose Vz acts along +z.
+
+    /// <summary>The stresses at (y, z) on the surface, running along (ty, tz), under N, Vy, Vz, T, My, Mz.</summary>
+    static PointStress At(BeamSectionStress s, double y, double z, double ty, double tz,
+                          double n = 0, double vy = 0, double vz = 0, double t = 0, double my = 0, double mz = 0) =>
+        s.SurfaceAt(y, z, ty, tz).Under(n, vy, vz, t, my, mz);
+
+    static void SurfaceTests()
+    {
+        Section("Point by point: a rectangle 0.2 wide (z) by 0.4 tall (y)");
+        {
+            var s = BeamSectionStress.Of(new RectangleCS("r", 0.2, 0.4, null));
+            var whole = s.At(100.0, 0.0, 0.0, 0.0, 10.0, 20.0);
+
+            // A linear field over a rectangle is at its worst in two opposite corners.
+            var corners = new[] { (0.2, 0.1), (0.2, -0.1), (-0.2, 0.1), (-0.2, -0.1) }
+                .Select(c => At(s, c.Item1, c.Item2, 0, 1, n: 100.0, my: 10.0, mz: 20.0).Sigma).ToList();
+            Close(corners.Max(), whole.SigmaMax, 1e-12, "the worst corner is the section's σmax");
+            Close(corners.Min(), whole.SigmaMin, 1e-12, "and the opposite one its σmin");
+
+            Close(At(s, 0.2, 0.0, 0, 1, mz: 20.0).Sigma, -3750.0, 1e-12, "a positive Mz compresses the +y face");
+            Close(At(s, 0.0, 0.1, 1, 0, my: 10.0).Sigma, 3750.0, 1e-12, "a positive My stretches the +z face");
+            var parts = At(s, 0.2, 0.1, 0, 1, n: 100.0, my: 10.0, mz: 20.0);
+            Close(parts.SigmaMy + parts.SigmaMz + 100.0 / s.Area, parts.Sigma, 1e-12, "σ is N/A and its two bending parts");
+
+            // Jourawski's parabola, along the side face: 1.5·V/A at the middle, nothing at the corners.
+            double peak = 1.5 * 10.0 / s.Area;
+            Close(At(s, 0.0, 0.1, 1, 0, vy: -10.0).TauV, peak, 1e-12, "+10 along y, side face, middle: +1.5·V/A along +y");
+            Close(At(s, 0.1, 0.1, 1, 0, vy: -10.0).TauV, 0.75 * peak, 1e-12, "a quarter of the depth from the top: three-quarters of it");
+            Check(Math.Abs(At(s, 0.2, 0.1, 1, 0, vy: -10.0).TauV) < 1e-9, "nothing at the corner");
+            Check(Math.Abs(At(s, 0.2, 0.0, 0, 1, vy: -10.0).TauV) < 1e-9,
+                  "nor anywhere on the top face, which Vy's shear does not run along");
+            Close(At(s, 0.2, 0.0, 0, 1, vz: 10.0).TauV, peak, 1e-12, "Vz runs along the top face instead, peaking at its middle");
+            Close(At(s, 0.0, 0.1, -1, 0, vy: -10.0).TauV, -peak, 1e-12, "read the other way along the surface, the sign turns");
+
+            // Saint-Venant: the long side's middle is the section's τT, the corners nothing, and a
+            // positive torque turns from y towards z - down -y on the +z face.
+            Close(At(s, 0.0, 0.1, 1, 0, t: 1.0).TauT, -s.Torsion, 1e-9, "torque, +z face, middle: the section's τT, along −y");
+            Close(At(s, 0.0, -0.1, 1, 0, t: 1.0).TauT, s.Torsion, 1e-9, "and along +y on the −z face");
+            Check(Math.Abs(At(s, 0.2, 0.1, 1, 0, t: 1.0).TauT) < 2e-3 * s.Torsion, "nothing at the corner, to the series' last term");
+
+            var square = BeamSectionStress.Of(new RectangleCS("sq", 0.1, 0.1, null));
+            Close(At(square, 0.05, 0.0, 0, 1, t: 1.0).TauT, At(square, 0.0, -0.05, 1, 0, t: 1.0).TauT, 1e-9,
+                  "a square: the middle of each side the same, worked out from two different series");
+            var strip = BeamSectionStress.Of(new RectangleCS("strip", 0.002, 0.2, null));
+            Close(Math.Abs(At(strip, 0.1, 0.0, 0, 1, t: 1.0).TauT) / strip.Torsion, 0.9159656 / (Math.PI * Math.PI / 8), 1e-3,
+                  "a thin strip's short side: Catalan's G over π²/8, 0.742 of the long side's");
+
+            var both = At(s, 0.0, 0.1, 1, 0, vy: -10.0, t: 1.0);
+            Close(both.Tau, peak - s.Torsion, 1e-9, "shear and torque against each other on the +z face");
+            Close(At(s, 0.0, -0.1, 1, 0, vy: -10.0, t: 1.0).Tau, peak + s.Torsion, 1e-9, "and with each other on the −z face");
+            Close(both.VonMises, Math.Sqrt(3.0) * Math.Abs(peak - s.Torsion), 1e-9, "Von Mises from what meets at the point");
+        }
+
+        Section("Point by point: round bar and tube");
+        {
+            double d = 0.1;
+            var bar = BeamSectionStress.Of(new CircleCS("bar", d, 0.0, null));
+            Close(At(bar, 0.0, 0.05, 1, 0, vy: -10.0).TauV, bar.ShearY * 10.0, 1e-12,
+                  "+10 along y: the side, where the surface runs along the force, takes Jourawski's peak");
+            Check(Math.Abs(At(bar, 0.05, 0.0, 0, 1, vy: -10.0).TauV) < 1e-12, "the top, which faces it, nothing");
+            double c = Math.Cos(Math.PI / 6), sn = Math.Sin(Math.PI / 6);
+            Close(At(bar, 0.05 * sn, 0.05 * c, c, -sn, vy: -10.0).TauV, bar.ShearY * 10.0 * c, 1e-12,
+                  "in between, the force's share along the surface");
+            double polar = Math.PI * Math.Pow(d, 4) / 32;
+            Close(At(bar, 0.0, 0.05, 1, 0, t: 1.0).TauT, -0.05 / polar, 1e-12, "torque: T·R/Ip, turning from y towards z");
+
+            var tube = BeamSectionStress.Of(new CircleCS("tube", 0.2, 0.01, null));
+            double tubePolar = Math.PI * (Math.Pow(0.1, 4) - Math.Pow(0.09, 4)) / 2;
+            Close(Math.Abs(At(tube, 0.0, 0.09, 1, 0, t: 1.0).TauT), 0.09 / tubePolar, 1e-12, "a tube's inner face: T·r/Ip, r the inner radius");
+            Close(At(tube, 0.0, 0.09, 1, 0, vy: -10.0).TauV, At(tube, 0.0, 0.1, 1, 0, vy: -10.0).TauV, 1e-12,
+                  "and the same shear as the outer face, Jourawski's being the same through the wall");
+        }
+
+        Section("Point by point: the Hibbeler 7-2 I, N and mm");
+        {
+            var s = BeamSectionStress.Of(new ISection("7-2", 340, 200, 20, 200, 20, 20, null));
+            double v = 20e3;
+
+            Close(At(s, 0.0, 10.0, 1, 0, vy: -v).TauV, s.ShearY * v, 1e-12, "web face at the centroid: the section's τ from Vy, 3.459");
+            Close(At(s, 0.0, -10.0, 1, 0, vy: -v).TauV, s.ShearY * v, 1e-12, "the same on the other face, upwards");
+
+            // Thin-walled flow in the flange: V·S/(I·tf), S the outstand beyond the cut about the centroid.
+            double flow = v * (20 * (100 - 55)) * 160 / (s.Iz * 20);
+            Close(At(s, 150.0, 55.0, 0, 1, vy: -v).TauV, flow, 1e-12, "top flange's underside, 55 out: V·S/(I·t), outwards");
+            Close(At(s, 150.0, -55.0, 0, 1, vy: -v).TauV, -flow, 1e-12, "and outwards on the other side, along −z");
+            Close(At(s, -150.0, 55.0, 0, 1, vy: -v).TauV, -flow, 1e-12, "the bottom flange's runs in, towards the web");
+            Check(Math.Abs(At(s, 160.0, 100.0, 1, 0, vy: -v).TauV) < 1e-12, "nothing on a flange's tip, which the flow does not run along");
+            Check(Math.Abs(At(s, 170.0, 0.0, 0, 1, vy: -v).TauV) < 1e-9,
+                  "and nothing over the web's centre line, where the two halves' flows meet and turn down it");
+            Close(At(s, 170.0, 5.0, 0, 1, vy: -v).TauV, 0.5 * At(s, 170.0, 10.0, 0, 1, vy: -v).TauV, 1e-9,
+                  "turning across the web's thickness rather than all at once");
+
+            Close(At(s, 0.0, 10.0, 1, 0, t: 1e6).TauT, -1e6 * 20 / s.TorsionConstant, 1e-9, "torque on the web's face: T·t/J");
+            Close(At(s, 170.0, 50.0, 0, 1, t: 1e6).TauT, 1e6 * 20 / s.TorsionConstant, 1e-3, "and on the flange's top, along +z");
+            Close(At(s, 149.9, 10.0, 1, 0, t: 1e6).TauT, -1e6 * 20 / s.TorsionConstant, 1e-9,
+                  "all the way up the web to the flange it runs into, which is no free end");
+            Check(Math.Abs(At(s, 170.0, 99.9, 0, 1, t: 1e6).TauT) < 0.1 * 1e6 * 20 / s.TorsionConstant,
+                  "but dying away into the corner at a flange's tip, which is: under a tenth 0.1 mm from it");
+        }
+
+        Section("Point by point: a box with unequal flanges, N and mm");
+        {
+            // 200 wide, 300 tall, sides 10, top 16, bottom 10.
+            var s = BeamSectionStress.Of(new RectangleHollowCS("box", 200, 300, 10, 16, 10, null));
+            double v = 20e3, top = 150 - s.CentroidY;
+
+            Check(Math.Abs(At(s, top, 0.0, 0, 1, vy: -v).TauV) < 1e-9, "Vy: nothing at the middle of the top, the cell's line of symmetry");
+            Close(At(s, 0.0, 100.0, 1, 0, vy: -v).TauV, s.ShearY * v, 5e-3,
+                  "Vy: the side face at the centroid, the section's τ through both walls");
+            Close(At(s, 0.0, 100.0, 1, 0, t: 1e6).TauT, -At(s, 0.0, -100.0, 1, 0, t: 1e6).TauT, 1e-12,
+                  "torque runs one way round the cell");
+
+            // Bredt: T over twice the area inside the walls' centre lines, over the wall.
+            double enclosed = 190.0 * (300.0 - 13.0);
+            Close(Math.Abs(At(s, 0.0, 100.0, 1, 0, t: 1e6).TauT), 1e6 / (2 * enclosed * 10), 1e-9, "Bredt in a side wall");
+            Close(Math.Abs(At(s, top, 0.0, 0, 1, t: 1e6).TauT), 1e6 / (2 * enclosed * 16), 1e-9, "and in the thicker top");
+        }
+
+        Section("Point by point: a pair of angles");
+        {
+            // 100 tall, 75 wide, 8 thick, 10 apart: the long legs either side of the gap, upright.
+            var s = BeamSectionStress.Of(new DoubleLAngleCS("2L", 100, 75, 8, 10, null));
+            double v = 20e3;
+            Close(At(s, 0.0, 13.0, 1, 0, vy: -v).TauV, At(s, 0.0, -13.0, 1, 0, vy: -v).TauV, 1e-9,
+                  "Vy: the two long legs alike");
+            Check(At(s, 0.0, 13.0, 1, 0, vy: -v).TauV > 0.0, "and upwards, with the force");
+            Check(Math.Abs(At(s, -s.CentroidY - 46.0, 80.0, 1, 0, vy: -v).TauV) < 1e-12, "nothing on a short leg's tip");
+        }
+
+        Section("Point by point: nothing beyond the section's own worst direct stress");
+        {
+            // Every corner of every outline, under everything at once: their worst is the section's.
+            // Corners as drawn, (y, z).
+            var sections = new Alpaca4d.Generic.IUniaxialSection[]
+            {
+                new ISection("I", 400, 250, 25, 150, 15, 12, null),
+                new RectangleHollowCS("box", 200, 300, 10, 16, 10, null),
+                new DoubleLAngleCS("2L", 100, 75, 8, 10, null)
+            };
+            var corners = new[]
+            {
+                new[] { (200.0, 125.0), (200.0, -125.0), (-200.0, 75.0), (-200.0, -75.0), (175.0, 6.0), (-185.0, -6.0) },
+                new[] { (150.0, 100.0), (150.0, -100.0), (-150.0, 100.0), (-150.0, -100.0) },
+                new[] { (50.0, 5.0), (50.0, 13.0), (-50.0, 80.0), (-42.0, 80.0), (50.0, -13.0), (-50.0, -80.0), (-42.0, -80.0), (50.0, -5.0) }
+            };
+            for (int k = 0; k < sections.Length; k++)
+            {
+                var section = sections[k];
+                var s = BeamSectionStress.Of(section);
+                var worst = s.At(80e3, 15e3, -6e3, 0.3e6, -7e6, 12e6);
+                var at = corners[k].Select(c => At(s, c.Item1 - s.CentroidY, c.Item2 - s.CentroidZ, 1, 0, 80e3, 15e3, -6e3, 0.3e6, -7e6, 12e6).Sigma).ToList();
+                Close(at.Max(), worst.SigmaMax, 1e-9, $"{section.GetType().Name}: σmax at a corner of the outline");
+                Close(at.Min(), worst.SigmaMin, 1e-9, $"{section.GetType().Name}: σmin at another");
+            }
+        }
+
+        Section("Point by point: a section with no shape");
+        {
+            var elastic = BeamSectionStress.Of(new ElasticSection("e", 0.01, 1e-4, 1e-5, 1e-6, 0.8, 0.8, null));
+            var at = At(elastic, 0.1, 0.1, 1, 0, 500.0, 10.0, 10.0, 10.0, 10.0, 10.0);
+            Close(at.Sigma, 50000.0, 1e-12, "N/A");
+            Check(at.SigmaMy == 0.0 && at.SigmaMz == 0.0 && at.TauV == 0.0 && at.TauT == 0.0, "and nothing else");
+        }
+    }
+
+    // Exact elasticity at points of the surface: fe_check.py, "On the surface". A hair inside, where
+    // the shear has nowhere to run but along the surface.
+    static void SurfaceFiniteElementTests()
+    {
+        Section("Point by point against exact elasticity: sectionproperties, steel, N and mm");
+
+        // The loads are fe_check.py's turned into OpenSees' forces: its vy is Vy, its vx -Vz, its
+        // mzz T, its myy -My and its mxx -Mz.
+        var i = BeamSectionStress.Of(new ISection("7-2", 340, 200, 20, 200, 20, 20, null));
+        Close(Math.Abs(At(i, 0, 10, 1, 0, vy: 20e3).TauV), 3.459698, 1e-3, "I: Vy, web face at the centroid, FE 3.459698");
+        Close(Math.Abs(At(i, 150, 55, 0, 1, vy: 20e3).TauV), 0.586701, 0.03, "I: Vy, flange underside 55 out, FE 0.586701 - thin walls within 3%");
+        Close(Math.Abs(At(i, 170, 0, 0, 1, vz: 20e3).TauV), 3.656910, 0.03, "I: Vz, flange top over the web, FE 3.656910");
+        Gap(Math.Abs(At(i, 0, 10, 1, 0, t: 1e6).TauT), 10.537329, -0.02, -0.01, "I: T, web face, FE 10.537329 - J = Σbt³/3 leaves out the junction");
+        Close(At(i, 0, 10, 1, 0, 100e3, 20e3, 5e3, 0.2e6, 2e6, -10e6).VonMises, 12.456596, 0.02,
+              "I: Von Mises under everything, web face at the centroid, FE 12.456596");
+        Close(At(i, 170, 99.9, 0, 1, 100e3, 20e3, 5e3, 0.2e6, 2e6, -10e6).VonMises, 21.380273, 2e-3,
+              "I: and at the top of a flange tip, FE 21.380273 - against the bound's 23.57");
+
+        var box = BeamSectionStress.Of(new RectangleHollowCS("box", 200, 300, 10, 16, 10, null));
+        Close(box.CentroidY, 13.853933, 1e-6, "box: centroid 13.853933 above the middle, as FE");
+        Close(Math.Abs(At(box, 0, 100, 1, 0, vy: 20e3).TauV), 4.006214, 0.01, "box: Vy, side face at the centroid, FE 4.006214");
+        Close(Math.Abs(At(box, -150 - box.CentroidY, 0, 0, 1, vz: 20e3).TauV), 5.212344, 0.03,
+              "box: Vz, the bottom's middle, FE 5.212344 - the cell kept from twisting");
+        Gap(Math.Abs(At(box, 0, 100, 1, 0, t: 1e6).TauT), 0.986774, 0.06, 0.09, "box: T, side face (10 thick), FE 0.986774");
+        Gap(Math.Abs(At(box, 150 - box.CentroidY, 0, 0, 1, t: 1e6).TauT), 0.687306, 0.17, 0.23, "box: T, top face (16 thick), FE 0.687306");
+
+        var chs = BeamSectionStress.Of(new CircleCS("chs", 168.3, 8, null));
+        Gap(At(chs, 0, 84.15, 1, 0, vy: -10e3).TauV, 4.775870, -0.05, -0.02, "CHS 168.3 x 8: V at the side, FE 4.775870");
+        Check(Math.Abs(At(chs, 84.15, 0, 0, 1, vy: -10e3).TauV) < 1e-9, "CHS 168.3 x 8: and nothing at the top, FE 0.0005");
+
+        var bar = BeamSectionStress.Of(new CircleCS("bar", 100, 0, null));
+        Gap(At(bar, 0, 50, 1, 0, vy: -10e3).TauV, 1.568422, -0.09, -0.07, "bar 100: V at the side, FE 1.568422");
+
+        var r = BeamSectionStress.Of(new RectangleCS("r", 200, 400, null));
+        Gap(At(r, 0, 100, 1, 0, vy: -10e3).TauV, 0.194683, 0.03, 0.05, "rectangle 200 x 400: Vy, side face's middle, FE 0.194683");
+        Gap(At(r, 200, 0, 0, 1, vz: 10e3).TauV, 0.273325, 0.4, 0.5,
+            "rectangle 200 x 400: Vz across the depth, top face's middle, FE 0.273325 - a wide beam, beyond Jourawski");
+        Close(Math.Abs(At(r, 0, 100, 1, 0, t: 1e6).TauT), 0.254059, 5e-3, "rectangle: T, long side's middle, FE 0.254059");
+        Close(Math.Abs(At(r, 200, 0, 0, 1, t: 1e6).TauT), 0.202125, 5e-3, "rectangle: T, short side's middle, FE 0.202125");
+        Close(Math.Abs(At(r, 150, 100, 1, 0, t: 1e6).TauT), 0.168876, 5e-3, "rectangle: T, long side 150 up, FE 0.168876");
+    }
+
     // ---------------------------------------------------------------- against OpenSees
 
     static double Last(string file)
@@ -689,6 +901,8 @@ class BeamStressTest
         PublishedISectionTests();
         PublishedCircleTests();
         FiniteElementTests();
+        SurfaceTests();
+        SurfaceFiniteElementTests();
         SolverTests(args.Length > 0 ? args[0] : ".");
         ReaderTests(args.Length > 0 ? args[0] : ".");
 
