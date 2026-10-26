@@ -15,7 +15,8 @@ namespace Alpaca4d.Gh
         public static string Failure(string output, int exitCode)
         {
             // A non-zero exit code means the Tcl script itself errored out
-            // (e.g. bad command, undefined material) - see TclInterpreter::run.
+            // (e.g. bad command, undefined material). OpenSees exits 0 then too;
+            // Model.RunOpenSees reads the error off the log and hands on 1.
             if (exitCode != 0)
                 return "Analysis Failed: OpenSees exited with an error. See log for details.";
 

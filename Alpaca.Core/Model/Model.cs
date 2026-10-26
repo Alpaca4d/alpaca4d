@@ -820,9 +820,31 @@ namespace Alpaca4d
                     throw new InvalidOperationException(Application.QuarantineHelp(openSeesPath));
                 }
 
+                // OpenSees exits 0 when the deck stops on an error - a command it does not know, a
+                // material that was never defined - just as when the deck runs to its end. Its main
+                // sets the exit code to 1 and then never uses it: it evaluates a buffer that still
+                // holds the argument count instead of "exit 1", and then "quit". 3.8.0 and master
+                // alike. What it does print is Tcl's trace of the error, so the code it meant is
+                // read off that.
+                string error = errorBuilder.ToString().Trim();
+                int exitCode = process.ExitCode == 0 && StoppedOnTclError(error) ? 1 : process.ExitCode;
+
                 this.IsAnalysed = true;
-                return (outputBuilder.ToString().Trim(), errorBuilder.ToString().Trim(), process.ExitCode);
+                return (outputBuilder.ToString().Trim(), error, exitCode);
             }
+        }
+
+        /// <summary>
+        /// Whether OpenSees's error stream holds Tcl's trace of an error that stopped the deck. The
+        /// trace ends on the line of the deck that stopped, <c>    (file "AlpacaModel.tcl" line 12)</c>,
+        /// whatever sourced file or procedure the error came from. Only Tcl prints such a line, and
+        /// only for an error nothing caught; a long path is cut short with "...", which still fits.
+        /// </summary>
+        public static bool StoppedOnTclError(string error)
+        {
+            return !string.IsNullOrEmpty(error) &&
+                   System.Text.RegularExpressions.Regex.IsMatch(error, @"^[ \t]+\(file "".*"" line \d+\)\r?$",
+                       System.Text.RegularExpressions.RegexOptions.Multiline);
         }
 
         /// <summary>

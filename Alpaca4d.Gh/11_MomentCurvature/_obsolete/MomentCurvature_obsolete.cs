@@ -154,7 +154,9 @@ namespace Alpaca4d.Gh
             if (exitCode != 0 || solverLog.Contains(Alpaca4d.Template.MomentCurvature.AxialFailedMarker))
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                    "The axial step did not converge, so no curvature was applied. See the log output." +
+                    (solverLog.Contains(Alpaca4d.Template.MomentCurvature.AxialFailedMarker)
+                        ? "The axial step did not converge, so no curvature was applied. See the log output."
+                        : "OpenSees stopped on an error in the deck. See the log output.") +
                     Environment.NewLine + Tail(solverLog));
                 return;
             }
