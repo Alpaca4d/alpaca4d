@@ -229,6 +229,8 @@ namespace Alpaca4d
             }
         }
 
+        public bool HasTenNodeTetrahedron => this.Bricks.Any(brick => brick.ElementClass == ElementClass.TenNodeTetrahedron);
+
         public bool HasTriShell
         {
             get
@@ -1094,6 +1096,39 @@ namespace Alpaca4d
             }
         }
 
+        /// <summary>
+        /// Says so when an edge of a ten node tetrahedron has a support at both corners and none at
+        /// the node in its middle. A support holds the one node at its point, so a face supported
+        /// at the corners of its triangles - the vertices of the mesh it was drawn from, which is
+        /// all a four node tetrahedron needs - leaves every edge node on it free, and the element
+        /// bulges between the points it is held at.
+        /// </summary>
+        private void WarnOfFreeEdgeNodes()
+        {
+            var held = new HashSet<int>(this.Supports.Where(support => support.Id.HasValue).Select(support => support.Id.Value));
+            var free = new HashSet<int>();
+
+            foreach (var tetrahedron in this.Bricks.OfType<TenNodeTetrahedron>())
+            {
+                var nodes = tetrahedron.IndexNodes;
+                for (int e = 0; e < Alpaca4d.Utils.TetrahedronEdges.Length; e++)
+                {
+                    var edge = Alpaca4d.Utils.TetrahedronEdges[e];
+                    int middle = nodes[4 + e] ?? 0;
+                    if (held.Contains(nodes[edge[0]] ?? 0) && held.Contains(nodes[edge[1]] ?? 0) && !held.Contains(middle))
+                        free.Add(middle);
+                }
+            }
+
+            if (free.Count > 0)
+                this.Warnings.Add((free.Count == 1
+                                      ? "An edge node of a ten node tetrahedron lies between two supported corners and has no support of its own. "
+                                      : $"{free.Count} edge nodes of ten node tetrahedra lie between two supported corners and have no support of their own. ") +
+                                  "A support holds only the node at its point, so a face supported at its mesh vertices is held at " +
+                                  "its corners and free in between. Support the edge nodes too: the Points output of Ten Node " +
+                                  "Tetrahedron has every node.");
+        }
+
         /// <summary>The axis of <paramref name="plane"/> a support direction 1-6 runs along or turns about.</summary>
         private static Vector3d AxisOf(Plane plane, int direction)
         {
@@ -1334,9 +1369,16 @@ namespace Alpaca4d
                     mass += density * meshVolume;
                     if (gravityLoad != null)
                     {
-                        foreach (var index in brick.IndexNodes)
+                        // Evenly over the nodes is the element's own share-out for a brick or a
+                        // four node tetrahedron, but not for a ten node one: see BodyForceShares.
+                        var shares = brick is TenNodeTetrahedron
+                            ? TenNodeTetrahedron.BodyForceShares
+                            : Enumerable.Repeat(1.0 / brick.IndexNodes.Count, brick.IndexNodes.Count).ToList();
+
+                        for (int n = 0; n < brick.IndexNodes.Count; n++)
                         {
-                            var gravityBrickPointLoad = new Alpaca4d.Loads.PointLoad(index, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, -(density * meshVolume / (brick.Mesh.Vertices.Count))), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
+                            var index = brick.IndexNodes[n];
+                            var gravityBrickPointLoad = new Alpaca4d.Loads.PointLoad(index, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, -(density * meshVolume * shares[n])), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
                             gravityBrickPointLoad.Ndf = 3;
                             gravityBrickPointLoad.Pos = this.UniquePoints[(int)index -1];
                             gravityPointLoad.Add(gravityBrickPointLoad);
@@ -1505,6 +1547,8 @@ namespace Alpaca4d
                 element.SetTags();
                 index++;
             }
+
+            this.WarnOfFreeEdgeNodes();
 
             foreach(var item in this.Elements)
             {

@@ -300,6 +300,8 @@ namespace Alpaca4d
 
                 case "SSPbrick":
                 case "FourNodeTetrahedron":
+                case "TenNodeTetrahedron":
+                case "TenNodeTetrahedronStd":
                 case "stdBrick":
                 case "bbarBrick":
                     deck.Solids++;

@@ -917,10 +917,69 @@ namespace Alpaca4d
             foreach (var node in nodes)
                 mesh.Vertices.Add(node);
 
-            mesh.Faces.AddFace(0, 2, 1);
-            mesh.Faces.AddFace(0, 3, 2);
-            mesh.Faces.AddFace(0, 1, 3);
-            mesh.Faces.AddFace(1, 2, 3);
+            foreach (var face in TetrahedronFaces)
+                mesh.Faces.AddFace(face[0], face[1], face[2]);
+
+            mesh.FaceNormals.ComputeFaceNormals();
+            mesh.Normals.ComputeNormals();
+
+            return mesh;
+        }
+
+        /// <summary>The four faces of a tetrahedron in OpenSees order, each wound outward.</summary>
+        private static readonly int[][] TetrahedronFaces =
+        {
+            new[] { 0, 2, 1 }, new[] { 0, 3, 2 }, new[] { 0, 1, 3 }, new[] { 1, 2, 3 },
+        };
+
+        /// <summary>
+        /// The six edges of a tetrahedron, in the order TenNodeTetrahedronStd numbers the nodes on
+        /// them: node 5 on edge 1-2, 6 on 2-3, 7 on 3-1, 8 on 1-4, 9 on 2-4 and 10 on 3-4. That is
+        /// the standard order, VTK's and Abaqus', and not the one plain TenNodeTetrahedron takes,
+        /// which has 9 and 10 the other way round (gmsh's).
+        /// </summary>
+        public static readonly int[][] TetrahedronEdges =
+        {
+            new[] { 0, 1 }, new[] { 1, 2 }, new[] { 2, 0 }, new[] { 0, 3 }, new[] { 1, 3 }, new[] { 2, 3 },
+        };
+
+        /// <summary>The node on the edge from corner <paramref name="a"/> to corner <paramref name="b"/>, counted from 0.</summary>
+        private static int MidEdgeNode(int a, int b)
+        {
+            for (int e = 0; e < TetrahedronEdges.Length; e++)
+            {
+                var edge = TetrahedronEdges[e];
+                if ((edge[0] == a && edge[1] == b) || (edge[0] == b && edge[1] == a))
+                    return 4 + e;
+            }
+
+            throw new ArgumentException($"Corners {a} and {b} do not make an edge.");
+        }
+
+        /// <summary>
+        /// The closed surface of a ten node tetrahedron whose nodes are in TenNodeTetrahedronStd
+        /// order: each face of <see cref="TetrahedronMesh"/> cut into four triangles at the nodes on
+        /// its edges, all wound outward. Every node is a vertex, in the solver's order, so whatever
+        /// moves a mesh vertex by the displacement of its node - the deformed shape, a colour per
+        /// node - moves the edge nodes too, and the bent edges of a deformed element show.
+        /// </summary>
+        private static Mesh TenNodeTetrahedronMesh(IList<Point3d> nodes)
+        {
+            var mesh = new Mesh();
+
+            foreach (var node in nodes)
+                mesh.Vertices.Add(node);
+
+            foreach (var face in TetrahedronFaces)
+            {
+                int a = face[0], b = face[1], c = face[2];
+                int ab = MidEdgeNode(a, b), bc = MidEdgeNode(b, c), ca = MidEdgeNode(c, a);
+
+                mesh.Faces.AddFace(a, ab, ca);
+                mesh.Faces.AddFace(ab, b, bc);
+                mesh.Faces.AddFace(ca, bc, c);
+                mesh.Faces.AddFace(ab, bc, ca);
+            }
 
             mesh.FaceNormals.ComputeFaceNormals();
             mesh.Normals.ComputeNormals();
@@ -937,6 +996,9 @@ namespace Alpaca4d
         ///
         ///   hexahedron   1 to 2 is local x, 1 to 4 is roughly local y, and z comes out along 1 to 5
         ///   tetrahedron  1 to 2 is local x, 1 to 3 is roughly local y, and z comes out along 1 to 4
+        ///
+        /// A ten node tetrahedron numbers its corners first, so it takes the frame of the
+        /// tetrahedron its corners make.
         ///
         /// Roughly, because the second edge is only a guide: y is the part of it square to x, and z
         /// is x cross y. So x lies exactly along an edge of the element, and the frame stays
@@ -955,8 +1017,8 @@ namespace Alpaca4d
         /// </summary>
         public static (Vector3d X, Vector3d Y, Vector3d Z) SolidFrame(IList<Point3d> nodes)
         {
-            if (nodes.Count != 4 && nodes.Count != 8)
-                throw new Exception($"A solid has four nodes or eight, not {nodes.Count}.");
+            if (nodes.Count != 4 && nodes.Count != 8 && nodes.Count != 10)
+                throw new Exception($"A solid has four nodes, eight or ten, not {nodes.Count}.");
 
             // Node 4 of a hexahedron and node 3 of a tetrahedron: in both cases the far end of the
             // second edge leaving node 1 within the first face.
@@ -1171,7 +1233,8 @@ namespace Alpaca4d
 
         /// <summary>
         /// A closed solid mesh built straight from nodes already in OpenSees order - four for a
-        /// tetrahedron, eight for a brick - without reordering them.
+        /// tetrahedron, eight for a brick, ten for a ten node tetrahedron in TenNodeTetrahedronStd
+        /// order - without reordering them.
         ///
         /// For reading a deck back, where the element line already carries the order the solver
         /// was given and the only thing left to do is draw it.
@@ -1184,7 +1247,10 @@ namespace Alpaca4d
             if (nodes.Count == 8)
                 return HexahedronMesh(nodes);
 
-            throw new Exception($"A solid has four nodes or eight, not {nodes.Count}.");
+            if (nodes.Count == 10)
+                return TenNodeTetrahedronMesh(nodes);
+
+            throw new Exception($"A solid has four nodes, eight or ten, not {nodes.Count}.");
         }
 
         /// <summary>
@@ -1281,6 +1347,37 @@ namespace Alpaca4d
         /// </summary>
         public static Mesh CleanTetrahedron(Mesh iMesh)
         {
+            return TetrahedronMesh(TetrahedronCorners(iMesh));
+        }
+
+        /// <summary>
+        /// A four vertex mesh turned into a ten node tetrahedron: its corners put in the order
+        /// <see cref="CleanTetrahedron"/> puts them in, then a node at the middle of each edge in
+        /// the order of <see cref="TetrahedronEdges"/>, and rebuilt as a closed outward facing mesh
+        /// of sixteen triangles.
+        ///
+        /// The edge nodes go at the midpoints, so the element has straight edges and flat faces:
+        /// a Rhino mesh is made of flat faces and has nothing to say about a curved one.
+        /// </summary>
+        public static Mesh CleanTenNodeTetrahedron(Mesh iMesh)
+        {
+            if (iMesh.Vertices.Count == 10)
+                throw new Exception(
+                    "A ten node tetrahedron is made from a mesh of its four corners; the six nodes on its " +
+                    "edges are added at their midpoints. This mesh already has ten vertices - give the " +
+                    "four corner tetrahedron instead.");
+
+            var nodes = TetrahedronCorners(iMesh);
+
+            foreach (var edge in TetrahedronEdges)
+                nodes.Add(0.5 * (nodes[edge[0]] + nodes[edge[1]]));
+
+            return TenNodeTetrahedronMesh(nodes);
+        }
+
+        /// <summary>The four corners of a tetrahedron mesh, in the order OpenSees wants them.</summary>
+        private static List<Point3d> TetrahedronCorners(Mesh iMesh)
+        {
             var nodes = Welded(iMesh, 4).Vertices.ToPoint3dArray().ToList();
 
             if (nodes.Count != 4)
@@ -1303,7 +1400,7 @@ namespace Alpaca4d
                     "them are the same point. OpenSees divides the shape function derivatives by the " +
                     "Jacobian, so there is nothing here it can solve.");
 
-            return TetrahedronMesh(nodes);
+            return nodes;
         }
 
         public static List<Curve> Explode(Curve curve, bool recursive = false)
