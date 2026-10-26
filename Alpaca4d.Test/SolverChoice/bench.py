@@ -8,7 +8,9 @@ import models
 OPENSEES = os.environ.get("OPENSEES", "OpenSees")
 
 SYSTEMS = ["BandGen", "BandSPD", "ProfileSPD", "SuperLU", "UmfPack",
-           "SparseSYM", "SparseSPD", "SparseGeneral", "FullGeneral"]
+           "SparseSYM", "SparseSPD", "SparseGeneral", "FullGeneral",
+           # only on an OpenSees built with it (Tools/OpenSees); "did not run" on another
+           "Mumps -matrixType 1 -numThreads 0"]
 ALGORITHMS = ["Linear", "Newton", "ModifiedNewton", "KrylovNewton",
               "NewtonLineSearch", "SecantNewton", "BFGS", "Broyden"]
 
