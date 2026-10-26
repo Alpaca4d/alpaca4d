@@ -464,6 +464,23 @@ namespace Alpaca4d.Gh
                     read.Item1, read.Item2, read.Item3, read.Item4, read.Item5, read.Item6);
             }
 
+            // A ten node tetrahedron's stress varies across it, so it gets a value at each of its
+            // ten nodes - the order its mesh carries its vertices in, which is how they are painted.
+            var tenNode = model.Bricks.Where(x => x.ElementClass == Alpaca4d.Element.ElementClass.TenNodeTetrahedron).ToList();
+            if (tenNode.Count > 0)
+            {
+                var read = Alpaca4d.Result.Read.TenNodeTetrahedronStressAtNodes(model, step, local: localAxes);
+                for (int i = 0; i < tenNode.Count && i < read.Count; i++)
+                {
+                    if (!tenNode[i].Id.HasValue)
+                        continue;
+
+                    field.ByElement[tenNode[i].Id.Value] = read[i]
+                        .Select(s => component < 6 ? s[component] : VonMises(s[0], s[1], s[2], s[3], s[4], s[5]))
+                        .ToList();
+                }
+            }
+
             return field;
         }
 
