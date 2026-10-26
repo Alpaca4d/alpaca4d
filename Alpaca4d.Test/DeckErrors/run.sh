@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # A deck that stops on a Tcl error has to come back from Model.RunOpenSees as a failure, though
-# OpenSees exits 0 then. Needs a built Alpaca4d.Core, a C# compiler (mcs) and a net48 RhinoCommon.
+# OpenSees exits 0 then, and Run Analysis has to tell it, and a run that did not converge, from
+# one that solved. Needs a built Alpaca4d.Core, a C# compiler (mcs) and a net48 RhinoCommon.
 # The decks run on every OpenSees found - OPENSEES, the one on PATH and /Applications/OpenSees*/ -
 # and without one only the reading of the trace is checked.
 set -e
@@ -19,7 +20,7 @@ for s in ${OPENSEES:-} $(command -v OpenSees || true) /Applications/OpenSees*/bi
 done
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp DeckErrors.cs "$work/"
+cp DeckErrors.cs ../../Alpaca4d.Gh/Extension/AnalysisOutcome.cs "$work/"
 cp "$COREDIR"/*.dll "$work/" 2>/dev/null || true
 cp "$RHINO" "$work/"
 
@@ -27,5 +28,5 @@ cp "$RHINO" "$work/"
   NETSTD=${NETSTD:-$(ls /Library/Frameworks/Mono.framework/Versions/Current/lib/mono/4.5/Facades/netstandard.dll 2>/dev/null | head -1)}
   NETSTD_REF=""
   [ -n "$NETSTD" ] && NETSTD_REF="-r:$NETSTD"
-  mcs -target:exe -out:DeckErrors.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll $NETSTD_REF DeckErrors.cs
+  mcs -target:exe -out:DeckErrors.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll $NETSTD_REF DeckErrors.cs AnalysisOutcome.cs
   mono DeckErrors.exe "${solvers[@]}" )

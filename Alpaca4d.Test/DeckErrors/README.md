@@ -34,6 +34,7 @@ exits 0: analyze returns its error flag to the deck, which prints `ALPACA_ANALYZ
 |---|---|
 | the trace | read off logs as OpenSees printed them: an unknown command, an OpenSees command that refuses, in a sourced file, in a procedure, a path cut short, a Windows path with CRLF line ends - and not off a log that did not converge, nor the same words printed by a deck at the start of a line |
 | decks | on every OpenSees found (`OPENSEES`, the one on PATH, /Applications/OpenSees*/), through `Model.RunOpenSees`: one that solves and one that does not converge come back 0; an unknown command, an unknown element, an undefined material, an error in a sourced file or a procedure, and one down a 260 character path with spaces come back 1, while OpenSees itself exits 0; a caught error 0, `exit 3` 3 |
+| Run Analysis' verdict | `AnalysisOutcome`, compiled in from its source, on the logs of three of those decks: the one that solves is solved, the one that does not converge says so - OpenSees prints the result line after analyze to its error stream, where it was not looked for - and the unknown command says OpenSees stopped |
 | Moment Curvature | which read any non-zero exit as its axial step failing: its deck with an error put at the top says it stopped on an error |
 
 The checks point the plugin's user folder at the folder they run in, so the solver path they set

@@ -105,6 +105,10 @@ wipe
         return new Model { FileName = path }.RunOpenSees();
     }
 
+    /// <summary>Why Run Analysis fails a run, or null: Alpaca4d.Gh.AnalysisOutcome, compiled in from its source.</summary>
+    static string Verdict((string output, string error, int exitCode) run) =>
+        Alpaca4d.Gh.AnalysisOutcome.Failure(run.output, run.error, run.exitCode);
+
     /// <summary>What OpenSees itself exits with, beside what RunOpenSees hands on.</summary>
     static int Raw(string openSees, string path)
     {
@@ -138,6 +142,14 @@ wipe
         int raw = Raw(openSees, Path.Combine(folder, "unknown_command.tcl"));
         Check("a command Tcl does not know: 1", unknown.exitCode == 1 && !unknown.error.Contains("ALPACA_ANALYZE_RESULT"),
               $"exit {unknown.exitCode}, OpenSees itself {raw}");
+
+        // What Run Analysis and Section Optimiser make of the three: OpenSees prints the result line
+        // after analyze to its error stream, which was not read for it.
+        Check("Run Analysis takes the deck that solves for solved", Verdict(solved) == null, Verdict(solved) ?? "");
+        Check("Run Analysis says the one that does not converge did not",
+              (Verdict(diverged) ?? "").Contains("did not converge"), Verdict(diverged) ?? "taken for solved");
+        Check("Run Analysis says OpenSees stopped on the unknown command",
+              (Verdict(unknown) ?? "").Contains("exited with an error"), Verdict(unknown) ?? "taken for solved");
 
         var element = Run(folder, "unknown_element.tcl", Cantilever + "element NotAnElement 2 1 2 1\n" + Static);
         Check("an element OpenSees does not know: 1", element.exitCode == 1, $"exit {element.exitCode}");
