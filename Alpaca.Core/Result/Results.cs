@@ -57,6 +57,11 @@ namespace Alpaca4d.Result
             if (alpacaModel == null || alpacaModel.Recorders == null || !alpacaModel.Recorders.Any())
                 return 0;
 
+            // A response spectrum analysis records a step per mode and direction, but its steps are
+            // the result cases those are combined into.
+            if (alpacaModel.SpectrumCases != null)
+                return alpacaModel.SpectrumCases.Count;
+
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
             if (!System.IO.File.Exists(recorderPath))
                 return 0;
@@ -102,6 +107,58 @@ namespace Alpaca4d.Result
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// One step of a recorded quantity, rows by columns, out of the DATA group that holds its steps.
+        ///
+        /// After a response spectrum analysis the step is one of its result cases, combined from the
+        /// steps of the modes it is made of (<see cref="Seismic.SpectrumCases"/>). Every reader comes
+        /// through here, so each quantity is combined as itself - a beam's moment from the moments of
+        /// the modes, not from combined displacements - and every result component reads the analysis
+        /// without knowing it was one.
+        /// </summary>
+        private static double[,] StepData(Model alpacaModel, PureHDF.IH5Group data, int step)
+        {
+            var cases = alpacaModel.SpectrumCases;
+            if (cases == null)
+                return RecordedStep(data, step);
+
+            if (!HasStep(alpacaModel, data, step))
+                throw MissingStep(alpacaModel, step);
+            return cases.Combine(step, recorded => RecordedStep(data, recorded));
+        }
+
+        /// <summary>Whether <see cref="StepData"/> can read <paramref name="step"/> out of <paramref name="data"/>.</summary>
+        private static bool HasStep(Model alpacaModel, PureHDF.IH5Group data, int step)
+        {
+            var cases = alpacaModel.SpectrumCases;
+            if (cases == null)
+                return data.LinkExists($"{STEP_PREFIX}{step}");
+
+            return step >= 0 && step < cases.Count && cases.StepsOf(step).All(recorded => data.LinkExists($"{STEP_PREFIX}{recorded}"));
+        }
+
+        /// <summary>What to say when <paramref name="step"/> is not there.</summary>
+        private static Exception MissingStep(Model alpacaModel, int step)
+        {
+            var cases = alpacaModel.SpectrumCases;
+            if (cases == null || (step >= 0 && step < cases.Count))
+                return new Exception($"STEP_{step} not defined!");
+
+            return new Exception($"Step {step} is not a result of this response spectrum analysis. Its steps are " +
+                                 string.Join(", ", cases.Names.Select((name, i) => $"{i} {name}")) + ".");
+        }
+
+        /// <summary>One step as the recorder wrote it.</summary>
+        private static double[,] RecordedStep(PureHDF.IH5Group data, int step)
+        {
+            string name = $"{STEP_PREFIX}{step}";
+            if (!data.LinkExists(name))
+                throw new Exception($"STEP_{step} not defined!");
+
+            var dataset = data.Dataset(name);
+            return dataset.Read<double>().ToArray2D((long)dataset.Space.Dimensions[0], (long)dataset.Space.Dimensions[1]);
         }
 
         /// <summary>
@@ -160,11 +217,7 @@ namespace Alpaca4d.Result
 
             if (alpacaModel.IsModal == false)
             {
-                var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_NODES/{_resultType}/DATA/STEP_{step}");
-                var dimX = (long)dataset.Space.Dimensions[0];
-                var dimY = (long)dataset.Space.Dimensions[1];
-
-                values = dataset.Read<double>().ToArray2D(dimX, dimY);
+                values = StepData(alpacaModel, h5File.Group($"{ON_NODES}/{_resultType}/DATA"), step);
             }
             else
             {
@@ -280,14 +333,12 @@ namespace Alpaca4d.Result
                 foreach (var group in h5File.Group(TRUSS_BASE).Children().OfType<PureHDF.IH5Group>())
                 {
                     var stepGroup = group.Group("DATA");
-                    if (!stepGroup.LinkExists($"STEP_{step}"))
-                        throw new Exception($"STEP_{step} not defined!");
+                    if (!HasStep(alpacaModel, stepGroup, step))
+                        throw MissingStep(alpacaModel, step);
 
                     var idDataset = group.Dataset("ID");
-                    var dataDataset = stepGroup.Dataset($"STEP_{step}");
-                    long rows = (long)dataDataset.Space.Dimensions[0];
-                    long cols = (long)dataDataset.Space.Dimensions[1];
-                    double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                    double[,] data = StepData(alpacaModel, stepGroup, step);
+                    long rows = data.GetLength(0);
                     int[,] ids = idDataset.Read<int>().ToArray2D((long)idDataset.Space.Dimensions[0], 1L);
 
                     for (int r = 0; r < rows; r++)
@@ -298,18 +349,17 @@ namespace Alpaca4d.Result
             foreach (var group in beamGroups)
             {
                 var stepGroup = group.Group("DATA");
-                if (!stepGroup.LinkExists($"STEP_{step}"))
-                    throw new Exception($"STEP_{step} not defined!");
+                if (!HasStep(alpacaModel, stepGroup, step))
+                    throw MissingStep(alpacaModel, step);
 
                 var idDataset   = group.Dataset("ID");
-                var dataDataset = stepGroup.Dataset($"STEP_{step}");
-
-                long rows = (long)dataDataset.Space.Dimensions[0];
-                long cols = (long)dataDataset.Space.Dimensions[1];
                 long idRows = (long)idDataset.Space.Dimensions[0];
 
-                double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                double[,] data = StepData(alpacaModel, stepGroup, step);
                 int[,]    ids  = idDataset.Read<int>().ToArray2D(idRows, 1L);
+
+                long rows = data.GetLength(0);
+                long cols = data.GetLength(1);
 
                 for (int r = 0; r < rows; r++)
                 {
@@ -393,11 +443,7 @@ namespace Alpaca4d.Result
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
             double[,] values;
 
-            var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force/{resultType}/DATA/STEP_{step}");
-            var dimX = (long)dataset.Space.Dimensions[0];
-            var dimY = (long)dataset.Space.Dimensions[1];
-
-            values = dataset.Read<double>().ToArray2D(dimX, dimY);
+            values = StepData(alpacaModel, h5File.Group($"{ON_ELEMENTS}/section.force/{resultType}/DATA"), step);
 
             var asdq4ShellNumber = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellQ4).Count();
 
@@ -492,11 +538,7 @@ namespace Alpaca4d.Result
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
             double[,] values;
 
-            var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force/{resultType}/DATA/STEP_{step}");
-            var dimX = (long)dataset.Space.Dimensions[0];
-            var dimY = (long)dataset.Space.Dimensions[1];
-
-            values = dataset.Read<double>().ToArray2D(dimX, dimY);
+            values = StepData(alpacaModel, h5File.Group($"{ON_ELEMENTS}/section.force/{resultType}/DATA"), step);
 
             var dkgtShellNumber = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ShellDKGT).Count();
 
@@ -590,11 +632,7 @@ namespace Alpaca4d.Result
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
             double[,] values;
 
-            var dataset = h5File.Dataset($"/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force/{resultType}/DATA/STEP_{step}");
-            var dimX = (long)dataset.Space.Dimensions[0];
-            var dimY = (long)dataset.Space.Dimensions[1];
-
-            values = dataset.Read<double>().ToArray2D(dimX, dimY);
+            values = StepData(alpacaModel, h5File.Group($"{ON_ELEMENTS}/section.force/{resultType}/DATA"), step);
 
             var asdt3ShellNumber = alpacaModel.Shells.Where(x => x.ElementClass == Element.ElementClass.ASDShellT3).Count();
 
@@ -753,8 +791,8 @@ namespace Alpaca4d.Result
                     continue;
 
                 var dataGroup = group.Group("DATA");
-                if (!dataGroup.LinkExists($"STEP_{step}"))
-                    throw new Exception($"STEP_{step} not defined!");
+                if (!HasStep(alpacaModel, dataGroup, step))
+                    throw MissingStep(alpacaModel, step);
 
                 var meta = group.Group("META");
 
@@ -768,14 +806,13 @@ namespace Alpaca4d.Result
                 int gaussCount = multiplicity.GetLength(0);
 
                 var idDataset = group.Dataset("ID");
-                var dataDataset = dataGroup.Dataset($"STEP_{step}");
-
-                long rows = (long)dataDataset.Space.Dimensions[0];
-                long cols = (long)dataDataset.Space.Dimensions[1];
                 long idRows = (long)idDataset.Space.Dimensions[0];
 
-                double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                double[,] data = StepData(alpacaModel, dataGroup, step);
                 int[,] ids = idDataset.Read<int>().ToArray2D(idRows, 1L);
+
+                long rows = data.GetLength(0);
+                long cols = data.GetLength(1);
 
                 for (int r = 0; r < rows; r++)
                 {
@@ -910,17 +947,16 @@ namespace Alpaca4d.Result
 
             foreach (var group in groups)
             {
-                if (!group.LinkExists("DATA") || !group.Group("DATA").LinkExists($"{STEP_PREFIX}{step}"))
-                    throw new Exception($"STEP_{step} not defined!");
+                if (!group.LinkExists("DATA") || !HasStep(alpacaModel, group.Group("DATA"), step))
+                    throw MissingStep(alpacaModel, step);
 
                 var idDataset = group.Dataset("ID");
-                var dataDataset = group.Group("DATA").Dataset($"{STEP_PREFIX}{step}");
 
-                long rows = (long)dataDataset.Space.Dimensions[0];
-                long cols = (long)dataDataset.Space.Dimensions[1];
-
-                double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                double[,] data = StepData(alpacaModel, group.Group("DATA"), step);
                 int[,] ids = idDataset.Read<int>().ToArray2D((long)idDataset.Space.Dimensions[0], 1L);
+
+                long rows = data.GetLength(0);
+                long cols = data.GetLength(1);
 
                 for (int r = 0; r < rows; r++)
                 {

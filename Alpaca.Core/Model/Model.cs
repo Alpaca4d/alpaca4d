@@ -193,6 +193,12 @@ namespace Alpaca4d
         /// <summary>The load factors of the buckling modes, lowest first, when <see cref="IsBuckling"/>.</summary>
         public List<double> BucklingFactors { get; set; } = new List<double>();
 
+        /// <summary>
+        /// Set by Response Spectrum Analysis on the model it hands on: its steps are then result cases, each
+        /// combined from the recorded modes as it is read. Null for any other model.
+        /// </summary>
+        public Alpaca4d.Seismic.SpectrumCases SpectrumCases { get; set; }
+
         public List<string> Tcl { get; set; } = new List<string> { };
 
         /// <summary>
