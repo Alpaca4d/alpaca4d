@@ -454,7 +454,7 @@ namespace Alpaca4d.Gh
             var (output, error, exitCode) = run.RunOpenSees();
             log = string.IsNullOrEmpty(error) ? output : error + "\n" + output;
 
-            string failure = AnalysisOutcome.Failure(output, exitCode);
+            string failure = AnalysisOutcome.Failure(output, error, exitCode);
             if (failure != null)
                 throw new Exception(failure);
 

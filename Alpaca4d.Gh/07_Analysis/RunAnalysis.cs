@@ -257,7 +257,7 @@ namespace Alpaca4d.Gh
             string log = string.IsNullOrEmpty(error) ? output : error + "\n" + output;
 
             // Looked for first: it says why the deck stopped, where the exit code only says it did.
-            string failure = Alpaca4d.Element.TenNodeTetrahedron.SolverTooOld(log) ?? AnalysisOutcome.Failure(output, exitCode);
+            string failure = Alpaca4d.Element.TenNodeTetrahedron.SolverTooOld(log) ?? AnalysisOutcome.Failure(output, error, exitCode);
             if (failure != null)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, failure);

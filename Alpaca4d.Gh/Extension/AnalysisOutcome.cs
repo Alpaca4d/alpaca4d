@@ -12,7 +12,10 @@ namespace Alpaca4d.Gh
         public const string AnalyzeResultTag = "ALPACA_ANALYZE_RESULT";
 
         /// <summary>Why the run failed, or null when it solved.</summary>
-        public static string Failure(string output, int exitCode)
+        /// <param name="output">What OpenSees printed to its standard output.</param>
+        /// <param name="error">What it printed to its error stream - which is where Tcl's puts goes, and with it the
+        /// result line: OpenSees puts its own puts in place of Tcl's, and that one writes to opserr.</param>
+        public static string Failure(string output, string error, int exitCode)
         {
             // A non-zero exit code means the Tcl script itself errored out
             // (e.g. bad command, undefined material). OpenSees exits 0 then too;
@@ -22,18 +25,14 @@ namespace Alpaca4d.Gh
 
             // analyze() always returns TCL_OK to Tcl even on non-convergence; the
             // actual result is a negative integer captured via the sentinel below.
-            var resultLine = (output ?? "")
+            // One line per analyze in the deck, and any that failed fails the run.
+            var failed = ((error ?? "") + "\n" + (output ?? ""))
                 .Split(new[] { "\r\n", "\n" }, System.StringSplitOptions.None)
-                .LastOrDefault(l => l.Contains(AnalyzeResultTag));
+                .Where(l => l.Contains(AnalyzeResultTag))
+                .Select(l => l.Substring(l.IndexOf(AnalyzeResultTag) + AnalyzeResultTag.Length).Trim())
+                .Any(token => int.TryParse(token, out int parsed) && parsed < 0);
 
-            if (resultLine != null)
-            {
-                var token = resultLine.Substring(resultLine.IndexOf(AnalyzeResultTag) + AnalyzeResultTag.Length).Trim();
-                if (int.TryParse(token, out int parsed) && parsed < 0)
-                    return "Analysis Failed: OpenSees 'analyze' did not converge.";
-            }
-
-            return null;
+            return failed ? "Analysis Failed: OpenSees 'analyze' did not converge." : null;
         }
     }
 }
