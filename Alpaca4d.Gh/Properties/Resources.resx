@@ -525,4 +525,13 @@ IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT
   <data name="Spring_Support__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Spring Support (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
+  <data name="Design_Spectrum__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Design Spectrum (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Mass_from_Loads__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Mass from Loads (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Response_Spectrum_Analysis__Alpaca4d_" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Response Spectrum Analysis (Alpaca4d).png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
 </root>
