@@ -59,8 +59,12 @@ namespace Alpaca4d.Gh
         // its node numbering. Naming them sigma-xx would be right for only one of the two settings.
         private static readonly string[] BrickStressNames = { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
-        // The outputs of Beam Stresses, in the same order.
-        private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
+        // The outputs of Beam Stresses, in the same order, with σx - N, My and Mz at each fibre -
+        // after its three parts. Files saved before σx are moved one along on load (ViewResults).
+        private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σx", "σmax", "σmin", "τV", "τT", "VonMises" };
+
+        /// <summary>Where σx sits in <see cref="BeamStressNames"/>: a saved Component at or past it predates it.</summary>
+        public const int SigmaX = 3;
 
         /// <summary>
         /// The order the Result dropdown offers the families in: element by element, beams before
@@ -336,17 +340,22 @@ namespace Alpaca4d.Gh
             return field;
         }
 
+        /// <summary>
+        /// One component of a section's stresses. Drawn as a line, a beam has no section to paint,
+        /// so σx is the worst of it: σmax or σmin, whichever is larger in size, with its sign.
+        /// </summary>
         private static double Of(Alpaca4d.Result.BeamStress stress, int component)
         {
             switch (component)
             {
                 case 1: return stress.SigmaMy;
                 case 2: return stress.SigmaMz;
-                case 3: return stress.SigmaMax;
-                case 4: return stress.SigmaMin;
-                case 5: return stress.TauV;
-                case 6: return stress.TauT;
-                case 7: return stress.VonMises;
+                case 3: return Math.Abs(stress.SigmaMax) >= Math.Abs(stress.SigmaMin) ? stress.SigmaMax : stress.SigmaMin;
+                case 4: return stress.SigmaMax;
+                case 5: return stress.SigmaMin;
+                case 6: return stress.TauV;
+                case 7: return stress.TauT;
+                case 8: return stress.VonMises;
                 default: return stress.SigmaN;
             }
         }

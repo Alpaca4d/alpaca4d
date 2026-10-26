@@ -307,6 +307,15 @@ namespace Alpaca4d.Gh
                 _savedInEnumOrder = false;
             }
 
+            // Saved before σx was offered among the beam stresses, a Component from σmax on was
+            // one place further up the list. Moved down to where that stress is now.
+            if (_savedBeforeSigmaX)
+            {
+                if (Family == ResultFamily.BeamStress && _ddComponent.Value >= ResultField.SigmaX)
+                    _ddComponent.Value += 1;
+                _savedBeforeSigmaX = false;
+            }
+
             // Saved before there was a Unit to pick, a result was shown in the unit the solver
             // works in - bar beam stresses, which were in MPa - and a Range wired into it was read
             // in that unit. Put back, so the file draws what it drew; the defaults are for new ones.
@@ -446,10 +455,19 @@ namespace Alpaca4d.Gh
 
         private bool _savedBeforeUnits;
 
+        /// <summary>
+        /// Marks a saved file as offering σx among the beam stresses. A file without it was saved
+        /// with σmax fourth in the list, where σx is now, and its Component is moved on load.
+        /// </summary>
+        private const string SigmaXKey = "BeamStressSigmaX";
+
+        private bool _savedBeforeSigmaX;
+
         public override bool Write(GH_IO.Serialization.GH_IWriter writer)
         {
             writer.SetInt32(MenuOrderKey, 1);
             writer.SetInt32(UnitsKey, 1);
+            writer.SetInt32(SigmaXKey, 1);
             return base.Write(writer);
         }
 
@@ -458,6 +476,7 @@ namespace Alpaca4d.Gh
             // Before base.Read, which reads the dropdown and then calls OnComponentLoaded.
             _savedInEnumOrder = !reader.ItemExists(MenuOrderKey);
             _savedBeforeUnits = !reader.ItemExists(UnitsKey);
+            _savedBeforeSigmaX = !reader.ItemExists(SigmaXKey);
             return base.Read(reader);
         }
 
