@@ -262,7 +262,7 @@ namespace Alpaca4d.Gh
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, failure);
                 analysisModel = null;
             }
-            else if (error.Contains("WARNING"))
+            else if ((settings?.SystemEquation?.WithoutExpectedWarnings(error) ?? error).Contains("WARNING"))
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Warning! Double check the log!");
             }
