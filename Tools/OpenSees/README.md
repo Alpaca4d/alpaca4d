@@ -97,8 +97,23 @@ macOS 26:
 - On a Mac most of the gain is MUMPS itself: Accelerate runs its dense kernels on the matrix
   coprocessor, shared by a cluster of cores, so every core takes off at most a quarter of the
   one-core time on a large model (12-26 % above), and a few milliseconds go on starting the
-  threads on a small one. On Windows MKL runs them
-  on the cores, and the threads should count for more - the workflow measures it on the runner.
+  threads on a small one.
+
+The Windows build, timed by the workflow on GitHub's windows-2022 runner (4 virtual cores), with
+every answer the same as UmfPack's:
+
+| model | DOF | BandSPD | UmfPack | Mumps, 1 core | Mumps, all cores |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| frame 5×5×5 | 1 080 | 7 ms | 17 ms | 11 ms | 43 ms |
+| shell 30×30 | 5 046 | 135 ms | 174 ms | 132 ms | 160 ms |
+| brick 8³ | 1 944 | 40 ms | 62 ms | 38 ms | 51 ms |
+| frame 15×15×15 | 23 040 | 1.01 s | 1.06 s | 0.55 s | 0.45 s |
+| shell 120×120 | 84 966 | 11.6 s | 6.4 s | 4.4 s | 4.2 s |
+| brick 24³ | 45 000 | 30.9 s | 9.1 s | 3.0 s | 2.4 s |
+
+The same picture as on the Mac: 2 to 13 times quicker than BandSPD on a large model. On the
+runner's four virtual cores the threads take off up to a quarter, and starting them costs about
+35 ms on a small model; a desktop with more physical cores is still to be measured.
 
 Mumps with `-matrixType 1` factorises LDLᵀ without pivoting. It gave the exact answer on the
 truss chains of `correctness.py` (1 to 40 DOF, where SparseSPD fails), the same tip as every other
