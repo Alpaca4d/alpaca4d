@@ -7,6 +7,7 @@
     ./make.sh CurvedBeamOptimiser.py            # the Section Optimiser example
     ./make.sh BeamGridOptimiser.py              # the beam grid, supports from corners to centre
     ./make.sh BrickSolverSpeed.py               # the solver speed test, a block of bricks
+    ./make.sh ResponseSpectrumFrame.py          # the Response Spectrum Analysis example
 
 Each example is a Python script that builds a Grasshopper definition from the real Grasshopper
 and Alpaca4d components: it places them, wires them, names and groups them. `make.sh` writes it
@@ -23,6 +24,7 @@ Rhino 7 use `_RunPythonScript`.
 | `BeamGridOptimiser.py` | A Section Optimiser example: a 20 m square grid of beams on four pinned supports, with a node load everywhere and its own weight. A slider walks the supports from the corners towards the centre, from a slab spanning between them to one cantilevering out, and every element is sized on its own within its family. |
 | `MixedModelSpeed.py` | A speed test of Assemble Model: a shell slab on steel beams and columns, cut at the slab's nodes, on a brick raft, with point, line, mesh and gravity loads in one pattern. One slider takes it from a hundred elements to forty thousand. |
 | `BrickSolverSpeed.py` | A speed test of the solver: an 8 x 8 x 6 m concrete block of SSP bricks, pinned along its bottom, with four column loads and its own weight. One slider takes it from 1 500 unknowns to 151 000, and a System list solves it with Mumps on several cores or with BandSPD or UmfPack on one (`Tools/OpenSees`). |
+| `ResponseSpectrumFrame.py` | The Response Spectrum Analysis example: a C30/37 frame of two bays by one and two storeys, with a slab of one shell per bay. Mass from Loads makes the finishes (G2) mass in full and the floor load (Q) at psi2; Design Spectrum, on its NTC 2018 unit, draws the site's design spectrum (q = 3), which shakes the frame along X and Y, combined by CQC and the 30% rule. Panels give the periods, mass ratios and base shears; View Results draws E, Ex or Ey. Sliders for the bays, the storey height and up to six storeys. |
 | `../../Alpaca4d.Test/Optimisation/NonLinearOptimisationCases.py` | The eight test cases of Non-Linear Optimisation, each with a known answer. |
 
 A script works with make.sh when it makes its objects through `emit()`, which uses `make_object`
