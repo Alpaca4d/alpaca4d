@@ -67,6 +67,13 @@ namespace Alpaca4d.Gh
         private readonly List<Mesh> _beamSolids = new List<Mesh>();
         private readonly List<Mesh> _beamEdges = new List<Mesh>();
 
+        // The mesh lists above, each joined into one once the solution is complete, for Rhino to draw
+        // in one call (see Joined) - a face at a time, a solid block was hundreds of thousands of calls
+        // a redraw. And what everything drawn spans, worked out then too rather than every time Rhino
+        // asks for it, which it does on every redraw. Null and empty while there is nothing to draw.
+        private Mesh _shadedJoined, _faceEdgesJoined, _ghostJoined, _diagramsJoined, _beamSolidsJoined, _beamEdgesJoined;
+        private BoundingBox _box = BoundingBox.Empty;
+
         // A section's outline, flattened once per solve rather than once per beam that uses it.
         private readonly Dictionary<IUniaxialSection, List<Polyline>> _outlines = new Dictionary<IUniaxialSection, List<Polyline>>();
 
@@ -572,6 +579,32 @@ namespace Alpaca4d.Gh
             _beamSolids.Clear();
             _beamEdges.Clear();
             _outlines.Clear();
+            _shadedJoined = _faceEdgesJoined = _ghostJoined = _diagramsJoined = _beamSolidsJoined = _beamEdgesJoined = null;
+            _box = BoundingBox.Empty;
+        }
+
+        /// <summary>
+        /// Joins what the solution built, a mesh per list, and lets the pieces go - one per face of every
+        /// element, which on a large solid is a great many meshes to keep. Then measures it all.
+        /// </summary>
+        protected override void AfterSolveInstance()
+        {
+            base.AfterSolveInstance();
+
+            _shadedJoined = Joined.Of(_shaded);
+            _faceEdgesJoined = Joined.Of(_faceEdges);
+            _ghostJoined = Joined.Of(_ghostMeshes);
+            _diagramsJoined = Joined.Of(_diagrams);
+            _beamSolidsJoined = Joined.Of(_beamSolids);
+            _beamEdgesJoined = Joined.Of(_beamEdges);
+            _shaded.Clear();
+            _faceEdges.Clear();
+            _ghostMeshes.Clear();
+            _diagrams.Clear();
+            _beamSolids.Clear();
+            _beamEdges.Clear();
+
+            _box = Extent();
         }
 
         // Animating re-solves twenty times a second, and every solve would otherwise reopen the
@@ -1430,18 +1463,17 @@ namespace Alpaca4d.Gh
             // The solid geometry first and the ghosts last: a transparent material blends against
             // what is already in the depth buffer, so drawing it first would let it hide the very
             // elements it is meant to sit behind.
-            foreach (var mesh in _shaded)
-                args.Display.DrawMeshFalseColors(mesh);
+            if (_shadedJoined != null)
+                args.Display.DrawMeshFalseColors(_shadedJoined);
 
-            foreach (var mesh in _beamSolids)
-                args.Display.DrawMeshFalseColors(mesh);
+            if (_beamSolidsJoined != null)
+                args.Display.DrawMeshFalseColors(_beamSolidsJoined);
 
-            foreach (var mesh in _diagrams)
-                args.Display.DrawMeshFalseColors(mesh);
+            if (_diagramsJoined != null)
+                args.Display.DrawMeshFalseColors(_diagramsJoined);
 
-            var ghost = new DisplayMaterial(GhostColour, 0.75);
-            foreach (var mesh in _ghostMeshes)
-                args.Display.DrawMeshShaded(mesh, ghost);
+            if (_ghostJoined != null)
+                args.Display.DrawMeshShaded(_ghostJoined, new DisplayMaterial(GhostColour, 0.75));
         }
 
         public override void DrawViewportWires(IGH_PreviewArgs args)
@@ -1456,18 +1488,18 @@ namespace Alpaca4d.Gh
 
             if (_ckWires?.Active ?? false)
             {
-                foreach (var mesh in _ghostMeshes)
-                    args.Display.DrawMeshWires(mesh, ghostLine, 1);
+                if (_ghostJoined != null)
+                    args.Display.DrawMeshWires(_ghostJoined, ghostLine, 1);
 
-                foreach (var mesh in _faceEdges)
-                    args.Display.DrawMeshWires(mesh, Color.Black, 1);
+                if (_faceEdgesJoined != null)
+                    args.Display.DrawMeshWires(_faceEdgesJoined, Color.Black, 1);
 
-                foreach (var mesh in _beamEdges)
-                    args.Display.DrawMeshWires(mesh, Color.Black, 1);
+                if (_beamEdgesJoined != null)
+                    args.Display.DrawMeshWires(_beamEdgesJoined, Color.Black, 1);
             }
 
-            foreach (var mesh in _diagrams)
-                args.Display.DrawMeshWires(mesh, Color.Black, 1);
+            if (_diagramsJoined != null)
+                args.Display.DrawMeshWires(_diagramsJoined, Color.Black, 1);
 
             foreach (var curve in _curves)
                 args.Display.DrawCurve(curve.Item1, curve.Item2, 3);
@@ -1495,32 +1527,30 @@ namespace Alpaca4d.Gh
 
         public override bool IsPreviewCapable => true;
 
-        public override BoundingBox ClippingBox
+        public override BoundingBox ClippingBox => _box.IsValid ? _box : base.ClippingBox;
+
+        /// <summary>Everything this component draws, for Rhino to set its clipping planes around.</summary>
+        private BoundingBox Extent()
         {
-            get
+            var box = BoundingBox.Empty;
+
+            foreach (var mesh in new[] { _shadedJoined, _beamSolidsJoined, _ghostJoined, _diagramsJoined })
+                if (mesh != null) box.Union(mesh.GetBoundingBox(false));
+            foreach (var curve in _ghostCurves) box.Union(curve.GetBoundingBox(false));
+            foreach (var curve in _curves) box.Union(curve.Item1.GetBoundingBox(false));
+            foreach (var arrow in _arrows) box.Union(arrow.Item1.BoundingBox);
+
+            // Labels too, grown by how far they stand off and how tall they are. A box that
+            // stops short of what is drawn lets Rhino put a clipping plane through it.
+            if (_labels.Count > 0)
             {
-                var box = BoundingBox.Empty;
-
-                foreach (var mesh in _shaded) box.Union(mesh.GetBoundingBox(false));
-                foreach (var mesh in _beamSolids) box.Union(mesh.GetBoundingBox(false));
-                foreach (var mesh in _ghostMeshes) box.Union(mesh.GetBoundingBox(false));
-                foreach (var mesh in _diagrams) box.Union(mesh.GetBoundingBox(false));
-                foreach (var curve in _ghostCurves) box.Union(curve.GetBoundingBox(false));
-                foreach (var curve in _curves) box.Union(curve.Item1.GetBoundingBox(false));
-                foreach (var arrow in _arrows) box.Union(arrow.Item1.BoundingBox);
-
-                // Labels too, grown by how far they stand off and how tall they are. A box that
-                // stops short of what is drawn lets Rhino put a clipping plane through it.
-                if (_labels.Count > 0)
-                {
-                    double reach = _labels.Max(x => x.Item3) + 2.0 * (_slTextSize?.Value ?? 0.5);
-                    foreach (var label in _labels)
-                        box.Union(new BoundingBox(label.Item1 - new Vector3d(reach, reach, reach),
-                                                  label.Item1 + new Vector3d(reach, reach, reach)));
-                }
-
-                return box.IsValid ? box : base.ClippingBox;
+                double reach = _labels.Max(x => x.Item3) + 2.0 * (_slTextSize?.Value ?? 0.5);
+                foreach (var label in _labels)
+                    box.Union(new BoundingBox(label.Item1 - new Vector3d(reach, reach, reach),
+                                              label.Item1 + new Vector3d(reach, reach, reach)));
             }
+
+            return box;
         }
 
         #endregion
