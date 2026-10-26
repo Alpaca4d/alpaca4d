@@ -34,7 +34,7 @@ What the OpenSees patch changes:
 
 - **CMake**: `-DMUMPS_SEQ_DIR=<MUMPS install>` compiles the MUMPS solver into the `OpenSees`
   target and links the static MUMPS, its OpenMP runtime (libgomp on a Mac, linked in; Intel's
-  libiomp5md on Windows, the DLL Alpaca4d already has beside OpenSees.exe) and the LAPACK
+  libiomp5md on Windows, a DLL that sits beside OpenSees.exe) and the LAPACK
   OpenSees already uses (Accelerate, MKL).
 - **`system Mumps`** compiles without MPI, and takes `-numThreads N` (MUMPS's `ICNTL(16)`).
 - **MumpsSolver**: the sequential communicator; the controls set *after* MUMPS's `JOB=-1`, which
@@ -55,7 +55,7 @@ calls, and MSVC's `/openmp` would pull in a second runtime (vcomp) beside Intel'
 **GitHub Actions** - push a branch with `Tools/OpenSees/**` changed, or run *Multi-core OpenSees*
 from the Actions tab. Each platform is built, checked (`SolverChoice/correctness.py`, then
 `multicore.py` on small and large models) and uploaded as an artifact laid out like
-`Alpaca4d.Gh/OpenSees-Solvers/<platform>`: `bin/` and `lib/tcl8.6/init.tcl`. The Windows job also
+an OpenSees install: `bin/` and `lib/tcl8.6/init.tcl`. The Windows job also
 fails if `OpenSees.exe` asks for any DLL but Windows' own and `libiomp5md.dll`; the Mac one if
 `OpenSees` needs anything macOS does not have.
 
@@ -123,6 +123,7 @@ load - an indefinite matrix - where BandSPD stops (analyze returns -3).
 ## Getting it to users
 
 Alpaca4d does not ship OpenSees: the user installs it and points Alpaca4d at it (Alpaca4d →
-Settings → Set OpenSees Executable). This OpenSees has to reach them some other way - a download of
-the workflow's artifacts, say - or upstream: the patch is small, and with it the official OpenSees
-would have `system Mumps` for everyone.
+Settings → Set OpenSees Executable), and this repository keeps no OpenSees. Build this one, or
+take the workflow's artifact, and install it beside the official one, in `/Applications/OpenSees3.8.0-Mumps/{bin,lib}` on a Mac
+say, keeping `bin` and `lib` side by side. Upstream would be better: the patch is small, and with
+it the official OpenSees would have `system Mumps` for everyone.
