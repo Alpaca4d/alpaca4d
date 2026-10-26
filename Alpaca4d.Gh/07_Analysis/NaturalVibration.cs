@@ -216,7 +216,8 @@ namespace Alpaca4d.Gh
 
             if (exitCode != 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Analysis Failed: OpenSees exited with an error. See log for details.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, Alpaca4d.Element.TenNodeTetrahedron.SolverTooOld(stderr) ??
+                    "Analysis Failed: OpenSees exited with an error. See log for details.");
                 return;
             }
 
