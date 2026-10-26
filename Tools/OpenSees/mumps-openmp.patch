@@ -1,0 +1,29 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -59,11 +59,6 @@
+   # avoid MPICH -fallow flag leakage
+   set(NUMERIC_INC ${MPI_Fortran_INCLUDE_DIRS})
+   list(APPEND NUMERIC_LIBS ${MPI_Fortran_LIBRARIES} MPI::MPI_C)
+-
+-  if(openmp)
+-    find_package(OpenMP COMPONENTS C Fortran REQUIRED)
+-    list(APPEND NUMERIC_LIBS OpenMP::OpenMP_Fortran OpenMP::OpenMP_C)
+-  endif()
+ endif()
+ 
+ # --- ordering libs
+@@ -103,7 +98,14 @@
+ 
+ list(APPEND NUMERIC_LIBS LAPACK::LAPACK ${CMAKE_THREAD_LIBS_INIT})
+ 
++# OpenMP in the sequential (libseq) build as well as the MPI one. Fortran only: the C files
++# make no OpenMP calls, and MSVC's /openmp would add its vcomp runtime beside Intel's.
++if(openmp)
++  find_package(OpenMP COMPONENTS Fortran REQUIRED)
++  list(APPEND NUMERIC_LIBS OpenMP::OpenMP_Fortran)
++endif()
+ 
++
+ configure_file(pord/lib/CMakeLists.txt ${mumps_SOURCE_DIR}/PORD/lib/ COPYONLY)
+ add_subdirectory(${mumps_SOURCE_DIR}/PORD/lib ${mumps_BINARY_DIR}/pord/lib)
+ 
