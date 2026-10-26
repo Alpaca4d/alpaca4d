@@ -1384,6 +1384,40 @@ namespace Alpaca4d
             }
         }
 
+        /// <summary>
+        /// The point masses, a "mass" line per node.
+        ///
+        /// Added up per node first: "mass" sets a node's mass rather than adding to it, so of two masses
+        /// on one node only the last used to count.
+        /// </summary>
+        private void WriteMasses()
+        {
+            var masses = this.Mass.ToList();
+            foreach (var mass in masses)
+            {
+                // SetTag leaves the tag alone when it finds no node, and a Mass Point is the same object
+                // from one model to the next.
+                mass.Id = null;
+                mass.Ndf = null;
+                mass.SetTag(this);
+                if (mass.Id == null)
+                    throw new Exception($"The mass at {mass.Pos} is not on a node of the model.");
+            }
+
+            foreach (var node in masses.GroupBy(mass => mass.Id.Value).OrderBy(node => node.Key))
+            {
+                var first = node.First();
+                var total = new Alpaca4d.Loads.MassLoad(first.Pos,
+                    node.Aggregate(Vector3d.Zero, (sum, mass) => sum + mass.TransMass),
+                    node.Aggregate(Vector3d.Zero, (sum, mass) => sum + mass.RotationMass))
+                {
+                    Id = first.Id,
+                    Ndf = first.Ndf,
+                };
+                this.Tcl.Add(total.WriteTcl());
+            }
+        }
+
         public void Assemble()
         {
             this.Warnings.Clear();
@@ -1504,11 +1538,7 @@ namespace Alpaca4d
             }
 
 
-            foreach (var item in this.Mass)
-            {
-                item.SetTag(this);
-                this.Tcl.Add(item.WriteTcl());
-            }
+            this.WriteMasses();
 
             this.LoadPatternTclStart = this.Tcl.Count;
             this.addLoadPattern(this.LoadPatterns);
