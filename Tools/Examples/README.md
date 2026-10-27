@@ -7,6 +7,8 @@
     ./make.sh CurvedBeamOptimiser.py            # the Section Optimiser example
     ./make.sh BeamGridOptimiser.py              # the beam grid, supports from corners to centre
     ./make.sh BrickSolverSpeed.py               # the solver speed test, a block of bricks
+    ./make.sh TopologyBridge.py                 # the Topology Optimisation example
+    ./make.sh TopologyBenchmarks.py             # Topology Optimisation's two benchmarks, against top3d
 
 Each example is a Python script that builds a Grasshopper definition from the real Grasshopper
 and Alpaca4d components: it places them, wires them, names and groups them. `make.sh` writes it
@@ -23,6 +25,8 @@ Rhino 7 use `_RunPythonScript`.
 | `BeamGridOptimiser.py` | A Section Optimiser example: a 20 m square grid of beams on four pinned supports, with a node load everywhere and its own weight. A slider walks the supports from the corners towards the centre, from a slab spanning between them to one cantilevering out, and every element is sized on its own within its family. |
 | `MixedModelSpeed.py` | A speed test of Assemble Model: a shell slab on steel beams and columns, cut at the slab's nodes, on a brick raft, with point, line, mesh and gravity loads in one pattern. One slider takes it from a hundred elements to forty thousand. |
 | `BrickSolverSpeed.py` | A speed test of the solver: an 8 x 8 x 6 m concrete block of SSP bricks, pinned along its bottom, with four column loads and its own weight. One slider takes it from 1 500 unknowns to 151 000, and a System list solves it with Mumps on several cores or with BandSPD or UmfPack on one (`Tools/OpenSees`). |
+| `TopologyBridge.py` | The Topology Optimisation example: a 16 x 2 x 4 m steel block of SSP Bricks pinned along both ends of its bottom, its top layer a deck kept solid through Keep under 10 kN/m2. With a fifth of the rest it finds an arch rising into the deck, with a column near each end; Bricks per metre takes it from 128 bricks to 8 192. |
+| `TopologyBenchmarks.py` | Topology Optimisation's two benchmarks in top3d's units and settings, each with its own Run toggle: top3d's 60 x 4 x 20 cantilever and a 120 x 4 x 20 simply supported beam, with panels giving the compliance the test bench and top3d reach after 200 iterations. `Alpaca4d.Test/TopologyOptimisation/example.sh` builds and runs it in Rhino. |
 | `../../Alpaca4d.Test/Optimisation/NonLinearOptimisationCases.py` | The eight test cases of Non-Linear Optimisation, each with a known answer. |
 
 A script works with make.sh when it makes its objects through `emit()`, which uses `make_object`
