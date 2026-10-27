@@ -517,9 +517,7 @@ def build(doc):
          "top3d to round-off; the cantilever's runs part by up to 0.2% while its design rearranges itself "
          "around iteration 70, and come back together.\n"
          "3. The same for the simply supported beam, about 90 s.\n"
-         "4. Drag a Step slider back to watch the run again, design by design: every iteration is kept. Each step "
-         "plays the next note of In the Hall of the Mountain King; right-click Topology Optimisation > Sound for "
-         "Ode to Joy, a tone from the compliance, or none.\n\n"
+         "4. Drag a Step slider back to watch the run again, design by design: every iteration is kept.\n\n"
          "Expected: the cantilever as top flange, bottom flange and diagonal webs; the simply supported beam "
          "as a truss, its tie thickest at mid-span. Topology Optimisation needs a license.",
          0, -470, 640, 390)
