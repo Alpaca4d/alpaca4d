@@ -2,7 +2,7 @@
 # Ten node tetrahedron checks: the numbers Alpaca4d keeps about the element against what OpenSees
 # does with it, the stress reader on its four integration points, and the OpenSees it refuses.
 # Needs a built Alpaca4d.Core, a C# compiler and a net48 RhinoCommon. The decks need an OpenSees
-# that knows TenNodeTetrahedronStd - OPENSEES_TET10, or /Applications/OpenSeesLatest/bin/OpenSees;
+# that knows TenNodeTetrahedronStd - OPENSEES_TET10, or /Applications/OpenSeesLatest-Mumps/bin/OpenSees;
 # 3.8.0 and earlier do not. Without one, only the checks that need no solver run. An OpenSees on
 # PATH that does not know the element is run too, for the error Run Analysis has to explain.
 set -e
@@ -21,7 +21,7 @@ cp "$RHINO" "$work/"
 knows() { "$1" patch.tcl > /dev/null 2>&1 && [ -f patch.mpco ]; }
 
 ( cd "$work"
-  OPENSEES=${OPENSEES_TET10:-/Applications/OpenSeesLatest/bin/OpenSees}
+  OPENSEES=${OPENSEES_TET10:-/Applications/OpenSeesLatest-Mumps/bin/OpenSees}
   if [ -x "$OPENSEES" ] && knows "$OPENSEES"; then
     "$OPENSEES" bending.tcl   > /dev/null 2>&1 || echo "warning: bending.tcl did not solve"
     "$OPENSEES" bodyforce.tcl > /dev/null 2>&1 || echo "warning: bodyforce.tcl did not solve"

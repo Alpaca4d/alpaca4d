@@ -45,7 +45,7 @@ it: it does not know the element.
 ## What runs where
 
 **run.sh** compiles `TenNodeTetrahedron.cs` with mono. With an OpenSees that knows the element
-(`OPENSEES_TET10`, default /Applications/OpenSeesLatest/bin/OpenSees) it first solves:
+(`OPENSEES_TET10`, default /Applications/OpenSeesLatest-Mumps/bin/OpenSees) it first solves:
 
 | deck | what it pins down |
 |---|---|

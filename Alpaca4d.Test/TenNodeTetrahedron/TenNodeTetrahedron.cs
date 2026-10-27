@@ -13,7 +13,7 @@
 //      the error such an OpenSees stops with.
 //
 // The decks need an OpenSees that knows TenNodeTetrahedronStd (OPENSEES_TET10, or
-// /Applications/OpenSeesLatest/bin/OpenSees); without one only the checks that need no solver
+// /Applications/OpenSeesLatest-Mumps/bin/OpenSees); without one only the checks that need no solver
 // run. Point3d and Vector3d are managed, so no RhinoCommon native library is needed either.
 using System;
 using System.Collections.Generic;

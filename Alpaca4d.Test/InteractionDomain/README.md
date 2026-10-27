@@ -1,7 +1,7 @@
 # Interaction domain
 
     ./run.sh
-    OPENSEES=/Applications/OpenSeesLatest/bin/OpenSees ./run.sh
+    OPENSEES=/Applications/OpenSeesLatest-Mumps/bin/OpenSees ./run.sh
 
 Checks `Alpaca4d.Section.InteractionDomain`, which Interaction Domain runs, the checks Domain Check
 makes with it, and `MomentCurvatureAnalysis`, which Moment Curvature runs against the same limits.
