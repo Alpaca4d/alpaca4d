@@ -9,6 +9,9 @@
     ./make.sh BrickSolverSpeed.py               # the solver speed test, a block of bricks
     ./make.sh TopologyBridge.py                 # the Topology Optimisation example
     ./make.sh TopologyBenchmarks.py             # Topology Optimisation's two benchmarks, against top3d
+    ./make.sh SpotTheCow.py                     # tetrahedra: a concrete cow under its own weight
+    ./make.sh Femur.py                          # tetrahedra: a femur under the force of the hip
+    ./make.sh InigoTheDragon.py                 # tetrahedra: a concrete dragon's modes
 
 Each example is a Python script that builds a Grasshopper definition from the real Grasshopper
 and Alpaca4d components: it places them, wires them, names and groups them. `make.sh` writes it
@@ -27,10 +30,32 @@ Rhino 7 use `_RunPythonScript`.
 | `BrickSolverSpeed.py` | A speed test of the solver: an 8 x 8 x 6 m concrete block of SSP bricks, pinned along its bottom, with four column loads and its own weight. One slider takes it from 1 500 unknowns to 151 000, and a System list solves it with Mumps on several cores or with BandSPD or UmfPack on one (`Tools/OpenSees`). |
 | `TopologyBridge.py` | The Topology Optimisation example: a 16 x 2 x 4 m steel block of SSP Bricks pinned along both ends of its bottom, its top layer a deck kept solid through Keep under 10 kN/m2. With a fifth of the rest it finds an arch rising into the deck, with a column near each end; Bricks per metre takes it from 128 bricks to 8 192. |
 | `TopologyBenchmarks.py` | Topology Optimisation's two benchmarks in top3d's units and settings, each with its own Run toggle: top3d's 60 x 4 x 20 cantilever and a 120 x 4 x 20 simply supported beam, with panels giving the compliance the test bench and top3d reach after 200 iterations. `Alpaca4d.Test/TopologyOptimisation/example.sh` builds and runs it in Rhino. |
+| `SpotTheCow.py` | A tetrahedron example: Spot the cow, a solid concrete cow 2.4 m long standing on its hooves under its own weight, in 5 030 tetrahedra, with the vertical stress drawn over it. |
+| `Femur.py` | A tetrahedron example on a bone: the Standardised Femur, held at the knee with the force of the hip on its head, in 3 813 tetrahedra, drawn deformed. |
+| `InigoTheDragon.py` | The natural vibration example on tetrahedra: Inigo the dragon, 5.5 m of concrete on its two feet, in 10 903 tetrahedra. A slider picks which of its first 12 modes View Results draws; it opens on both wings flapping together. |
 | `../../Alpaca4d.Test/Optimisation/NonLinearOptimisationCases.py` | The eight test cases of Non-Linear Optimisation, each with a known answer. |
 
 A script works with make.sh when it makes its objects through `emit()`, which uses `make_object`
 when it is set, and has a `build(doc)` that adds them to `doc` and runs nothing at import.
+
+## Tetrahedra
+
+Grasshopper has no tetrahedral mesher, so the tetrahedron examples read theirs from a `.txt` next
+to them - the nodes, one `x y z` a line, then four node numbers per tetrahedron - and keep them in the
+definition. A `*Mesh.py` script made each `.txt` with [gmsh](https://gmsh.info) (`brew install
+gmsh`), from a model it downloads, through `TetMesh.py`:
+
+| Script | Writes | From | Needs besides gmsh |
+| --- | --- | --- | --- |
+| `SpotTheCowMesh.py` | `SpotTheCow.txt` | Spot, Keenan Crane, CC0 | nothing |
+| `FemurMesh.py` | `Femur.txt` | the Standardised Femur, Marco Viceconti, University of Sheffield, CC BY 4.0, [doi 10.15131/shef.data.3839766.v1](https://doi.org/10.15131/shef.data.3839766.v1) | numpy, scipy, scikit-image |
+| `InigoTheDragonMesh.py` | `InigoTheDragon.txt` | Inigo the Dragon, Keenan Crane, CC0 | numpy, scipy, scikit-image, pymeshlab |
+
+The cow fills its own surface. The femur's IGES does not close into a solid, and the dragon's wings
+and fingers are thinner than an element, so those two are rebuilt on a grid first - a signed distance,
+marching cubes, smoothed - and the dragon's wings thickened by 9 cm; each script's docstring says how.
+Run one with Python 3, then `make.sh` on its example. The three solve with Ten Node Tetrahedron,
+which needs an OpenSees built from the master branch since 16 October 2026.
 
 ## What it needs
 
@@ -64,6 +89,7 @@ Alpaca4d's switcher components (ForceBeamColumn, Load Pattern) write a diagnosti
 command line when they save, which is not there outside Rhino; WriteGh.py clears the parent the
 diagnostic checks for, and the component sets it back as it saves.
 
-The three examples are in the docs, under Examples, as `doc/examples/steel-cantilever`,
-`footbridge-study` and `non-linear-optimisation` of the website repository: after writing a
-`.gh` again, copy it there under that name.
+Six examples are in the docs of the website repository: under Examples, as
+`doc/examples/steel-cantilever`, `footbridge-study` and `non-linear-optimisation`; under Ten Node
+Tetrahedron, as `doc/basics/elements/ten-node-tetrahedron/spot-the-cow`, `femur` and
+`inigo-the-dragon`. After writing a `.gh` again, copy it there under that name.
