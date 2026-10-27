@@ -461,10 +461,10 @@ class TopologyOptimisationTest
         Check(again.History.Count == 15 && again.Densities.SequenceEqual(first.Densities), "taken on to where it already is, it analyses nothing");
     }
 
-    /// <summary>The design after every iteration, kept small, read back as it was; and the tone of each step.</summary>
+    /// <summary>The design after every iteration, kept small, read back as it was.</summary>
     static void Frames(string openSees, string folder)
     {
-        Section("Every iteration's design, and its tone");
+        Section("Every iteration's design");
 
         // The store on its own: whole frames and changes, read back to the byte, any frame in any order.
         var random = new Random(5);
@@ -507,33 +507,6 @@ class TopologyOptimisationTest
             rest = TopologyOptimiser.Run(cells, problem.Settings, analysis.Energies, previous: first, frames: more);
         Check(more.Count == 21 && first.Frames.Count == 13, $"going on to 20 keeps 21, and leaves the first run's 13 alone ({more.Count}, {first.Frames.Count})");
         Check(more[20].Zip(rest.Densities, (a, b) => Math.Abs(a - b)).Max() <= 0.5 / 255.0 + 1e-15, "the last frame is the run's last design");
-
-        // The tones: a pitch per step on the scale, rising as the compliance falls, and a chime at convergence.
-        var history = rest.History;
-        var pitches = Enumerable.Range(0, history.Count + 1).Select(k => StepTone.Tones(history, k, false)[0].Frequency).ToList();
-        var notes = Enumerable.Range(0, StepTone.Scale.Count).Select(StepTone.Note).ToList();
-        Check(pitches.All(f => notes.Any(n => Math.Abs(n - f) < 1e-9)), "every step's tone is a note of the scale");
-        Check(pitches[0] == notes[0] && pitches.Max() == notes.Last(), $"from the bottom note at the start to the top one at the stiffest ({pitches[0]:0} Hz to {pitches.Max():0} Hz)");
-        Check(StepTone.Tones(history, history.Count, true).Count == 2 && StepTone.Tones(new List<TopologyIteration>(), 0, false).Count == 0,
-            "a converged run ends on two notes, and a run with no iterations has none");
-
-        // The tunes: a note a step, from the start again when they run out, and Beethoven's Fifth at convergence.
-        Check(Math.Abs(StepTone.Frequency("A4") - 440.0) < 1e-9 && Math.Abs(StepTone.Frequency("E#4") - StepTone.Frequency("F4")) < 1e-9 &&
-              Math.Abs(StepTone.Frequency("Eb4") - StepTone.Frequency("D#4")) < 1e-9 && Math.Abs(StepTone.Frequency("A3") - 220.0) < 1e-9,
-            "notes by name: A4 at 440 Hz, E# is F, Eb is D#");
-        var king = Enumerable.Range(0, StepTone.MountainKing.Count).Select(k => StepTone.Tones(history, k, false, StepSound.MountainKing).Single()).ToList();
-        Check(Math.Abs(king[0].Frequency - StepTone.Frequency("B3")) < 1e-9 && Math.Abs(king[4].Frequency - StepTone.Frequency("F#4")) < 1e-9 &&
-              king[6].Milliseconds > king[5].Milliseconds,
-            $"In the Hall of the Mountain King: B, C#, D, E, F#, D, F# held longer ({king[0].Frequency:0.0} Hz, {king[6].Milliseconds} ms)");
-        var wrapped = StepTone.Tones(history, StepTone.MountainKing.Count, false, StepSound.MountainKing).Single();
-        Check(wrapped.Frequency == king[0].Frequency, $"after its {StepTone.MountainKing.Count} notes it starts again");
-        Check(Math.Abs(StepTone.Tones(history, 0, false, StepSound.OdeToJoy).Single().Frequency - StepTone.Frequency("F#4")) < 1e-9,
-            "Ode to Joy starts on F#");
-        var finale = StepTone.Tones(history, history.Count, true, StepSound.OdeToJoy);
-        Check(finale.Count == 8 && Math.Abs(finale[0].Frequency - StepTone.Frequency("G4")) < 1e-9 && Math.Abs(finale[3].Frequency - StepTone.Frequency("Eb4")) < 1e-9,
-            "the step a run converged at plays Beethoven's Fifth: G G G Eb, F F F D");
-        Check(StepTone.Tones(history, 3, false, StepSound.Off).Count == 0 &&
-              StepTone.Tones(history, 3, false, StepSound.Compliance)[0].Frequency == pitches[3], "Off plays nothing, and Compliance the compliance tone");
     }
 
     static void Bench(string name, string openSees, string folder, int iterations)

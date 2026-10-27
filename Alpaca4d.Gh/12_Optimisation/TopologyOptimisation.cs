@@ -161,9 +161,7 @@ namespace Alpaca4d.Gh
 
             unit.RegisterInputParam(new Param_Integer(), "Step", "Step",
                 "Which iteration's design to show: 0 the one the run starts from, 1 the one after the first iteration, and so on. " +
-                "Left empty, the latest. Connect a slider and drag it to watch the run again; every design is kept, small. " +
-                "Each step plays the next note of In the Hall of the Mountain King as you go; right-click the component to " +
-                "choose another sound, or none.",
+                "Left empty, the latest. Connect a slider and drag it to watch the run again; every design is kept, small.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
             unit.RegisterOutputParam(new Param_Integer(), "Step", "Step",
@@ -419,8 +417,7 @@ namespace Alpaca4d.Gh
 
         /// <summary>
         /// The outputs of the design after iteration <paramref name="step"/>, or of the latest when it is null or
-        /// beyond what has run, and what the run is doing; and the step's tone, when Sound is ticked and the step
-        /// shown has changed.
+        /// beyond what has run, and what the run is doing.
         /// </summary>
         private void Show(IGH_DataAccess DA, TopologyRun run, double threshold, int? step)
         {
@@ -438,11 +435,6 @@ namespace Alpaca4d.Gh
                 shown = step.Value;
                 densities = run.Frames[shown];
             }
-
-            if (Sound != StepSound.Off && (run != _soundedRun || shown != _soundedStep))
-                TonePlayer.Play(StepTone.Tones(history, shown, run.Result?.Converged == true && !run.IsRunning, Sound));
-            _soundedRun = run;
-            _soundedStep = shown;
 
             var surface = new DensitySurface(cells, densities, tag => model.Nodes[tag - 1].Pos, threshold);
             var mesh = new Mesh();
@@ -483,61 +475,6 @@ namespace Alpaca4d.Gh
         private void Set(IGH_DataAccess DA, string name, System.Collections.IEnumerable data)
         {
             DA.SetDataList(this.Params.IndexOfOutputParam(name), data);
-        }
-
-        /// <summary>
-        /// What plays for every step shown - stepping through with a slider, or as the run goes (<see cref="StepTone"/>):
-        /// nothing, a tone from its compliance, or the next note of a tune. In the Hall of the Mountain King unless chosen
-        /// otherwise; saved with the definition.
-        /// </summary>
-        internal StepSound Sound { get; set; } = StepSound.MountainKing;
-
-        private TopologyRun _soundedRun;
-        private int _soundedStep = -1;
-
-        // Its own key: an earlier build saved an on/off under "TopologySound", and a definition from it plays the default.
-        private const string SoundKey = "TopologySoundMode";
-
-        private static readonly (StepSound Sound, string Name, string Tip)[] Sounds =
-        {
-            (StepSound.Off, "Off", "No sound."),
-            (StepSound.Compliance, "Compliance", "A tone for every step, higher as the design gets stiffer: you hear when it stops improving."),
-            (StepSound.MountainKing, "In the Hall of the Mountain King", "Grieg: the next note for every step, so dragging Step plays the tune."),
-            (StepSound.OdeToJoy, "Ode to Joy", "Beethoven: the next note for every step, so dragging Step plays the tune."),
-        };
-
-        protected override void AppendAdditionalComponentMenuItems(System.Windows.Forms.ToolStripDropDown menu)
-        {
-            base.AppendAdditionalComponentMenuItems(menu);
-            Menu_AppendSeparator(menu);
-            var sound = Menu_AppendItem(menu, "Sound: " + Sounds.First(s => s.Sound == Sound).Name);
-            sound.ToolTipText = "What plays for every step shown: drag a slider on Step to hear the run. " +
-                                "With a tune, the step a run converged at plays the opening of Beethoven's Fifth.";
-            foreach (var (value, name, tip) in Sounds)
-            {
-                var item = Menu_AppendItem(sound.DropDown, name, (sender, e) =>
-                {
-                    if (Sound == value) return;
-                    RecordUndoEvent("Sound");
-                    Sound = value;
-                    _soundedStep = -1;
-                    ExpireSolution(true);
-                }, true, Sound == value);
-                item.ToolTipText = tip;
-            }
-        }
-
-        public override bool Write(GH_IO.Serialization.GH_IWriter writer)
-        {
-            writer.SetString(SoundKey, Sound.ToString());
-            return base.Write(writer);
-        }
-
-        public override bool Read(GH_IO.Serialization.GH_IReader reader)
-        {
-            string sound = null;
-            Sound = reader.TryGetString(SoundKey, ref sound) && Enum.TryParse(sound, out StepSound parsed) ? parsed : StepSound.MountainKing;
-            return base.Read(reader);
         }
 
         public override void RemovedFromDocument(GH_Document document)

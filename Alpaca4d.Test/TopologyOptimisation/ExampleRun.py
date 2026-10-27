@@ -86,12 +86,6 @@ try:
     check(len(objects) == 62, "the definition has its 62 objects ({0})".format(len(objects)))
 
     topologies = dict((o.NickName, o) for o in objects if o.GetType().Name == "TopologyOptimisation")
-
-    # They play In the Hall of the Mountain King unless told otherwise; the check runs silent.
-    for topology in topologies.values():
-        sound = topology.GetType().GetProperty("Sound", BindingFlags.NonPublic | BindingFlags.Instance)
-        check(str(sound.GetValue(topology)) == "MountainKing", "{0} plays In the Hall of the Mountain King".format(topology.NickName))
-        sound.SetValue(topology, System.Enum.Parse(sound.PropertyType, "Off"))
     toggles = dict((o.NickName, o) for o in objects if o.GetType().Name == "GH_BooleanToggle")
     check(sorted(topologies) == ["Cantilever", "Simply supported"], "with two Topology Optimisation components")
 

@@ -65,12 +65,8 @@ sensitivities are scaled to a largest ratio of one first, so that a model in kN 
 * **Every iteration's design** (`DensityHistory`): frames read back to within half a byte (0.002), in
   any order, whole frames every 16th and changes between; a run of 12 keeps 13 frames, frame 0 the
   uniform start and frame k the design after iteration k; going on carries them on, leaving the first
-  run's alone. Each step's compliance tone (`StepTone`) is a note of the scale, from the bottom note at
-  the start to the top at the stiffest, with two notes at convergence. The tunes play a note a step -
-  In the Hall of the Mountain King from B, C#, D, E, F#, Ode to Joy from F# - start again when they run
-  out, and end a converged run on Beethoven's Fifth; Off plays nothing. `./run.sh bench <name>` prints how small the
-  frames are: the cantilever's 201 in 92 KB (doubles 7.4 MB, bytes 942 KB, each byte frame deflated
-  whole 342 KB), the tower's 44 in 19 KB.
+  run's alone. `./run.sh bench <name>` prints how small the frames are: the cantilever's 201 in 92 KB
+  (doubles 7.4 MB, bytes 942 KB, each byte frame deflated whole 342 KB), the tower's 44 in 19 KB.
 
 ## The benchmarks
 
@@ -128,9 +124,7 @@ alone, as the run does when it asks for a solution.
 build of the plugin, solves the definition, switches both Run toggles on with Iterations at 30
 (`ITERATIONS`), and compares each problem's compliance at that iteration with the test bench's history
 in `RESULTS`: 1.1e-11 and 2.4e-11 apart on 2026-10-27, in 16 s for both runs together. Then its Step
-slider: 0 shows the uniform start, 10 a design between, and its end the latest again. A new Topology
-Optimisation plays In the Hall of the Mountain King; both checks confirm it, then set every component
-they make to Off, so that nothing plays in the Rhino they run in.
+slider: 0 shows the uniform start, 10 a design between, and its end the latest again.
 
 ## The papers
 

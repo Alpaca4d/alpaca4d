@@ -203,21 +203,9 @@ public static class GrasshopperCheck
         return assemble;
     }
 
-    /// <summary>Topology Optimisation's sound as it is, and set to <paramref name="to"/>: the checks run silent.</summary>
-    static string Sound(GH_Component topology, string to = "Off")
-    {
-        var property = topology.GetType().GetProperty("Sound", BindingFlags.NonPublic | BindingFlags.Instance);
-        string was = property.GetValue(topology).ToString();
-        property.SetValue(topology, Enum.Parse(property.PropertyType, to));
-        return was;
-    }
-
     static GH_Component Topology(Doc doc, GH_Component assemble, int iterations, bool run = true)
     {
         var topology = doc.Add<Alpaca4d.Gh.TopologyOptimisation>("TopologyOptimisation");
-        string sound = Sound(topology);
-        if (sound != "MountainKing")
-            Check(false, $"a new Topology Optimisation plays In the Hall of the Mountain King (it plays {sound})");
         Wire(assemble, "AlpacaModel", topology, "AlpacaModel");
         Set(topology, "VolumeFraction", new GH_Number(0.3));
         Set(topology, "Iterations", new GH_Integer(iterations));
