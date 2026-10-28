@@ -4,6 +4,7 @@ using Rhino.Geometry;
 using System;
 using System.Drawing;
 using System.Collections.Generic;
+using System.Linq;
 using Alpaca4d.Generic;
 using Alpaca4d;
 
@@ -29,7 +30,7 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("Section", "Section", "Shell section, which carries the thickness and the material. Connect a Plate Fiber Section.", GH_ParamAccess.item);
             pManager.AddColourParameter("Colour", "Colour", "Colour to draw the element in. Display only; it changes nothing in the analysis.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddVectorParameter("Local X Axis", "LocalX", "Direction the section's local x axis points in, which is what shell forces and stresses are reported in. It is flattened onto the element's plane, so it only has to point roughly the right way.\nLeft empty, each element takes its own default: node 1 to 2 on a triangle, and on a quad the line joining the midpoints of sides 2-3 and 4-1 - which is the first edge only on a parallelogram. Turn Local Axes on in Model View to see what any element ended up with.\nNeeds an OpenSees build that supports \"-local\" on the ASD shells. Older ones, 3.5.1 among them, ignore the option without saying so: the deck still runs and the element keeps its default orientation.", GH_ParamAccess.item);
+            pManager.AddVectorParameter("Local X Axis", "LocalX", "Direction the section's local x axis points in, which is what shell forces and stresses are reported in. It is flattened onto the element's plane, so it only has to point roughly the right way - though not along the shell's normal: within 1° of it on any face is an error, naming the faces.\nLeft empty, each element takes its own default: node 1 to 2 on a triangle, and on a quad the line joining the midpoints of sides 2-3 and 4-1 - which is the first edge only on a parallelogram. Turn Local Axes on in Model View to see what any element ended up with.\nNeeds an OpenSees build that supports \"-local\" on the ASD shells. Older ones, 3.5.1 among them, ignore the option without saying so: the deck still runs and the element keeps its default orientation.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Is Corotational", "IsCorotational", "Use the corotational formulation, which keeps the element honest through large rotations at the cost of a slower analysis. Leave it off for small displacements.", GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -79,6 +80,33 @@ namespace Alpaca4d.Gh
             else
             {
                 meshes.Add(_mesh);
+            }
+
+            // Along a face's normal, the Local X leaves nothing to flatten into the face. OpenSees
+            // stops on it only at Run Analysis, and says so only in the log; a hair off it, the
+            // axis turns with every tilt of the face. So it is turned away here, by face.
+            if (localX.IsValid && localX.Length > Rhino.RhinoMath.ZeroTolerance)
+            {
+                var square = new List<int>();
+                for (int i = 0; i < meshes.Count; i++)
+                {
+                    if (meshes[i].Vertices.Count != 3 && meshes[i].Vertices.Count != 4) continue;
+                    double angle = Utils.ShellLocalXAngle(meshes[i].Vertices.ToPoint3dArray(), localX);
+                    if (angle < Utils.ShellLocalXTolerance)
+                        square.Add(i);
+                }
+
+                if (square.Count > 0)
+                {
+                    const int listed = 10;
+                    string faces = string.Join(", ", square.Take(listed)) + (square.Count > listed ? $" and {square.Count - listed} more" : "");
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                        $"The Local X Axis ({localX.X:G4}, {localX.Y:G4}, {localX.Z:G4}) lies within {Utils.ShellLocalXTolerance:G}° of the normal of " +
+                        (square.Count == 1 ? "face " : $"{square.Count} of the {meshes.Count} faces, ") + faces +
+                        " (counting from 0), so it cannot be flattened into " + (square.Count == 1 ? "it" : "them") +
+                        " to give an axis. Give a Local X that runs along the shell, or leave it empty for each face's default.");
+                    return;
+                }
             }
 
 			var elements = new List<Alpaca4d.Generic.IShell>();
