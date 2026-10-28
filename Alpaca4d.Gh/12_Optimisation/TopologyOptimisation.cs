@@ -38,7 +38,8 @@ namespace Alpaca4d.Gh
             "model take no part: they keep their full stiffness. One OpenSees stays open for the whole run.\n" +
             "Set Run to true to start. The outputs follow the run as it goes. Switching Run off pauses it; on again, it goes on " +
             "from where it stopped, and so does a run given more Iterations or a smaller Tolerance after it ended. Changing any " +
-            "other input starts it again from the beginning.";
+            "other input starts it again from the beginning.\n" +
+            "Once it stops, AlpacaModel is the design as a model of its own, solid and void, to analyse.";
 
         public TopologyOptimisation()
           : base("Topology Optimisation (Alpaca4d)", "Topology", Help, "Alpaca4d", "12_Optimisation")
@@ -130,7 +131,7 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "Threshold", "Threshold",
-                "The density from which an element counts as solid, for the Solid and Surface outputs. It changes nothing in the run.",
+                "The density from which an element counts as solid, for the Surface, Solid and AlpacaModel outputs. It changes nothing in the run.",
                 GH_ParamAccess.item, new GH_Number(0.5));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -142,9 +143,13 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterOutputParam(new Param_Mesh(), "Surface", "Surface",
-                "The outline of the material kept: where the density crosses Threshold, closed where it meets the edge of the domain.");
+                "The outline of the material kept: where the density crosses Threshold, closed where it meets the edge of the domain. " +
+                "It outlines what Solid holds: without the pieces left out, with the elements that join a member's steps, and " +
+                "without the crumbs a thin member's surface breaks into where it fades out around Threshold.");
             unit.RegisterOutputParam(new Param_GenericObject(), "Solid", "Solid",
-                "The solids at or above Threshold, as the model has them: assemble them again with the supports and loads to check the result.");
+                "The solids at or above Threshold that make the structure, as new copies of the model's: pieces no face joins to a part " +
+                "the supports hold still are left out, and where a member's elements meet only along an edge or at a corner, the " +
+                "element that joins them is in. AlpacaModel is these, assembled with the supports and loads.");
             unit.RegisterOutputParam(new Param_Number(), "Density", "Density",
                 "Each solid's density, 0 to 1, in the order of the Element output.");
             unit.RegisterOutputParam(new Param_GenericObject(), "Element", "Element", ElementIdentity.ElementOutput);
@@ -165,7 +170,12 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
             unit.RegisterOutputParam(new Param_Integer(), "Step", "Step",
-                "The iteration whose design Surface, Solid and Density show.");
+                "The iteration whose design Surface, Solid, Density and AlpacaModel show.");
+            // AlpacaModel came after Step, and is registered last for the same reason.
+            unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
+                "The design as a model to analyse, once the run has stopped: the Solid output at full stiffness, the model's other " +
+                "elements, and the supports, point loads and masses that stand on them. Feed it to an analysis as you would " +
+                "Assemble Model's.");
 
             var settings = new GH_ExtendableMenu(0, "TopologyOptimisation_Settings")
             {
@@ -436,7 +446,29 @@ namespace Alpaca4d.Gh
                 densities = run.Frames[shown];
             }
 
-            var surface = new DensitySurface(cells, densities, tag => model.Nodes[tag - 1].Pos, threshold);
+            var design = DesignOf(run, densities, threshold, shown);
+            var pieces = design.Pieces;
+            if (pieces.LeftOut > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    $"{pieces.LeftOut} solid element{(pieces.LeftOut == 1 ? "" : "s")} in {pieces.PiecesLeftOut} piece{(pieces.PiecesLeftOut == 1 ? " is" : "s are")} " +
+                    "left out of Surface, Solid and AlpacaModel: no face joins them to a part the supports hold still.");
+            if (pieces.Bridged > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    $"{pieces.Bridged} element{(pieces.Bridged == 1 ? "" : "s")} under Threshold {(pieces.Bridged == 1 ? "is" : "are")} in Solid and AlpacaModel all the same: " +
+                    "they join steps of a member that meet only along an edge or at a corner, where the member would hinge. Surface shows them solid.");
+
+            // The surface outlines what Solid holds: the loose pieces void, their neighbours staying under the
+            // threshold, and the elements joining steps solid.
+            var outline = densities.ToArray();
+            for (int i = 0; i < outline.Length; i++)
+            {
+                bool solid = cells[i].Passive || outline[i] >= threshold;
+                if (solid && !pieces.Kept[i])
+                    outline[i] = 0.0;
+                else if (!solid && pieces.Kept[i])
+                    outline[i] = 1.0;
+            }
+            var surface = new DensitySurface(cells, outline, tag => model.Nodes[tag - 1].Pos, threshold);
             var mesh = new Mesh();
             mesh.Vertices.AddVertices(surface.Vertices);
             foreach (var t in surface.Triangles)
@@ -447,9 +479,32 @@ namespace Alpaca4d.Gh
             mesh.Normals.ComputeNormals();
             mesh.Compact();
 
+            // Where a thin member fades out just around Threshold, the surface through the averaged
+            // densities breaks into crumbs apart from the rest, though Solid joins their elements to it.
+            var parts = mesh.SplitDisjointPieces();
+            if (parts.Length > 1)
+            {
+                var volumes = parts.Select(part => Math.Abs(VolumeMassProperties.Compute(part, true, false, false, false)?.Volume ?? 0.0)).ToArray();
+                double largest = volumes.Max();
+                var whole = Enumerable.Range(0, parts.Length).Where(i => volumes[i] >= 0.01 * largest).ToList();
+                int crumbs = parts.Length - whole.Count;
+                if (crumbs > 0)
+                {
+                    mesh = new Mesh();
+                    foreach (int i in whole)
+                        mesh.Append(parts[i]);
+                    mesh.Normals.ComputeNormals();
+                    mesh.Compact();
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        $"Surface leaves out {crumbs} crumb{(crumbs == 1 ? "" : "s")}, under a hundredth of the largest piece each: where a thin " +
+                        "member fades out around Threshold its surface breaks up, though Solid joins its elements to the rest.");
+                }
+            }
+
             var bricks = model.Bricks;
             Set(DA, "Surface", new[] { mesh });
-            Set(DA, "Solid", Enumerable.Range(0, bricks.Count).Where(i => densities[i] >= threshold).Select(i => bricks[i]));
+            // Copies: assembled again, the model's own would be renumbered under the run.
+            Set(DA, "Solid", Enumerable.Range(0, bricks.Count).Where(i => pieces.Kept[i]).Select(i => TopologyDesign.Copy(bricks[i])));
             Set(DA, "Density", densities);
             Set(DA, "Element", bricks);
             Set(DA, "Compliance", history.Select(it => it.Compliance));
@@ -458,6 +513,16 @@ namespace Alpaca4d.Gh
             Set(DA, "History", history);
             Set(DA, "log", new[] { run.Log });
             Set(DA, "Step", new[] { shown });
+
+            // The design as a model once the run has stopped: assembling it every second would slow the run down.
+            if (!run.IsRunning)
+            {
+                var analysed = design.Model(run.Model, cells);
+                foreach (var (level, text) in design.Messages)
+                    AddRuntimeMessage(level, text);
+                if (analysed != null)
+                    Set(DA, "AlpacaModel", new[] { analysed });
+            }
 
             int done = history.Count;
             if (run.IsRunning)
@@ -475,6 +540,69 @@ namespace Alpaca4d.Gh
         private void Set(IGH_DataAccess DA, string name, System.Collections.IEnumerable data)
         {
             DA.SetDataList(this.Params.IndexOfOutputParam(name), data);
+        }
+
+        /// <summary>
+        /// A design shown: its pieces and, once asked for, its model with what assembling it had to say.
+        /// Kept while the same design of the same run is shown, so that a solution that changes nothing
+        /// neither finds the pieces again nor assembles them again.
+        /// </summary>
+        private sealed class ShownDesign
+        {
+            public TopologyRun Run;
+            public int Step;
+            public double Threshold;
+            public SolidPieces Pieces;
+            public readonly List<(GH_RuntimeMessageLevel level, string text)> Messages = new List<(GH_RuntimeMessageLevel, string)>();
+
+            private bool _built;
+            private Alpaca4d.Model _model;
+
+            /// <summary>The design as a model, assembled, or null with a message saying why not.</summary>
+            public Alpaca4d.Model Model(Alpaca4d.Model optimised, IReadOnlyList<SolidCell> cells)
+            {
+                if (_built)
+                    return _model;
+                _built = true;
+
+                if (!Pieces.Kept.Any(kept => kept))
+                {
+                    Messages.Add((GH_RuntimeMessageLevel.Warning, "No part of the design is held still by the supports, so AlpacaModel is empty."));
+                    return null;
+                }
+                try
+                {
+                    _model = TopologyDesign.Build(optimised, cells, Pieces.Kept, out int supports, out int loads);
+                    if (supports > 0)
+                        Messages.Add((GH_RuntimeMessageLevel.Remark,
+                            $"{supports} support{(supports == 1 ? " stands" : "s stand")} where the design is void: AlpacaModel leaves {(supports == 1 ? "it" : "them")} out."));
+                    if (loads > 0)
+                        Messages.Add((GH_RuntimeMessageLevel.Warning,
+                            $"{loads} point load{(loads == 1 ? " or mass stands" : "s or masses stand")} on nothing the design keeps, void or a piece left " +
+                            $"out: AlpacaModel leaves {(loads == 1 ? "it" : "them")} out, so it does not carry every load the design was made for."));
+                }
+                catch (Exception ex)
+                {
+                    Messages.Add((GH_RuntimeMessageLevel.Warning, "The design could not be assembled as a model: " + ex.Message));
+                }
+                return _model;
+            }
+        }
+
+        private ShownDesign _shown;
+
+        private ShownDesign DesignOf(TopologyRun run, double[] densities, double threshold, int step)
+        {
+            if (_shown != null && _shown.Run == run && _shown.Step == step && _shown.Threshold == threshold)
+                return _shown;
+            _shown = new ShownDesign
+            {
+                Run = run,
+                Step = step,
+                Threshold = threshold,
+                Pieces = TopologyDesign.Pieces(run.Model, run.Cells, densities, threshold),
+            };
+            return _shown;
         }
 
         public override void RemovedFromDocument(GH_Document document)
