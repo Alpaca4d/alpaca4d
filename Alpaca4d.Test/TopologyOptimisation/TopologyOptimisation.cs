@@ -206,9 +206,11 @@ class TopologyOptimisationTest
 
         FilterChecks();
         SurfaceChecks();
+        PiecesChecks();
         ProtocolChecks(openSees, folder);
         EnergyChecks(openSees, folder);
         SmallRun(openSees, folder);
+        DesignAnalysed(openSees, folder);
         GoingOn(openSees, folder);
         Frames(openSees, folder);
 
@@ -424,6 +426,161 @@ class TopologyOptimisationTest
                           $"{N(history.Last().Compliance)} last (GrasshopperChecks.cs solves the same problem)");
     }
 
+    /// <summary>The restraints of a problem's fixes, one per node and direction held.</summary>
+    static List<(int, Vector3d)> Restraints(List<(int, string)> fixes)
+    {
+        var axes = new[] { Vector3d.XAxis, Vector3d.YAxis, Vector3d.ZAxis };
+        var restraints = new List<(int, Vector3d)>();
+        foreach (var fix in fixes)
+        {
+            var held = fix.Item2.Split(' ');
+            for (int d = 0; d < 3; d++)
+                if (held[d] == "1") restraints.Add((fix.Item1, axes[d]));
+        }
+        return restraints;
+    }
+
+    /// <summary>Held at each node in the directions of <paramref name="dofs"/>, "1 1 1" for all three.</summary>
+    static List<(int, Vector3d)> HeldAt(string dofs, params int[] nodes) => Restraints(nodes.Select(n => (n, dofs)).ToList());
+
+    /// <summary>Pinned at each node: held in all three directions.</summary>
+    static List<(int, Vector3d)> PinnedAt(int[] nodes) => HeldAt("1 1 1", nodes);
+
+    /// <summary>A node's place on a grid of unit cubes.</summary>
+    static Point3d At(Grid grid, int tag)
+    {
+        int t = tag - 1, nx = grid.Nx + 1, ny = grid.Ny + 1;
+        return new Point3d(t % nx, t / nx % ny, t / (nx * ny));
+    }
+
+    /// <summary>Cells (i, 0, k) solid, given as i, k pairs one after the other.</summary>
+    static bool[] SolidAt(Grid grid, int[] ik)
+    {
+        var solid = new bool[grid.Nx * grid.Ny * grid.Nz];
+        for (int n = 0; n < ik.Length; n += 2) solid[grid.Element(ik[n], 0, ik[n + 1]) - 1] = true;
+        return solid;
+    }
+
+    static SolidCell Tet(Point3d[] p, int tag, int[] nodes) =>
+        new SolidCell(tag, SolidShape.Tetrahedron, nodes,
+            new Point3d(nodes.Average(n => p[n - 1].X), nodes.Average(n => p[n - 1].Y), nodes.Average(n => p[n - 1].Z)), 1.0 / 6.0, 1.0);
+
+    static void PiecesChecks()
+    {
+        Section("The pieces of a design");
+        // One brick deep: cells (i, 0, k), a block 3 wide and 2 high held all over its face at x = 0.
+        var grid = new Grid(7, 1, 4);
+        var cells = grid.Cells(1.0);
+        Func<int, Point3d> at = tag => At(grid, tag);
+        var face = new List<(int, string)>();
+        for (int k = 0; k <= 2; k++)
+            for (int j = 0; j <= 1; j++)
+                face.Add((grid.Node(0, j, k), "1 1 1"));
+        var held = Restraints(face);
+        var block = new[] { 0, 0, 1, 0, 2, 0, 0, 1, 1, 1, 2, 1 };
+        Func<int[], int[]> with = more => block.Concat(more).ToArray();
+        Func<SolidPieces, int, int, bool> kept = (pieces, i, k) => pieces.Kept[grid.Element(i, 0, k) - 1];
+
+        var island = SolidPieces.Find(cells, SolidAt(grid, with(new[] { 6, 3 })), at, held, null);
+        Check(kept(island, 0, 0) && kept(island, 2, 1) && !kept(island, 6, 3) && island.LeftOut == 1 && island.PiecesLeftOut == 1,
+            $"a brick on its own is left out, the held block kept ({island.LeftOut} left out in {island.PiecesLeftOut} piece)");
+
+        // A staircase up from the block's corner, each step meeting the last along an edge only, as a
+        // diagonal member does on a coarse mesh: each joint is filled with the denser of the two cells
+        // that join the steps face to face.
+        var stairs = SolidAt(grid, with(new[] { 3, 2, 4, 3 }));
+        var density = new double[cells.Count];
+        density[grid.Element(3, 0, 1) - 1] = 0.4;
+        density[grid.Element(2, 0, 2) - 1] = 0.2;
+        density[grid.Element(3, 0, 3) - 1] = 0.1;
+        density[grid.Element(4, 0, 2) - 1] = 0.3;
+        var staircase = SolidPieces.Find(cells, stairs, at, held, null, density);
+        Check(kept(staircase, 3, 2) && kept(staircase, 4, 3) && staircase.LeftOut == 0 && staircase.Bridged == 2,
+            $"a staircase of bricks meeting along edges is joined, one cell a step ({staircase.Bridged} made solid)");
+        Check(kept(staircase, 3, 1) && !kept(staircase, 2, 2) && kept(staircase, 4, 2) && !kept(staircase, 3, 3),
+            "with the denser of the two cells at each step");
+
+        // Two deep, a brick meeting a block at one corner only: a cell joins them along an edge, then another face to face.
+        var deep = new Grid(4, 2, 4);
+        var deepCells = deep.Cells(1.0);
+        var deepSolid = new bool[deepCells.Count];
+        foreach (var c in new[] { new[] { 0, 0, 0 }, new[] { 1, 0, 0 }, new[] { 0, 0, 1 }, new[] { 1, 0, 1 }, new[] { 2, 1, 2 } })
+            deepSolid[deep.Element(c[0], c[1], c[2]) - 1] = true;
+        var deepHeld = PinnedAt(new[] { deep.Node(0, 0, 0), deep.Node(0, 1, 0), deep.Node(0, 0, 2), deep.Node(0, 1, 2) });
+        var corner1 = SolidPieces.Find(deepCells, deepSolid, tag => At(deep, tag), deepHeld, null);
+        Check(corner1.Kept[deep.Element(2, 1, 2) - 1] && corner1.LeftOut == 0 && corner1.Bridged == 2,
+            $"a brick that meets the block at a corner only is joined in two steps ({corner1.Bridged} made solid)");
+
+        var joined = SolidPieces.Find(cells, SolidAt(grid, with(new[] { 3, 1, 4, 1, 4, 2 })), at, held, null);
+        Check(kept(joined, 3, 1) && kept(joined, 4, 1) && kept(joined, 4, 2) && joined.LeftOut == 0, "bricks joined to the block face to face are kept");
+
+        var pinned = SolidPieces.Find(cells, SolidAt(grid, block), at, PinnedAt(new[] { grid.Node(0, 0, 0) }), null);
+        Check(pinned.LeftOut == 6, "a block pinned at one node is left out: it turns about it");
+
+        var line = SolidPieces.Find(cells, SolidAt(grid, block), at, PinnedAt(new[] { grid.Node(0, 0, 0), grid.Node(0, 1, 0) }), null);
+        Check(line.LeftOut == 6, "a block pinned along one edge is left out: it turns about the edge");
+
+        var three = SolidPieces.Find(cells, SolidAt(grid, block), at, PinnedAt(new[] { grid.Node(0, 0, 0), grid.Node(0, 1, 0), grid.Node(3, 0, 0) }), null);
+        Check(three.LeftOut == 0, "pinned at three corners not in a line, it is held still");
+
+        var rollers = SolidPieces.Find(cells, SolidAt(grid, block), at,
+            PinnedAt(new[] { grid.Node(0, 0, 0), grid.Node(0, 1, 0) }).Concat(HeldAt("0 1 1", grid.Node(3, 0, 0), grid.Node(3, 1, 0))).ToList(), null);
+        Check(rollers.LeftOut == 0, "pinned along one end and on rollers along the other, as the simply supported beam is, it is held still");
+
+        var sliding = SolidPieces.Find(cells, SolidAt(grid, block), at,
+            HeldAt("0 1 1", grid.Node(0, 0, 0), grid.Node(0, 1, 0), grid.Node(3, 0, 0), grid.Node(3, 1, 0)), null);
+        Check(sliding.LeftOut == 6, "on rollers at both ends, free along x, it slides: left out");
+
+        var propped = SolidPieces.Find(cells, SolidAt(grid, with(new[] { 6, 3 })), at, held, new HashSet<int> { grid.Node(7, 0, 4) });
+        Check(propped.LeftOut == 0, "a brick on its own that a beam or a shell stands on is kept: the beam may hold it");
+
+        // Tetrahedra: two sharing a face are one piece, two sharing an edge two.
+        var p = new[] { new Point3d(0, 0, 0), new Point3d(1, 0, 0), new Point3d(0, 1, 0), new Point3d(0, 0, 1), new Point3d(1, 1, 1), new Point3d(-1, -1, 1) };
+        Func<int, Point3d> corner = n => p[n - 1];
+        var first = Tet(p, 1, new[] { 1, 2, 3, 4 });
+        var tetHeld = PinnedAt(new[] { 1, 2, 3 });
+        var faceJoined = SolidPieces.Find(new List<SolidCell> { first, Tet(p, 2, new[] { 2, 3, 4, 5 }) }, new[] { true, true }, corner, tetHeld, null);
+        Check(faceJoined.LeftOut == 0, "a tetrahedron sharing a face with a held one is kept");
+        var edgeJoined = SolidPieces.Find(new List<SolidCell> { first, Tet(p, 3, new[] { 4, 5, 6, 2 }) }, new[] { true, true }, corner, tetHeld, null);
+        Check(edgeJoined.LeftOut == 1, "one sharing only an edge with it is left out");
+    }
+
+    /// <summary>
+    /// The small cantilever's design analysed as it is built: the pieces kept at full stiffness, the rest
+    /// void. On a mesh this coarse the diagonals are staircases, which hinge until their steps are joined.
+    /// Joined, it carries the load, if not as well as on a fine mesh: its members are a step or two thick.
+    /// On the benchmarks, where they are thicker, thresholding at 0.5 gives the grey elements that stay
+    /// their full stiffness, and the design comes out a quarter stiffer than the optimiser's last.
+    /// </summary>
+    static void DesignAnalysed(string openSees, string folder)
+    {
+        Section("The design, analysed");
+        var problem = Cantilever(24, 8, 2);
+        problem.Name = "design";
+        problem.Passive = (i, j, k) => i == 23 && k <= 1;
+        problem.Settings.MaxIterations = 60;
+        var cells = problem.Grid.Cells(problem.E, problem.Passive);
+        var grid = problem.Grid;
+        Func<int, Point3d> at = tag => At(grid, tag);
+
+        using (var analysis = Start(problem, openSees, folder, cells))
+        {
+            var result = TopologyOptimiser.Run(cells, problem.Settings, analysis.Energies);
+            var solid = Enumerable.Range(0, cells.Count).Select(i => cells[i].Passive || result.Densities[i] >= 0.5).ToArray();
+            var pieces = SolidPieces.Find(cells, solid, at, Restraints(problem.Fixes), null, result.Densities);
+            Check(pieces.Kept.Count(k => k) > 0, $"{pieces.Kept.Count(k => k)} solid elements are in the structure: {solid.Count(s => s)} at 0.5 or more, " +
+                                                  $"{pieces.Bridged} joining steps, {pieces.LeftOut} left out in {pieces.PiecesLeftOut} pieces");
+            Check(cells.Select((c, i) => !c.Passive || pieces.Kept[i]).All(k => k), "the elements kept solid under the load are in it");
+
+            var moduli = Enumerable.Range(0, cells.Count).Select(i => pieces.Kept[i] ? problem.E : 1e-9 * problem.E).ToArray();
+            double compliance = analysis.Energies(moduli).Sum();
+            double optimised = result.History.Last().Compliance;
+            Check(compliance > 0.5 * optimised && compliance < 2.5 * optimised,
+                $"it carries the load: its compliance, {compliance:0.00}, is of the order of the optimiser's last, {optimised:0.00}, " +
+                "where a mechanism held by the void's stiffness gives 1e10");
+        }
+    }
+
     /// <summary>A run stopped after 15 iterations and taken on to 40 is the run of 40, iteration for iteration.</summary>
     static void GoingOn(string openSees, string folder)
     {
@@ -531,6 +688,21 @@ class TopologyOptimisationTest
             result = TopologyOptimiser.Run(cells, problem.Settings, analysis.Energies,
                 progress: (it, x) => { if (it.Iteration % 10 == 0 || it.Iteration == 1) Console.WriteLine("  " + it); },
                 frames: new DensityHistory());
+
+            // The design as it would be built: solid where the density is 0.5 or more, the loose pieces out.
+            var solid = Enumerable.Range(0, cells.Count).Select(i => cells[i].Passive || result.Densities[i] >= 0.5).ToArray();
+            var grid = problem.Grid;
+            var clock2 = Stopwatch.StartNew();
+            var pieces = SolidPieces.Find(cells, solid, tag => At(grid, tag) * grid.Size, Restraints(problem.Fixes), null, result.Densities);
+            Console.WriteLine($"  pieces found in {clock2.Elapsed.TotalSeconds:0.000} s, {pieces.Bridged} cells made solid to join steps");
+            foreach (var design in new[] { Tuple.Create("all solid", solid), Tuple.Create("pieces held", pieces.Kept) })
+            {
+                var use = design.Item2;
+                var moduli = Enumerable.Range(0, cells.Count).Select(i => use[i] ? problem.E : 1e-9 * problem.E).ToArray();
+                Console.WriteLine($"  design at 0.5, {design.Item1}: {use.Count(s => s)} elements, compliance {N(analysis.Energies(moduli).Sum())} " +
+                                  $"(optimiser's last {N(result.History.Last().Compliance)})");
+            }
+            Console.WriteLine($"  {pieces.LeftOut} solid elements left out in {pieces.PiecesLeftOut} pieces");
         }
 
         // How small every iteration's design is kept, against doubles and against plain bytes.

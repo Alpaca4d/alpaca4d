@@ -52,6 +52,12 @@ sensitivities are scaled to a largest ratio of one first, so that a model in kN 
   densities, capped where the material meets the domain's edge) is closed - every edge in two
   triangles, once each way - for a solid domain (exactly its volume), a block inside it, a block
   touching its side, a random field, and tetrahedra; including nodes that sit exactly on the threshold.
+* **The pieces of a design** (`SolidPieces`): a brick on its own is left out and the held block kept; a
+  staircase of bricks meeting along edges is joined, one cell a step, with the denser of the two that
+  join each step face to face, and a brick meeting the block at one corner in two steps; a block pinned
+  at one node, or along one edge, or on rollers at both ends is left out, one pinned at three corners or
+  pinned at one end and on rollers at the other held; a brick a beam stands on is kept; tetrahedra
+  sharing a face are one piece, sharing an edge two.
 * **OpenSees kept open**: a command answers; a failing one answers with its error and OpenSees stays
   open with its state; a deck that stops before its loop is refused with what OpenSees printed.
 * **Element energies**: with uneven moduli the energies add up to F.u to 1e-9; halving every modulus
@@ -59,6 +65,13 @@ sensitivities are scaled to a largest ratio of one first, so that a model in kN 
   beam theory.
 * **A small run** (24 x 8 x 2, the column under the load kept): 30% of the volume, the kept elements at
   1, the compliance falling 19163 -> 3388 in 57 iterations, and the densities away from grey.
+* **The design, analysed**: the small run's design at 0.5, its 13 staircase steps joined (131 elements),
+  solid at full stiffness and void at a billionth: it carries the load, at a compliance of 5955 for the
+  optimiser's 3388 - of the order, where without the joints its hinges make it a mechanism at 2.4e10.
+  `./run.sh bench <name>` analyses its design the same way: the cantilever's comes out at 1798 for 2416,
+  the simply supported beam's at 904 for 1203 and the bridge's at 0.0031 for 0.0043 - stiffer by a
+  quarter, as the grey elements kept get their full stiffness - with one cell joined on the cantilever,
+  nothing left out, and the pieces found in 10 to 20 ms.
 * **Going on**: a run of 15 iterations taken on to 40 in a new OpenSees, from its design densities
   (`TopologyResult.Design`), is the run of 40 to the last bit, compliance and densities; it analyses only
   iterations 16 to 40, and taken on to where it already is, nothing.
@@ -103,7 +116,11 @@ and the user folder pointed at the test folder:
   Point Load, Assemble Model and Topology Optimisation, with Keep naming the column under the load:
   the first compliance is the hand-written deck's to 1e-12, and the whole run is (57 iterations, to
   1e-11); Keep stays at 1; the surface is one closed mesh; the deck has `stdBrick` lines only and no
-  result files are left. Run off keeps the result, and on again leaves a run that converged as it is.
+  result files are left. Solid has the 118 bricks at 0.5 and 13 joining steps, as copies; AlpacaModel is
+  them assembled, on the 12 of the 27 supports that stand on them, and Run Analysis and Nodal
+  Displacements on it give the tip loads' work as 7786 - of the order of the compliance, softer than
+  the Core's 5955 as Run Analysis solves SSP Bricks, not stdBricks. Run off keeps the result, and on
+  again leaves a run that converged as it is.
   Iterations lowered to 20 starts again and stops at 20, saying Iterations can take it on; raised to
   200, the run goes on from the 21st - the first 20 iterations are the same objects - and converges
   where the run of all of them did. A model assembled again starts a new run.

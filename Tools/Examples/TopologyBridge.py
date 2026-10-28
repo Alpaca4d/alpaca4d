@@ -47,11 +47,19 @@ LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
 TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation
+ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
+RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
+VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
+LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
 # Topology Optimisation's inputs and outputs, by position.
 T_MODEL, T_KEEP, T_VOLUME_FRACTION, T_ITERATIONS, T_RUN = range(5)
 T_STEP = 12                                                 # registered last, after the Settings menu's
 T_SURFACE, T_SOLID, T_DENSITY, T_ELEMENT, T_COMPLIANCE, T_VOLUME, T_CONVERGED, T_HISTORY, T_LOG = range(9)
+T_ALPACA_MODEL = 10                                         # after Step, registered last too
+# View Results' Result menu: Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses,
+# Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises.
+BRICK_STRESSES, VON_MISES = 5, 6
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 RED = Color.FromArgb(50, 254, 0, 0)
@@ -325,6 +333,21 @@ def open_menus(c):
             menu.Expand()
 
 
+def dropdown(obj, field):
+    """One of an Alpaca4d component's menu dropdowns, which it keeps to itself."""
+    flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+    return obj.GetType().GetField(field, flags).GetValue(obj)
+
+
+def show_result(results, family, component):
+    """Picks View Results' Result and Component as the menu would: the Component list follows the
+    Result, so it is filled for it before a component is picked from it."""
+    dropdown(results, "_ddFamily").Value = family
+    flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+    results.GetType().GetMethod("SyncComponentList", flags).Invoke(results, None)
+    dropdown(results, "_ddComponent").Value = component
+
+
 # ---------------------------------------------------------------- the bridge
 
 # Columns, in the order the data flows...
@@ -334,7 +357,7 @@ DOMAIN, DECK, BEARINGS, DECK_LOADS = range(4)
 
 # The model and its optimisation, in a grid of their own to the right.
 MODEL, OPTIMISE, RESULTS = range(3)
-ASSEMBLED, RUN, HISTORY = range(3)
+ASSEMBLED, RUN, HISTORY, ANALYSED = range(4)
 
 
 def build(doc):
@@ -469,6 +492,24 @@ def build(doc):
     converged = readout(m, "Converged", out(topology, T_CONVERGED), RESULTS, RUN, gap=10)
     history = readout(m, "History", out(topology, T_HISTORY), RESULTS, HISTORY, width=520.0, height=120.0)
 
+    # 7 - The design as a model of its own, analysed. Locked to start with: enabled, it analyses every
+    # design Step shows, and dragging Step would wait on every one.
+    settings = component(m, ANALYSIS_SETTINGS, "Analysis Settings", None, MODEL, ANALYSED)
+    analysis = component(m, RUN_ANALYSIS, "Run Analysis", None, MODEL, ANALYSED, gap=10)
+    wire(inp(analysis, 0), out(topology, T_ALPACA_MODEL))
+    wire(inp(analysis, 1), out(settings))
+    analysis.Locked = True
+    results = component(m, VIEW_RESULTS, "View Results", None, OPTIMISE, ANALYSED)
+    wire(inp(results, 0), out(analysis))
+    show_result(results, BRICK_STRESSES, VON_MISES)
+    legend = component(m, LEGEND, "Legend", None, RESULTS, ANALYSED)
+    legend.Locked = True    # with nothing analysed it would draw an empty legend
+    legend_title = text(m, "Title", "Von Mises stress [MPa]", RESULTS, ANALYSED, width=160.0)
+    wire(inp(legend, 0), legend_title)
+    wire(inp(legend, 1), out(results, 1))
+    wire(inp(legend, 2), out(results, 2))
+    shown = readout(m, "What is drawn", out(results, 0), RESULTS, ANALYSED, gap=10, width=300.0, height=40.0)
+
     m.arrange(right + 160, 0)
 
     group(doc, "1 - How fine: drag Bricks per metre", [per_metre, along, across, layer, levels_count, deck_base, across_nodes], RED)
@@ -480,11 +521,15 @@ def build(doc):
           [ends, ys, held, free, support, top_lift, top, top_nodes, node_count, share, down, deck_load, pattern], GREEN)
     group(doc, "5 - Assemble Model (enable Model View to see the domain)", [assemble, view], BLUE)
     group(doc, "6 - Topology Optimisation: set Run to true", [keep, fraction, iterations, run, step, topology, compliance, converged, history], GREY)
+    group(doc, "7 - The design, analysed: once the run has stopped, enable Run Analysis and Legend",
+          [settings, analysis, results, legend, legend_title, shown], PURPLE)
 
-    # Only the optimised surface draws in Rhino, not the construction geometry behind it.
+    # Only the optimised surface, and the design's stresses once analysed, draw in Rhino, not the
+    # construction geometry behind them.
+    drawn = set(str(o.InstanceGuid) for o in (topology, view, results, legend))
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
-        if hasattr(obj, "Hidden") and obj.InstanceGuid != topology.InstanceGuid and obj.InstanceGuid != view.InstanceGuid:
+        if hasattr(obj, "Hidden") and str(obj.InstanceGuid) not in drawn:
             obj.Hidden = True
 
     note(doc, "Topology Optimisation",
@@ -500,7 +545,11 @@ def build(doc):
          "3. Drag Step back to watch the run again, design by design: every iteration is kept.\n"
          "4. Bricks per metre 3 gives 3 456 bricks, about 15 s on an M2 Pro; 4 gives 8 192, under a minute. At 2 "
          "the deck is a 0.5 m slab of solid steel, stiff enough to span most of the way, and the steel goes into "
-         "two legs that shorten its span instead of an arch.\n\n"
+         "two legs that shorten its span instead of an arch.\n"
+         "5. Once the run has stopped, enable Run Analysis and Legend (select both, right-click, Enable): "
+         "AlpacaModel is the design as a model of its own - the solid bricks at full stiffness, the void ones gone, "
+         "with the supports and loads that stand on them - and View Results colours it by Von Mises stress. Disable "
+         "Run Analysis again before dragging Step, or every design shown is analysed.\n\n"
          "Each SSP Brick is solved as OpenSees' eight point brick: the SSP Brick fixes part of its stiffness "
          "when it is built, so it cannot be softened. A void brick keeps a billionth of its stiffness; nothing "
          "is cut out of the mesh. Topology Optimisation needs a license.",
