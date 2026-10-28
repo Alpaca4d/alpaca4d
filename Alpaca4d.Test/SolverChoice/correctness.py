@@ -4,11 +4,13 @@
 Two shapes that caught real defects: a chain of trusses with a closed-form answer, swept
 across small degree-of-freedom counts, and a framed building with a rigid diaphragm at
 every floor - the constraint that ties distant nodes together."""
-import os, subprocess, tempfile
+import os, subprocess, sys, tempfile
 
 OPENSEES = os.environ.get("OPENSEES", "OpenSees")
 SYSTEMS = ["BandGen", "BandSPD", "ProfileSPD", "SuperLU", "UmfPack",
-           "SparseSYM", "SparseSPD", "SparseGeneral", "FullGeneral"]
+           "SparseSYM", "SparseSPD", "SparseGeneral", "FullGeneral",
+           # what Alpaca4d writes for Mumps, on one core and on all of them
+           "Mumps -matrixType 1 -numThreads 1", "Mumps -matrixType 1 -numThreads 0"]
 E, A, LEN, P = 2.1e8, 0.002, 3.0, 60.0
 
 
@@ -50,14 +52,18 @@ def solve(text):
 if __name__ == "__main__":
     sizes = [1, 2, 3, 4, 5, 6, 8, 10, 20, 40]
     print("Truss chain, exact answer known. '.' correct, 'X' wrong or failed.\n")
+    mumps_wrong = False
     for system in SYSTEMS:
         marks = ""
         for n in sizes:
             text, want = chain(n, system)
             ok, got = solve(text)
             marks += "." if ok == 0 and got is not None and abs(got - want) <= 1e-9 * want else "X"
-        print("  %-16s %s" % (system, marks))
-    print("  %-16s %s" % ("free DOF:", " ".join(str(n) for n in sizes)))
+        print("  %-36s %s" % (system, marks))
+        mumps_wrong |= system.startswith("Mumps") and "X" in marks
+    print("  %-36s %s" % ("free DOF:", " ".join(str(n) for n in sizes)))
     print("\nSparseSYM and SparseSPD return a wrong answer at some small sizes. SparseSPD was")
     print("the shipped default until the solver benchmark; BandSPD is correct at every size")
-    print("and was also the fastest.")
+    print("and was also the fastest of the single-core solvers.")
+    # The known-bad sparse solvers are kept on show; Mumps, the default, has to be right.
+    sys.exit(1 if mumps_wrong else 0)

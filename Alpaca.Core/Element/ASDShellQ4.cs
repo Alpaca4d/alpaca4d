@@ -48,8 +48,7 @@ namespace Alpaca4d.Element
             var meshPoints = this.Mesh.Vertices.ToPoint3dArray();
 
             this.IndexNodes = Alpaca4d.Utils
-                .RTreeSearch(model.RTreeCloudPointSixNDF, meshPoints, model.Tollerance,
-                             $"ASD Shell Q4 {this.Id}", model.UniquePointsSixNDF)
+                .NodeSearch(model.NodeIndexSixNDF, meshPoints, $"ASD Shell Q4 {this.Id}")
                 .Select(x => (int?)(x + 1 + model.UniquePointsThreeNDF.Count))
                 .ToList();
         }

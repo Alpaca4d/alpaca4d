@@ -35,6 +35,7 @@ namespace Alpaca4d.Gh
             pManager.AddNumberParameter("AlphaZ", "AlphaZ", "Shear area factor along the local z axis: the fraction of the area that carries shear. 5/6 for a rectangle, 1 to ignore shear deformation.", GH_ParamAccess.item, 5.0 / 6.0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Material", "Material", "Material the section is made of. Connect an elastic uniaxial material.", GH_ParamAccess.item);
+            pManager.AddParameter(ColourInput.Make(ColourInput.SectionDescription));
         }
 
         /// <summary>
@@ -77,6 +78,7 @@ namespace Alpaca4d.Gh
 
             var section = new Alpaca4d.Section.ElasticSection(secName, area, iZZ, iYY, j, alphaY, alphaZ, material);
 
+            section.Color = ColourInput.Read(this, DA);
             DA.SetData(0, section);
         }
 
@@ -87,6 +89,12 @@ namespace Alpaca4d.Gh
         /// each of which can be combined with the GH_Exposure.obscure flag, which 
         /// ensures the component will only be visible on panel dropdowns.
         /// </summary>
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            // A file saved before the Colour input has one input fewer; see StoredInputs.
+            return ColourInput.ReadComponent(this, reader, base.Read, ColourInput.SectionDescription);
+        }
+
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
         /// <summary>

@@ -143,7 +143,10 @@ namespace Alpaca4d.Result
         /// <exception cref="Exception"></exception>
         public static IEnumerable<Rhino.Geometry.Vector3d> NodalOutput(Model alpacaModel, int step, ResultType resultType, List<int?> nodeIndex = null)
         {
-            var dataOutput = Enumerable.Empty<Rhino.Geometry.Vector3d>();
+            // A list, not Enumerable.Append in a loop: that chains one iterator per node, and a
+            // caller reading node i walks the chain from the start, so reading every node of a
+            // large model took time growing as the square of its size.
+            var dataOutput = new List<Rhino.Geometry.Vector3d>();
 
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
 
@@ -165,11 +168,17 @@ namespace Alpaca4d.Result
             }
             else
             {
-                var dataset = h5File.Dataset($"MODEL_STAGE[1]/RESULTS/ON_NODES/{_resultType}/DATA/STEP_0/MODE_{step}");
-                var dimX = (long)dataset.Space.Dimensions[0];
-                var dimY = (long)dataset.Space.Dimensions[1];
+                values = ModeData(h5File, _resultType, step);
 
-                values = dataset.Read<double>().ToArray2D(dimX, dimY);
+                // Rotations by the factor of the translations of the same mode, so the two still
+                // make one shape.
+                var translations = resultType == ResultType.MODES_OF_VIBRATION_R
+                    ? ModeData(h5File, Alpaca4d.Helper.EnumHelper.ResultTypeConvert(ResultType.MODES_OF_VIBRATION_U), step)
+                    : values;
+                double scale = ModeScale(translations);
+                for (int i = 0; i < values.GetLength(0); i++)
+                    for (int j = 0; j < values.GetLength(1); j++)
+                        values[i, j] *= scale;
             }
 
 
@@ -183,7 +192,7 @@ namespace Alpaca4d.Result
                         double x = (double)values.GetValue(i, 0);
                         double y = (double)values.GetValue(i, 1);
                         double z = (double)values.GetValue(i, 2);
-                        dataOutput = dataOutput.Append(new Rhino.Geometry.Vector3d(x, y, z));
+                        dataOutput.Add(new Rhino.Geometry.Vector3d(x, y, z));
                     }
                     h5File.Dispose();
                 }
@@ -195,7 +204,7 @@ namespace Alpaca4d.Result
                         double x = (double)values.GetValue(i - 1, 0);
                         double y = (double)values.GetValue(i - 1, 1);
                         double z = (double)values.GetValue(i - 1, 2);
-                        dataOutput = dataOutput.Append(new Rhino.Geometry.Vector3d(x, y, z));
+                        dataOutput.Add(new Rhino.Geometry.Vector3d(x, y, z));
                     }
                     h5File.Dispose();
                 }
@@ -208,6 +217,41 @@ namespace Alpaca4d.Result
             }
 
             return dataOutput;
+        }
+
+        /// <summary>Mode <paramref name="mode"/> of a modal run, a node per row, as the file holds it.</summary>
+        private static double[,] ModeData(PureHDF.IH5Group h5File, string resultType, int mode)
+        {
+            var dataset = h5File.Dataset($"MODEL_STAGE[1]/RESULTS/ON_NODES/{resultType}/DATA/STEP_0/MODE_{mode}");
+            var dimX = (long)dataset.Space.Dimensions[0];
+            var dimY = (long)dataset.Space.Dimensions[1];
+
+            return dataset.Read<double>().ToArray2D(dimX, dimY);
+        }
+
+        /// <summary>
+        /// What a mode's translations, a node per row, are multiplied by to make its largest
+        /// translation 1, in model length units, pointing the positive way - the size
+        /// <see cref="Buckling.Normalise"/> gives a buckling mode.
+        ///
+        /// OpenSees hands the modes out mass-normalised, φᵀMφ = 1, so their size went with the mass
+        /// of the model: the tip of one cantilever moved 3.2 m at 0.39 t and 0.03 m at 3925 t, and a
+        /// heavy building needed a deformation scale of hundreds to show anything. The -unorm that
+        /// Natural Vibration passes to modalProperties scales the copy its report is worked out
+        /// from, not the modes in the domain the recorder writes.
+        /// </summary>
+        public static double ModeScale(double[,] translations)
+        {
+            double largest = 0.0, signed = 0.0;
+            for (int i = 0; i < translations.GetLength(0); i++)
+                for (int j = 0; j < Math.Min(3, translations.GetLength(1)); j++)
+                    if (Math.Abs(translations[i, j]) > largest)
+                    {
+                        largest = Math.Abs(translations[i, j]);
+                        signed = translations[i, j];
+                    }
+
+            return largest == 0.0 ? 1.0 : 1.0 / signed;
         }
 
         /// <summary>
@@ -233,6 +277,7 @@ namespace Alpaca4d.Result
             // that fall outside it, so enumerate whatever the file actually holds and key the
             // rows by element ID, which is unique across the whole model.
             const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force";
+            const string TRUSS_BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/axialForce";
             const string BEAM_CLASS = "ForceBeamColumn";
             const int SECTIONFORCES = 6;
 
@@ -247,18 +292,49 @@ namespace Alpaca4d.Result
 
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
 
-            if (!h5File.LinkExists(BASE))
+            // Trusses answer "axialForce" and nothing else does; beams answer "section.force". A file
+            // needs only what the model has.
+            bool hasTrusses = alpacaModel.Beams.Any(beam => beam is Alpaca4d.Element.Truss);
+            bool hasFrames = alpacaModel.Beams.Any(beam => !(beam is Alpaca4d.Element.Truss));
+
+            if (hasFrames && !h5File.LinkExists(BASE))
                 throw new Exception(
                     "The recorder file holds no section forces. Switch \"section.force\" on in the MPCO Recorder component.");
+            if (hasTrusses && !h5File.LinkExists(TRUSS_BASE))
+                throw new Exception(
+                    "The recorder file holds no truss forces. Switch \"axialForce\" on in the MPCO Recorder component.");
 
             // Map: element ID -> row data (all columns for that element)
             var rowById = new Dictionary<int, double[]>();
 
-            var beamGroups = h5File.Group(BASE)
+            var beamGroups = !h5File.LinkExists(BASE) ? new List<PureHDF.IH5Group>() :
+                             h5File.Group(BASE)
                                    .Children()
                                    .OfType<PureHDF.IH5Group>()
                                    .Where(group => group.Name.Contains(BEAM_CLASS))
                                    .ToList();
+
+            // A truss writes one number, its axial force, under axialForce/<tag>-CorotTruss[...].
+            var axialById = new Dictionary<int, double>();
+            if (hasTrusses)
+            {
+                foreach (var group in h5File.Group(TRUSS_BASE).Children().OfType<PureHDF.IH5Group>())
+                {
+                    var stepGroup = group.Group("DATA");
+                    if (!stepGroup.LinkExists($"STEP_{step}"))
+                        throw new Exception($"STEP_{step} not defined!");
+
+                    var idDataset = group.Dataset("ID");
+                    var dataDataset = stepGroup.Dataset($"STEP_{step}");
+                    long rows = (long)dataDataset.Space.Dimensions[0];
+                    long cols = (long)dataDataset.Space.Dimensions[1];
+                    double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                    int[,] ids = idDataset.Read<int>().ToArray2D((long)idDataset.Space.Dimensions[0], 1L);
+
+                    for (int r = 0; r < rows; r++)
+                        axialById[ids[r, 0]] = data[r, 0];
+                }
+            }
 
             foreach (var group in beamGroups)
             {
@@ -297,7 +373,18 @@ namespace Alpaca4d.Result
                     var vz = new List<double>();
                     var t  = new List<double>();
 
-                    if (rowById.TryGetValue(beam.Id.Value, out double[] row))
+                    // A truss reports its axial force at both ends, which is where its two stations are
+                    // (Truss.BeamIntegration), and no shear, moment or torsion.
+                    if (beam is Alpaca4d.Element.Truss && axialById.TryGetValue(beam.Id.Value, out double axial))
+                    {
+                        n.AddRange(new[] { axial, axial });
+                        mz.AddRange(new[] { 0.0, 0.0 });
+                        vy.AddRange(new[] { 0.0, 0.0 });
+                        my.AddRange(new[] { 0.0, 0.0 });
+                        vz.AddRange(new[] { 0.0, 0.0 });
+                        t.AddRange(new[] { 0.0, 0.0 });
+                    }
+                    else if (rowById.TryGetValue(beam.Id.Value, out double[] row))
                     {
                         // Derive the number of integration points from the column count
                         int numIP = row.Length / SECTIONFORCES;
@@ -834,17 +921,42 @@ namespace Alpaca4d.Result
         /// is run in the global axes whatever this says.
         /// </param>
         private static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>)
-            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local)
+            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local, int points = 1)
         {
-            const string BASE = ON_ELEMENTS + "/stresses";
             const int COMPONENTS = 6;
 
             var sigma = new List<double>[COMPONENTS];
             for (int c = 0; c < COMPONENTS; c++)
                 sigma[c] = new List<double>();
 
+            // One value per element: the mean over its integration points, which for a single
+            // point is that point, and for the four of a ten node tetrahedron is the stress at its
+            // centre - the points sit symmetrically about it and the stress there is linear.
+            foreach (var atPoints in SolidStressAtPoints(alpacaModel, step, className, elements, local, points))
+                for (int c = 0; c < COMPONENTS; c++)
+                    sigma[c].Add(atPoints.Average(point => point[c]));
+
+            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+        }
+
+        /// <summary>
+        /// What <see cref="SolidStress"/> reads, before it is averaged: for each element, the six
+        /// components at each of its <paramref name="points"/> integration points.
+        ///
+        /// A row of the file holds one block per point, one after the other, and each block is
+        /// whatever the material answers to "stresses" - six numbers for every material Alpaca4d
+        /// writes, but more for some, so only the first six of each block are taken.
+        /// </summary>
+        private static List<double[][]> SolidStressAtPoints(Model alpacaModel, int step, string className,
+            IReadOnlyList<Generic.IBrick> elements, bool local, int points)
+        {
+            const string BASE = ON_ELEMENTS + "/stresses";
+            const int COMPONENTS = 6;
+
+            var stresses = new List<double[][]>();
+
             if (elements.Count == 0)
-                return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+                return stresses;
 
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
 
@@ -888,7 +1000,7 @@ namespace Alpaca4d.Result
 
             foreach (var element in elements)
             {
-                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS)
+                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS * points)
                     throw new Exception(
                         $"The recorder file holds no stresses for {className} {element.Id}. The file was " +
                         "written by a different model from the one being read - re-run the analysis.");
@@ -897,18 +1009,20 @@ namespace Alpaca4d.Result
                 // the element's own frame is done here rather than by the caller because the six
                 // numbers only mean anything together, and a caller holding six separate lists has
                 // already lost the tensor.
-                var values = row;
-                if (local)
+                var frame = local ? Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray()) : default;
+                int block = row.Length / points;
+
+                var atPoints = new double[points][];
+                for (int p = 0; p < points; p++)
                 {
-                    var frame = Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray());
-                    values = Utils.StressInFrame(row, frame.X, frame.Y, frame.Z);
+                    var values = row.Skip(p * block).Take(COMPONENTS).ToArray();
+                    atPoints[p] = local ? Utils.StressInFrame(values, frame.X, frame.Y, frame.Z) : values;
                 }
 
-                for (int c = 0; c < COMPONENTS; c++)
-                    sigma[c].Add(values[c]);
+                stresses.Add(atPoints);
             }
 
-            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+            return stresses;
         }
 
         /// <summary>
@@ -943,6 +1057,56 @@ namespace Alpaca4d.Result
                 .ToList();
 
             return SolidStress(alpacaModel, step, "SSPbrick", bricks, local);
+        }
+
+        /// <summary>
+        /// The stress in every ten node tetrahedron, one value per element, in the order the model
+        /// lists them: the mean of its four integration points, which is the stress at its centre.
+        /// Same six components and same axes as <see cref="TetrahedronStress"/>. The recorder
+        /// files them under TenNodeTetrahedron, the element's class, whichever of its two commands
+        /// built it.
+        /// </summary>
+        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TenNodeTetrahedronStress(Model alpacaModel, int step, string resultType = null, bool local = false)
+        {
+            return SolidStress(alpacaModel, step, "TenNodeTetrahedron", TenNodeTetrahedra(alpacaModel),
+                               local, Element.TenNodeTetrahedron.GaussPoints);
+        }
+
+        /// <summary>
+        /// The stress in every ten node tetrahedron at each of its ten nodes, in the order the model
+        /// lists the elements and each element its nodes: six components per node, the field of the
+        /// element alone, since a stress jumps from one element to the next. See
+        /// Element.TenNodeTetrahedron.AtNodes for how four integration points make ten nodes.
+        /// </summary>
+        public static List<double[][]> TenNodeTetrahedronStressAtNodes(Model alpacaModel, int step, bool local = false)
+        {
+            var atNodes = new List<double[][]>();
+
+            foreach (var atPoints in SolidStressAtPoints(alpacaModel, step, "TenNodeTetrahedron", TenNodeTetrahedra(alpacaModel),
+                                                         local, Element.TenNodeTetrahedron.GaussPoints))
+            {
+                var nodes = new double[10][];
+                for (int n = 0; n < nodes.Length; n++)
+                    nodes[n] = new double[6];
+
+                for (int c = 0; c < 6; c++)
+                {
+                    var component = Element.TenNodeTetrahedron.AtNodes(atPoints.Select(point => point[c]).ToList());
+                    for (int n = 0; n < nodes.Length; n++)
+                        nodes[n][c] = component[n];
+                }
+
+                atNodes.Add(nodes);
+            }
+
+            return atNodes;
+        }
+
+        private static List<Generic.IBrick> TenNodeTetrahedra(Model alpacaModel)
+        {
+            return alpacaModel.Bricks
+                .Where(x => x.ElementClass == Element.ElementClass.TenNodeTetrahedron)
+                .ToList();
         }
 
 

@@ -63,6 +63,12 @@ namespace Alpaca4d.Element
             }
         }
 
+        /// <summary>The same transformation, for another beam to own: its tag is the beam's, set at Assemble.</summary>
+        public GeomTransf Copy()
+        {
+            return new GeomTransf { Type = this.Type, Line = this.Line, LocalZ = this.LocalZ };
+        }
+
         public override string WriteTcl()
         {
             string tclText = $"geomTransf {Type} {Id} {TclNumber.Write(LocalZ.X)} {TclNumber.Write(LocalZ.Y)} {TclNumber.Write(LocalZ.Z)}\n";

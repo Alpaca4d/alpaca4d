@@ -64,6 +64,81 @@ namespace Alpaca4d
         }
 
         /// <summary>
+        /// <see cref="RTreeSearch"/> on a <see cref="NodeIndex"/>: the node nearest each point,
+        /// as an index into the index's points, one per point in order, and an error naming
+        /// <paramref name="owner"/> for a point with no node within tolerance.
+        /// </summary>
+        public static List<int> NodeSearch(NodeIndex nodes, IList<Point3d> searchPoints, string owner = null)
+        {
+            var found = new List<int>(searchPoints.Count);
+            foreach (var pt in searchPoints)
+            {
+                int index = nodes.Nearest(pt);
+                if (index == -1)
+                    throw new Exception(
+                        $"{owner ?? "Something"} reaches {pt}, where the model has no node within the " +
+                        $"tolerance of {nodes.Tolerance}. Nodes are made by the elements that arrive at them, so a " +
+                        "point no element reaches has nothing to attach to.");
+                found.Add(index);
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// The area of a mesh as Rhino's AreaMassProperties gives it, without the trip into native
+        /// code: each quad split along its shorter diagonal, which is how Rhino splits it, so a
+        /// warped quad comes out the same to the last digit or so.
+        /// </summary>
+        public static double MeshArea(Mesh mesh)
+        {
+            var v = mesh.Vertices.ToPoint3dArray();
+            double area = 0.0;
+            for (int f = 0; f < mesh.Faces.Count; f++)
+            {
+                var face = mesh.Faces[f];
+                if (!face.IsQuad)
+                    area += TriangleArea(v[face.A], v[face.B], v[face.C]);
+                else if (v[face.A].DistanceTo(v[face.C]) <= v[face.B].DistanceTo(v[face.D]))
+                    area += TriangleArea(v[face.A], v[face.B], v[face.C]) + TriangleArea(v[face.A], v[face.C], v[face.D]);
+                else
+                    area += TriangleArea(v[face.A], v[face.B], v[face.D]) + TriangleArea(v[face.B], v[face.C], v[face.D]);
+            }
+            return area;
+        }
+
+        /// <summary>
+        /// The volume a closed mesh encloses, as Rhino's VolumeMassProperties gives it: signed,
+        /// negative when its faces point inwards, and quads split along their shorter diagonal.
+        /// </summary>
+        public static double MeshVolume(Mesh mesh)
+        {
+            var v = mesh.Vertices.ToPoint3dArray();
+            double volume = 0.0;
+            for (int f = 0; f < mesh.Faces.Count; f++)
+            {
+                var face = mesh.Faces[f];
+                if (!face.IsQuad)
+                    volume += TetrahedronVolume(v[face.A], v[face.B], v[face.C]);
+                else if (v[face.A].DistanceTo(v[face.C]) <= v[face.B].DistanceTo(v[face.D]))
+                    volume += TetrahedronVolume(v[face.A], v[face.B], v[face.C]) + TetrahedronVolume(v[face.A], v[face.C], v[face.D]);
+                else
+                    volume += TetrahedronVolume(v[face.A], v[face.B], v[face.D]) + TetrahedronVolume(v[face.B], v[face.C], v[face.D]);
+            }
+            return volume;
+        }
+
+        private static double TriangleArea(Point3d a, Point3d b, Point3d c)
+        {
+            return Vector3d.CrossProduct(b - a, c - a).Length / 2.0;
+        }
+
+        /// <summary>The signed volume of the tetrahedron the triangle makes with the origin.</summary>
+        private static double TetrahedronVolume(Point3d a, Point3d b, Point3d c)
+        {
+            return (a.X * (b.Y * c.Z - b.Z * c.Y) + a.Y * (b.Z * c.X - b.X * c.Z) + a.Z * (b.X * c.Y - b.Y * c.X)) / 6.0;
+        }
+
+        /// <summary>
         /// The search behind <see cref="RTreeSearch"/> for a single point: the index of the node
         /// nearest <paramref name="point"/> within <paramref name="tol"/>, or -1 when there is none.
         /// For a caller with somewhere else to look when a point finds nothing, where an exception
@@ -442,17 +517,6 @@ namespace Alpaca4d
         }
 
         /// <summary>
-        /// A mesh split into one mesh per face. Works on a copy: unwelding rewrites the mesh it is
-        /// called on, and the caller's mesh is the one the user drew.
-        /// </summary>
-        private static List<Mesh> MeshToShell(Mesh mesh)
-        {
-            var working = mesh.DuplicateMesh();
-            working.Unweld(0, true);
-
-            return working.ExplodeAtUnweldedEdges().ToList();
-        }
-        /// <summary>
         /// A run of meshes swept into a layer of bricks between each neighbouring pair.
         ///
         /// Each brick takes its near face from one mesh and its far face from the next, pairing
@@ -468,39 +532,41 @@ namespace Alpaca4d
 
             var solid = new List<Mesh>();
 
-            // Every mesh split into its own faces, so that a mesh of many faces sweeps into many
-            // bricks rather than one. A single face mesh explodes to a list of one and takes the
-            // same path.
-            var meshExpl = MeshList.Select(MeshToShell).ToList();
+            // Each face read straight off its mesh, corners in the order the face lists them, so
+            // that a mesh of many faces sweeps into many bricks rather than one. The meshes used
+            // to be exploded into a mesh per face first, with Unweld and ExplodeAtUnweldedEdges,
+            // which took time growing as the square of the faces: 1.4 s of a 27 648 brick raft.
+            var vertices = MeshList.Select(m => m.Vertices.ToPoint3dArray()).ToList();
 
-            int faceCount = meshExpl[0].Count;
-            for (int i = 1; i < meshExpl.Count; i++)
+            int faceCount = MeshList[0].Faces.Count;
+            for (int i = 1; i < MeshList.Count; i++)
             {
-                if (meshExpl[i].Count != faceCount)
+                if (MeshList[i].Faces.Count != faceCount)
                     throw new Exception(
-                        $"Mesh {i + 1} of the series has {meshExpl[i].Count} faces where the first has " +
+                        $"Mesh {i + 1} of the series has {MeshList[i].Faces.Count} faces where the first has " +
                         $"{faceCount}. Each pair of neighbours becomes a layer of bricks, so every mesh in " +
                         "the series has to carry the same faces in the same order.");
             }
 
-            for (int index1 = 0; index1 < meshExpl.Count - 1; index1++)
+            for (int index1 = 0; index1 < MeshList.Count - 1; index1++)
             {
                 for (int index2 = 0; index2 < faceCount; index2++)
                 {
-                    var near = meshExpl[index1][index2];
-                    var far = meshExpl[index1 + 1][index2];
+                    var near = MeshList[index1].Faces[index2];
+                    var far = MeshList[index1 + 1].Faces[index2];
 
                     // A triangle would sweep into a wedge, which is not an element Alpaca4d has;
                     // saying so beats dropping it and returning fewer bricks than faces.
-                    if (near.Vertices.Count != 4 || far.Vertices.Count != 4)
+                    if (!near.IsQuad || !far.IsQuad)
                         throw new Exception(
-                            $"Face {index2 + 1} of mesh {index1 + 1} or {index1 + 2} in the series has " +
-                            $"{Math.Min(near.Vertices.Count, far.Vertices.Count)} corners. A brick sweeps " +
-                            "between quadrilaterals, so triangulated meshes have to be quadrangulated first.");
+                            $"Face {index2 + 1} of mesh {index1 + 1} or {index1 + 2} in the series has 3 corners. " +
+                            "A brick sweeps between quadrilaterals, so triangulated meshes have to be " +
+                            "quadrangulated first.");
 
-                    var nodes = near.Vertices.ToPoint3dArray()
-                                    .Concat(far.Vertices.ToPoint3dArray())
-                                    .ToList();
+                    var v = vertices[index1];
+                    var w = vertices[index1 + 1];
+                    var nodes = new List<Point3d> { v[near.A], v[near.B], v[near.C], v[near.D],
+                                                    w[far.A], w[far.B], w[far.C], w[far.D] };
 
                     // Both faces reversed together flips the sign without disturbing the pairing,
                     // exactly as CleanHexahedron does it.
@@ -851,10 +917,69 @@ namespace Alpaca4d
             foreach (var node in nodes)
                 mesh.Vertices.Add(node);
 
-            mesh.Faces.AddFace(0, 2, 1);
-            mesh.Faces.AddFace(0, 3, 2);
-            mesh.Faces.AddFace(0, 1, 3);
-            mesh.Faces.AddFace(1, 2, 3);
+            foreach (var face in TetrahedronFaces)
+                mesh.Faces.AddFace(face[0], face[1], face[2]);
+
+            mesh.FaceNormals.ComputeFaceNormals();
+            mesh.Normals.ComputeNormals();
+
+            return mesh;
+        }
+
+        /// <summary>The four faces of a tetrahedron in OpenSees order, each wound outward.</summary>
+        private static readonly int[][] TetrahedronFaces =
+        {
+            new[] { 0, 2, 1 }, new[] { 0, 3, 2 }, new[] { 0, 1, 3 }, new[] { 1, 2, 3 },
+        };
+
+        /// <summary>
+        /// The six edges of a tetrahedron, in the order TenNodeTetrahedronStd numbers the nodes on
+        /// them: node 5 on edge 1-2, 6 on 2-3, 7 on 3-1, 8 on 1-4, 9 on 2-4 and 10 on 3-4. That is
+        /// the standard order, VTK's and Abaqus', and not the one plain TenNodeTetrahedron takes,
+        /// which has 9 and 10 the other way round (gmsh's).
+        /// </summary>
+        public static readonly int[][] TetrahedronEdges =
+        {
+            new[] { 0, 1 }, new[] { 1, 2 }, new[] { 2, 0 }, new[] { 0, 3 }, new[] { 1, 3 }, new[] { 2, 3 },
+        };
+
+        /// <summary>The node on the edge from corner <paramref name="a"/> to corner <paramref name="b"/>, counted from 0.</summary>
+        private static int MidEdgeNode(int a, int b)
+        {
+            for (int e = 0; e < TetrahedronEdges.Length; e++)
+            {
+                var edge = TetrahedronEdges[e];
+                if ((edge[0] == a && edge[1] == b) || (edge[0] == b && edge[1] == a))
+                    return 4 + e;
+            }
+
+            throw new ArgumentException($"Corners {a} and {b} do not make an edge.");
+        }
+
+        /// <summary>
+        /// The closed surface of a ten node tetrahedron whose nodes are in TenNodeTetrahedronStd
+        /// order: each face of <see cref="TetrahedronMesh"/> cut into four triangles at the nodes on
+        /// its edges, all wound outward. Every node is a vertex, in the solver's order, so whatever
+        /// moves a mesh vertex by the displacement of its node - the deformed shape, a colour per
+        /// node - moves the edge nodes too, and the bent edges of a deformed element show.
+        /// </summary>
+        private static Mesh TenNodeTetrahedronMesh(IList<Point3d> nodes)
+        {
+            var mesh = new Mesh();
+
+            foreach (var node in nodes)
+                mesh.Vertices.Add(node);
+
+            foreach (var face in TetrahedronFaces)
+            {
+                int a = face[0], b = face[1], c = face[2];
+                int ab = MidEdgeNode(a, b), bc = MidEdgeNode(b, c), ca = MidEdgeNode(c, a);
+
+                mesh.Faces.AddFace(a, ab, ca);
+                mesh.Faces.AddFace(ab, b, bc);
+                mesh.Faces.AddFace(ca, bc, c);
+                mesh.Faces.AddFace(ab, bc, ca);
+            }
 
             mesh.FaceNormals.ComputeFaceNormals();
             mesh.Normals.ComputeNormals();
@@ -871,6 +996,9 @@ namespace Alpaca4d
         ///
         ///   hexahedron   1 to 2 is local x, 1 to 4 is roughly local y, and z comes out along 1 to 5
         ///   tetrahedron  1 to 2 is local x, 1 to 3 is roughly local y, and z comes out along 1 to 4
+        ///
+        /// A ten node tetrahedron numbers its corners first, so it takes the frame of the
+        /// tetrahedron its corners make.
         ///
         /// Roughly, because the second edge is only a guide: y is the part of it square to x, and z
         /// is x cross y. So x lies exactly along an edge of the element, and the frame stays
@@ -889,8 +1017,8 @@ namespace Alpaca4d
         /// </summary>
         public static (Vector3d X, Vector3d Y, Vector3d Z) SolidFrame(IList<Point3d> nodes)
         {
-            if (nodes.Count != 4 && nodes.Count != 8)
-                throw new Exception($"A solid has four nodes or eight, not {nodes.Count}.");
+            if (nodes.Count != 4 && nodes.Count != 8 && nodes.Count != 10)
+                throw new Exception($"A solid has four nodes, eight or ten, not {nodes.Count}.");
 
             // Node 4 of a hexahedron and node 3 of a tetrahedron: in both cases the far end of the
             // second edge leaving node 1 within the first face.
@@ -955,6 +1083,61 @@ namespace Alpaca4d
         }
 
         /// <summary>
+        /// A shell face's unit normal, the way OpenSees forms it: on a triangle the cross product
+        /// of sides 1-2 and 1-3 (ASDShellT3LocalCoordinateSystem, ShellNLDKGT::updateBasis), on a
+        /// quad that of its two diagonals (ASDShellQ4LocalCoordinateSystem), which is the plane a
+        /// warped quad is flattened onto.
+        /// </summary>
+        public static Vector3d ShellNormal(IList<Point3d> nodes)
+        {
+            if (nodes.Count == 3)
+                return Unit(Vector3d.CrossProduct(nodes[1] - nodes[0], nodes[2] - nodes[0]),
+                            "This shell face has its three corners on one line, so it has no normal.");
+            if (nodes.Count == 4)
+                return Unit(Vector3d.CrossProduct(nodes[2] - nodes[0], nodes[3] - nodes[1]),
+                            "This shell face is degenerate, so it has no normal.");
+
+            throw new Exception($"A shell face has three corners or four, not {nodes.Count}.");
+        }
+
+        /// <summary>
+        /// How close the ASD shells' Local X may come to a face's normal, in degrees, before ASD
+        /// Shell turns it away. Along the normal it leaves nothing to flatten into the face:
+        /// ASDShellQ4 and ASDShellT3 stop OpenSees there, in setDomain, with exit code 255 and no
+        /// more than Run Analysis's "Analysis Failed". Only a hair off it they run, flattening what
+        /// little is left in the plane, so the axis turns with the slightest tilt of the face - on
+        /// a curved mesh, every face its own way. A degree off leaves 1.7% of the vector in the
+        /// plane: an axis that sits still.
+        /// </summary>
+        public const double ShellLocalXTolerance = 1.0;
+
+        /// <summary>
+        /// The angle between <paramref name="localX"/> and the normal of a shell face, in degrees:
+        /// 0 along it either way, 90 in the face. NaN for a face with no normal, or no vector.
+        /// </summary>
+        public static double ShellLocalXAngle(IList<Point3d> nodes, Vector3d localX)
+        {
+            if (!localX.IsValid || localX.Length <= Rhino.RhinoMath.ZeroTolerance)
+                return double.NaN;
+
+            Vector3d normal;
+            try
+            {
+                normal = ShellNormal(nodes);
+            }
+            catch (Exception)
+            {
+                return double.NaN;
+            }
+
+            // From the part across the normal rather than the cosine, which is flat near 0 and
+            // would put a vector a millionth of a degree off at exactly 0.
+            double across = Vector3d.CrossProduct(normal, localX).Length / localX.Length;
+            double along = Math.Abs(normal * localX) / localX.Length;
+            return Math.Atan2(across, along) * 180.0 / Math.PI;
+        }
+
+        /// <summary>
         /// The local frame of a shell: the axes its section forces and stresses are reported in.
         ///
         /// Not simply the first edge, the way a solid's is. Every shell element in OpenSees builds
@@ -979,27 +1162,20 @@ namespace Alpaca4d
         /// </summary>
         public static (Vector3d X, Vector3d Y, Vector3d Z) ShellFrame(IList<Point3d> nodes, Vector3d localX)
         {
-            if (nodes.Count != 3 && nodes.Count != 4)
-                throw new Exception($"A shell face has three corners or four, not {nodes.Count}.");
-
-            Vector3d normal, referenceX, target;
+            var normal = ShellNormal(nodes);
+            Vector3d referenceX, target;
 
             if (nodes.Count == 3)
             {
                 // ASDShellT3LocalCoordinateSystem, and ShellNLDKGT::updateBasis, which agree.
                 var side12 = nodes[1] - nodes[0];
-                normal = Unit(Vector3d.CrossProduct(side12, nodes[2] - nodes[0]),
-                              "This shell face has its three corners on one line, so it has no normal.");
                 referenceX = Unit(side12, "This shell face has its first two corners at the same point.");
                 target = referenceX;
             }
             else
             {
-                // ASDShellQ4LocalCoordinateSystem: the normal from the two diagonals, and x from
-                // side 1-2 with whatever part of it stands out of the plane taken off.
-                normal = Unit(Vector3d.CrossProduct(nodes[2] - nodes[0], nodes[3] - nodes[1]),
-                              "This shell face is degenerate, so it has no normal.");
-
+                // ASDShellQ4LocalCoordinateSystem: x from side 1-2 with whatever part of it stands
+                // out of the plane taken off.
                 var side12 = nodes[1] - nodes[0];
                 referenceX = Unit(side12 - (side12 * normal) * normal,
                                   "This shell face has side 1-2 along its own normal.");
@@ -1105,7 +1281,8 @@ namespace Alpaca4d
 
         /// <summary>
         /// A closed solid mesh built straight from nodes already in OpenSees order - four for a
-        /// tetrahedron, eight for a brick - without reordering them.
+        /// tetrahedron, eight for a brick, ten for a ten node tetrahedron in TenNodeTetrahedronStd
+        /// order - without reordering them.
         ///
         /// For reading a deck back, where the element line already carries the order the solver
         /// was given and the only thing left to do is draw it.
@@ -1118,7 +1295,10 @@ namespace Alpaca4d
             if (nodes.Count == 8)
                 return HexahedronMesh(nodes);
 
-            throw new Exception($"A solid has four nodes or eight, not {nodes.Count}.");
+            if (nodes.Count == 10)
+                return TenNodeTetrahedronMesh(nodes);
+
+            throw new Exception($"A solid has four nodes, eight or ten, not {nodes.Count}.");
         }
 
         /// <summary>
@@ -1215,6 +1395,37 @@ namespace Alpaca4d
         /// </summary>
         public static Mesh CleanTetrahedron(Mesh iMesh)
         {
+            return TetrahedronMesh(TetrahedronCorners(iMesh));
+        }
+
+        /// <summary>
+        /// A four vertex mesh turned into a ten node tetrahedron: its corners put in the order
+        /// <see cref="CleanTetrahedron"/> puts them in, then a node at the middle of each edge in
+        /// the order of <see cref="TetrahedronEdges"/>, and rebuilt as a closed outward facing mesh
+        /// of sixteen triangles.
+        ///
+        /// The edge nodes go at the midpoints, so the element has straight edges and flat faces:
+        /// a Rhino mesh is made of flat faces and has nothing to say about a curved one.
+        /// </summary>
+        public static Mesh CleanTenNodeTetrahedron(Mesh iMesh)
+        {
+            if (iMesh.Vertices.Count == 10)
+                throw new Exception(
+                    "A ten node tetrahedron is made from a mesh of its four corners; the six nodes on its " +
+                    "edges are added at their midpoints. This mesh already has ten vertices - give the " +
+                    "four corner tetrahedron instead.");
+
+            var nodes = TetrahedronCorners(iMesh);
+
+            foreach (var edge in TetrahedronEdges)
+                nodes.Add(0.5 * (nodes[edge[0]] + nodes[edge[1]]));
+
+            return TenNodeTetrahedronMesh(nodes);
+        }
+
+        /// <summary>The four corners of a tetrahedron mesh, in the order OpenSees wants them.</summary>
+        private static List<Point3d> TetrahedronCorners(Mesh iMesh)
+        {
             var nodes = Welded(iMesh, 4).Vertices.ToPoint3dArray().ToList();
 
             if (nodes.Count != 4)
@@ -1237,7 +1448,7 @@ namespace Alpaca4d
                     "them are the same point. OpenSees divides the shape function derivatives by the " +
                     "Jacobian, so there is nothing here it can solve.");
 
-            return TetrahedronMesh(nodes);
+            return nodes;
         }
 
         public static List<Curve> Explode(Curve curve, bool recursive = false)

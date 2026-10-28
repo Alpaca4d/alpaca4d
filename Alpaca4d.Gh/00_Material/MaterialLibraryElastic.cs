@@ -152,7 +152,14 @@ namespace Alpaca4d.Gh
 		
 		pManager.AddGenericParameter("DatabasePath", "DBPath", "Optional custom material database JSON (steel_properties schema).", GH_ParamAccess.item);
 		pManager[pManager.ParamCount - 1].Optional = true;
+
+		// Colour is optional: left empty, Model View picks one for each material
+		pManager.AddParameter(ColourInput.Make(ColourDescription));
 	}
+
+	private const string ColourDescription =
+		"The colour the material is drawn in when Model View colours the elements by material - every grade of the list, with Grade set to All. " +
+		"Left empty, Model View gives each material a colour of its own.";
 
 		protected override void RegisterOutputParams(GH_OutputParamManager pManager)
 		{
@@ -376,6 +383,9 @@ namespace Alpaca4d.Gh
 		string typedGradeName = null;
 		try { DA.GetData(0, ref typedGradeName); } catch { }
 
+		// Colour input (optional) - left null, Model View picks one
+		System.Drawing.Color? colour = ColourInput.Read(this, DA);
+
 		// 1) Try to load/refresh custom DB if provided
 		string customPath = null;
 		if (Params.Input.Count > 1)
@@ -423,15 +433,15 @@ namespace Alpaca4d.Gh
 		if (selGrade == All)
 		{
 			var grades = typeToGrades.TryGetValue(selType, out var names) ? names : new List<string>();
-			DA.SetDataList(0, grades.Select(grade => CreateMaterial(selType, grade, selModel)));
+			DA.SetDataList(0, grades.Select(grade => CreateMaterial(selType, grade, selModel, colour)));
 			return;
 		}
 
-		DA.SetData(0, CreateMaterial(selType, selGrade, selModel));
+		DA.SetData(0, CreateMaterial(selType, selGrade, selModel, colour));
 	}
 
 	/// <summary>One grade as the material the Model dropdown asks for, in kN and m.</summary>
-	private object CreateMaterial(string type, string grade, string model)
+	private object CreateMaterial(string type, string grade, string model, System.Drawing.Color? colour)
 	{
 		double E, nu, rho;
 		GetElasticParameters(type, grade, out E, out nu, out rho);
@@ -443,10 +453,11 @@ namespace Alpaca4d.Gh
 			double eta = 0.0;
 			var material = new Alpaca4d.Material.UniaxialMaterialElastic(grade, E, eNeg, eta, G, nu, rho);
 			material.Grade = DesignGradeOf(type, grade);
+			material.Color = colour;
 			return material;
 		}
 
-		return new Alpaca4d.Material.ElasticIsotropicMaterial(grade, E, G, nu, rho);
+		return new Alpaca4d.Material.ElasticIsotropicMaterial(grade, E, G, nu, rho) { Color = colour };
 	}
 
 		/// <summary>
@@ -687,7 +698,8 @@ namespace Alpaca4d.Gh
 				try { storedModel = chunk.GetString("Model"); } catch { storedModel = "nD"; }
 			}
 
-			return base.Read(reader);
+			// A file saved before the Colour input has one input fewer; see StoredInputs.
+			return ColourInput.ReadComponent(this, reader, base.Read, ColourDescription);
 		}
 
 		#endregion

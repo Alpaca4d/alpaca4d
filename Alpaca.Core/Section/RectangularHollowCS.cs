@@ -15,38 +15,24 @@ namespace Alpaca4d.Section
         public int? Id { get; set; } = IdGenerator.GenerateId();
         public IUniaxialMaterial Material { get; set; }
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double Width { get; set; }
         public double Height { get; set; }
         public double Web { get; set; }
         public double TopFlange { get; set; }
         public double BottomFlange { get; set; }
-        public double Area
-        {
-            get
-            {
-                double area = Rhino.Geometry.AreaMassProperties.Compute(Brep).Area;
-                return area;
-            }
-        }
+        public double Area => this.Outline.Area;
+
+        private readonly MeasuredOutline _outline = new MeasuredOutline();
+
+        private MeasuredOutline Outline => _outline.Of(
+            new[] { this.Width, this.Height, this.Web, this.TopFlange, this.BottomFlange },
+            () => this.Brep);
         public double AlphaY => 9.0 / 10;
         public double AlphaZ => 9.0 / 10;
-        public double Izz
-        {
-            get
-            {
-                double iZZ = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).CentroidCoordinatesMomentsOfInertia.X;
-                return iZZ;
-            }
-        }
+        public double Izz => this.Outline.Izz;
 
-        public double Iyy
-        {
-            get
-            {
-                double iYY = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).CentroidCoordinatesMomentsOfInertia.Y;
-                return iYY;
-            }
-        }
+        public double Iyy => this.Outline.Iyy;
 
         public double J
         {

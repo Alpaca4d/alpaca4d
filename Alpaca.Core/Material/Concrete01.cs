@@ -38,6 +38,7 @@ namespace Alpaca4d.Material
         public double EpsilonCu { get; set; }
         public MinMax MinMax { get; set; }
         public string MatName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public string MaterialDimension => "UniaxialMaterial";
         public double? Rho { get; set; }
 

@@ -56,6 +56,293 @@ class ViewResultsTest
         return (string[])method.Invoke(null, new[] { Enum.Parse(Family, family) });
     }
 
+    static bool Near(double a, double b)
+    {
+        return Math.Abs(a - b) <= 1e-12 * Math.Max(Math.Abs(a), Math.Abs(b));
+    }
+
+    /// <summary>
+    /// The Unit dropdown. Every result comes out of the solver in kN and m, and View Results turns
+    /// it into the unit picked before anything is drawn - so a wrong factor here is a deflection a
+    /// thousand times off, written on the model, in Info and in Values, with nothing looking wrong.
+    /// </summary>
+    static void Units(Assembly assembly)
+    {
+        var quantityType = assembly.GetType("Alpaca4d.Gh.Quantity", true);
+        var units = assembly.GetType("Alpaca4d.Gh.ResultUnits", true);
+        var unitType = assembly.GetType("Alpaca4d.Gh.ResultUnit", true);
+
+        Func<string, object> Q = name => Enum.Parse(quantityType, name);
+        Func<string, object, object> Call = (name, quantity) =>
+            units.GetMethod(name, BindingFlags.Public | BindingFlags.Static).Invoke(null, new[] { quantity });
+        Func<object, string> SymbolOf = unit => (string)unitType.GetField("Symbol").GetValue(unit);
+        Func<object, double> SizeOf = unit => (double)unitType.GetField("InSI").GetValue(unit);
+        Func<string, string[]> Symbols = quantity => ((Array)Call("Of", Q(quantity))).Cast<object>().Select(SymbolOf).ToArray();
+        Func<string, string, double> Factor = (quantity, symbol) =>
+        {
+            int index = Array.IndexOf(Symbols(quantity), symbol);
+            return (double)units.GetMethod("Factor").Invoke(null, new object[] { Q(quantity), index });
+        };
+        Func<string, int, string> SymbolAt = (quantity, index) => Symbols(quantity)[index];
+
+        var quantityOf = Field.GetMethod("QuantityOf", BindingFlags.Public | BindingFlags.Static);
+        Func<string, int, string> Of = (family, component) =>
+            quantityOf.Invoke(null, new object[] { Enum.Parse(Family, family), component }).ToString();
+
+        Section("Each component is offered the units of what it is");
+        {
+            for (int i = 0; i < 4; i++)
+                Check(Of("Displacement", i) == "Length", $"Displacement {ComponentNames("Displacement")[i]} is a length");
+
+            var beam = ComponentNames("BeamForce");
+            for (int i = 0; i < beam.Length; i++)
+            {
+                string expected = i < 3 ? "Force" : "Moment";
+                Check(Of("BeamForce", i) == expected, $"beam {beam[i]} is a {expected.ToLower()}");
+            }
+
+            // Per unit width: the three membrane forces and the two shears are a force per length,
+            // the three bending moments in the middle a moment per length.
+            var shell = ComponentNames("ShellForce");
+            for (int i = 0; i < shell.Length; i++)
+            {
+                string expected = shell[i].StartsWith("m") ? "MomentPerLength" : "ForcePerLength";
+                Check(Of("ShellForce", i) == expected, $"shell {shell[i]} is a {expected}");
+            }
+
+            foreach (var family in new[] { "BeamStress", "ShellStress", "BrickStress" })
+                for (int i = 0; i < ComponentNames(family).Length; i++)
+                    Check(Of(family, i) == "Stress", $"{family} {ComponentNames(family)[i]} is a stress");
+
+            var reaction = ComponentNames("Reaction");
+            for (int i = 0; i < reaction.Length; i++)
+            {
+                string expected = i < 4 ? "Force" : "Moment";
+                Check(Of("Reaction", i) == expected, $"reaction {reaction[i]} is a {expected.ToLower()}");
+            }
+        }
+
+        Section("The units offered, smallest first");
+        {
+            // Saved as a position in the list, so a unit already there never moves: a new one goes
+            // on the end, or every saved file opens one unit along.
+            Check(Symbols("Length").SequenceEqual(new[] { "mm", "cm", "m" }), "length: mm, cm, m");
+            Check(Symbols("Force").SequenceEqual(new[] { "N", "kN", "MN" }), "force: N, kN, MN");
+            Check(Symbols("Moment").SequenceEqual(new[] { "N·mm", "N·m", "kN·cm", "kN·m", "MN·m" }), "moment: N·mm, N·m, kN·cm, kN·m, MN·m");
+            Check(Symbols("Stress").SequenceEqual(new[] { "kPa", "MPa", "kN/cm²" }), "stress: kPa, MPa, kN/cm²");
+            Check(Symbols("ForcePerLength").SequenceEqual(new[] { "N/m", "kN/m", "MN/m" }), "force per length: N/m, kN/m, MN/m");
+            Check(Symbols("MomentPerLength").SequenceEqual(new[] { "N·m/m", "kN·m/m", "MN·m/m" }), "moment per length: N·m/m, kN·m/m, MN·m/m");
+
+            foreach (var quantity in Enum.GetNames(quantityType))
+            {
+                var sizes = ((Array)Call("Of", Q(quantity))).Cast<object>().Select(SizeOf).ToArray();
+                bool ascending = Enumerable.Range(1, sizes.Length - 1).All(i => sizes[i] > sizes[i - 1]);
+                Check(sizes.Length > 1 && sizes[0] > 0.0 && ascending, $"{quantity}: more than one, each bigger than the last");
+            }
+        }
+
+        Section("The factor from the solver's kN and m");
+        {
+            Check(Near(Factor("Length", "mm"), 1000.0), "1 m is 1000 mm");
+            Check(Near(Factor("Length", "cm"), 100.0), "1 m is 100 cm");
+            Check(Near(Factor("Length", "m"), 1.0), "1 m is 1 m");
+
+            Check(Near(Factor("Force", "N"), 1000.0), "1 kN is 1000 N");
+            Check(Near(Factor("Force", "MN"), 1e-3), "1 kN is 0.001 MN");
+
+            Check(Near(Factor("Moment", "N·mm"), 1e6), "1 kN·m is 10⁶ N·mm");
+            Check(Near(Factor("Moment", "N·m"), 1000.0), "1 kN·m is 1000 N·m");
+            Check(Near(Factor("Moment", "kN·cm"), 100.0), "1 kN·m is 100 kN·cm");
+            Check(Near(Factor("Moment", "MN·m"), 1e-3), "1 kN·m is 0.001 MN·m");
+
+            // The one that matters most: a steel stress. 235 N/mm² is 235 000 kN/m² in the solver.
+            Check(Near(235000.0 * Factor("Stress", "MPa"), 235.0), "235 000 kN/m² is 235 MPa");
+            Check(Near(235000.0 * Factor("Stress", "kN/cm²"), 23.5), "235 000 kN/m² is 23.5 kN/cm²");
+            Check(Near(Factor("Stress", "kPa"), 1.0), "1 kN/m² is 1 kPa");
+
+            Check(Near(Factor("ForcePerLength", "N/m"), 1000.0), "1 kN/m is 1000 N/m");
+            Check(Near(Factor("ForcePerLength", "MN/m"), 1e-3), "1 kN/m is 0.001 MN/m");
+
+            Check(Near(Factor("MomentPerLength", "N·m/m"), 1000.0), "1 kN·m/m is 1000 N·m/m");
+            Check(Near(Factor("MomentPerLength", "MN·m/m"), 1e-3), "1 kN·m/m is 0.001 MN·m/m");
+
+            // Beam stresses used to be turned into MPa by Core's ModelStress and are now turned by
+            // the Unit, which starts at MPa - so the two have to agree, or View Results and Beam
+            // Stresses stop reading the same numbers.
+            var modelStress = AppDomain.CurrentDomain.GetAssemblies()
+                                       .Select(x => x.GetType("Alpaca4d.ModelStress", false))
+                                       .FirstOrDefault(x => x != null);
+            if (modelStress != null)
+            {
+                double perMPa = (double)modelStress.GetProperty("PerMPa").GetValue(null);
+                Check(Near(Factor("Stress", "MPa"), 1.0 / perMPa), "MPa agrees with the ModelStress Beam Stresses uses");
+            }
+            else
+            {
+                Check(false, "Core's ModelStress could be found to compare MPa against");
+            }
+        }
+
+        Section("A new View Results starts in an engineer's units, an old file in the solver's");
+        {
+            Func<string, string> Default = quantity => SymbolAt(quantity, (int)Call("Default", Q(quantity)));
+            Func<string, string> Model = quantity => SymbolAt(quantity, (int)Call("ModelUnit", Q(quantity)));
+
+            Check(Default("Length") == "mm", "a deflection in mm");
+            Check(Default("Force") == "kN" && Default("Moment") == "kN·m", "forces in kN, moments in kN·m");
+            Check(Default("Stress") == "MPa", "a stress in MPa");
+            Check(Default("ForcePerLength") == "kN/m" && Default("MomentPerLength") == "kN·m/m", "shell forces in kN/m and kN·m/m");
+
+            // What a file saved before the Unit existed is put back in, so a Range wired into it is
+            // still read in the unit it was typed in.
+            Check(Model("Length") == "m" && Model("Force") == "kN" && Model("Moment") == "kN·m"
+                  && Model("Stress") == "kPa" && Model("ForcePerLength") == "kN/m" && Model("MomentPerLength") == "kN·m/m",
+                  "the solver's own: m, kN, kN·m, kPa, kN/m, kN·m/m");
+
+            foreach (var quantity in Enum.GetNames(quantityType))
+                Check(Near(Factor(quantity, Model(quantity)), 1.0), $"{quantity}: the solver's own unit leaves the numbers alone");
+        }
+
+        Section("Scaling a field scales every value, and the reaction vectors with them");
+        {
+            var field = Activator.CreateInstance(Field, true);
+            var byNode = new Dictionary<int, double> { { 1, 0.012 }, { 2, -0.003 } };
+            var byElement = new Dictionary<int, List<double>> { { 7, new List<double> { 1.0, 2.0 } } };
+            var reactions = new List<Tuple<Rhino.Geometry.Plane, Rhino.Geometry.Vector3d, double>>
+            {
+                Tuple.Create(Rhino.Geometry.Plane.WorldXY, new Rhino.Geometry.Vector3d(1, 2, 3), 3.0)
+            };
+            Field.GetField("ByNode").SetValue(field, byNode);
+            Field.GetField("ByElement").SetValue(field, byElement);
+            Field.GetField("Reactions").SetValue(field, reactions);
+
+            Field.GetMethod("Scale").Invoke(field, new object[] { 1000.0 });
+
+            var node = (Dictionary<int, double>)Field.GetField("ByNode").GetValue(field);
+            var element = (Dictionary<int, List<double>>)Field.GetField("ByElement").GetValue(field);
+            var reaction = ((List<Tuple<Rhino.Geometry.Plane, Rhino.Geometry.Vector3d, double>>)Field.GetField("Reactions").GetValue(field))[0];
+
+            Check(Near(node[1], 12.0) && Near(node[2], -3.0), "a displacement of 0.012 m reads 12, of -0.003 m reads -3");
+            Check(Near(element[7][0], 1000.0) && Near(element[7][1], 2000.0), "every integration point of an element");
+            Check(Near(reaction.Item3, 3000.0) && Near(reaction.Item2.Z, 3000.0), "a reaction's value and the vector its arrows are drawn from");
+
+            // The readers' lists are left as they were: a scaled field is a new one.
+            Check(Near(byNode[1], 0.012) && Near(byElement[7][0], 1.0) && Near(reactions[0].Item3, 3.0),
+                  "and what it was scaled from is left alone");
+        }
+    }
+
+    /// <summary>
+    /// Beam stresses drawn solid are painted point by point over the section: which components
+    /// are, which value of a point each component reads, what σx is drawn as a line, and that the
+    /// Unit reaches the points as it reaches everything else.
+    /// </summary>
+    static void BeamStressOverSection(Assembly assembly)
+    {
+        var core = assembly.GetReferencedAssemblies().First(x => x.Name == "Alpaca4d.Core");
+        var coreAssembly = Assembly.Load(core);
+        var pointType = coreAssembly.GetType("Alpaca4d.Result.PointStress", true);
+        var stressType = coreAssembly.GetType("Alpaca4d.Result.BeamStress", true);
+        var shapeType = coreAssembly.GetType("Alpaca4d.Result.BeamSectionStress", true);
+        var surfaceType = coreAssembly.GetType("Alpaca4d.Result.SurfacePoint", true);
+        var names = ComponentNames("BeamStress");
+
+        Section("Beam stresses painted over the section");
+        {
+            var varies = Field.GetMethod("VariesOverSection", BindingFlags.Public | BindingFlags.Static);
+            var beamStress = Enum.Parse(Family, "BeamStress");
+            for (int i = 0; i < names.Length; i++)
+            {
+                bool over = (bool)varies.Invoke(null, new[] { beamStress, (object)i });
+                bool expected = names[i] != "σN" && names[i] != "σmax" && names[i] != "σmin";
+                Check(over == expected, $"{names[i]}: {(over ? "point by point" : "one value per section")}");
+            }
+
+            foreach (var family in Enum.GetNames(Family).Where(x => x != "BeamStress"))
+            {
+                bool any = Enumerable.Range(0, ComponentNames(family).Length)
+                                     .Any(i => (bool)varies.Invoke(null, new[] { Enum.Parse(Family, family), (object)i }));
+                Check(!any, $"{family}: nothing, it has no beam section to paint");
+            }
+        }
+
+        Section("Which value of a point each component reads");
+        {
+            // Every value different, so a component reading the wrong one shows.
+            object point = Activator.CreateInstance(pointType);
+            pointType.GetField("Sigma").SetValue(point, 10.0);
+            pointType.GetField("SigmaMy").SetValue(point, 3.0);
+            pointType.GetField("SigmaMz").SetValue(point, -2.0);
+            pointType.GetField("TauV").SetValue(point, -4.0);
+            pointType.GetField("TauT").SetValue(point, 1.5);
+
+            var atPoint = Field.GetMethod("AtPoint", BindingFlags.Public | BindingFlags.Static);
+            Func<string, double> Read = name => (double)atPoint.Invoke(null, new[] { point, (object)Array.IndexOf(names, name) });
+
+            Check(Near(Read("σN"), 9.0), "σN, what is left of σ without the bending: 10 − 3 + 2");
+            Check(Near(Read("σMy"), 3.0) && Near(Read("σMz"), -2.0), "σMy and σMz with their signs, the side they stretch");
+            Check(Near(Read("σx"), 10.0), "σx, the direct stress at the point");
+            Check(Near(Read("τV"), 4.0) && Near(Read("τT"), 1.5), "τV and τT in size, as the section's own are");
+            Check(Near(Read("VonMises"), Math.Sqrt(100.0 + 3.0 * 2.5 * 2.5)),
+                  "Von Mises with the shears added with their signs: √(10² + 3·(−4 + 1.5)²)");
+        }
+
+        Section("σx drawn as a line is the worst of the section, with its sign");
+        {
+            var of = Field.GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { stressType, typeof(int) }, null);
+            Func<double, double, double> SigmaX = (max, min) =>
+            {
+                object stress = Activator.CreateInstance(stressType);
+                stressType.GetField("SigmaMax").SetValue(stress, max);
+                stressType.GetField("SigmaMin").SetValue(stress, min);
+                return (double)of.Invoke(null, new[] { stress, (object)3 });
+            };
+
+            Check(Near(SigmaX(120.0, -80.0), 120.0), "tension the larger: σmax");
+            Check(Near(SigmaX(30.0, -80.0), -80.0), "compression the larger: σmin, negative");
+
+            object full = Activator.CreateInstance(stressType);
+            var outputs = new[] { "SigmaN", "SigmaMy", "SigmaMz", "SigmaMax", "SigmaMin", "TauV", "TauT" };
+            var values = new[] { 1.0, 2.0, 3.0, 4.0, -5.0, 6.0, 7.0 };
+            for (int i = 0; i < outputs.Length; i++)
+                stressType.GetField(outputs[i]).SetValue(full, values[i]);
+            var read = names.Select((n, i) => (double)of.Invoke(null, new[] { full, (object)i })).ToArray();
+            Check(read.SequenceEqual(new[] { 1.0, 2.0, 3.0, -5.0, 4.0, -5.0, 6.0, 7.0,
+                                             (double)stressType.GetProperty("VonMises").GetValue(full) }),
+                  "and every other component still reads the output it is named after");
+        }
+
+        Section("The Unit reaches the points");
+        {
+            // A rectangle 0.2 wide by 0.4 tall, in metres; 20 kN·m of Mz puts 3750 kN/m² on its
+            // top face, compression, and MPa is a thousandth of that.
+            var rectangle = coreAssembly.GetType("Alpaca4d.Section.RectangleCS", true)
+                                        .GetConstructors().First(c => c.GetParameters().Length == 4)
+                                        .Invoke(new object[] { "r", 0.2, 0.4, null });
+            var shape = shapeType.GetMethod("Of").Invoke(null, new[] { rectangle });
+            var top = shapeType.GetMethod("SurfaceAt").Invoke(shape, new object[] { 0.2, 0.0, 0.0, 1.0 });
+
+            var sectionType = assembly.GetType("Alpaca4d.Gh.BeamSectionField", true);
+            var forces = new List<double[]> { new[] { 0.0, 0.0, 0.0, 0.0, 0.0, 20.0 } };
+            var section = sectionType.GetConstructors().First().Invoke(new object[] { shape, forces, 1.0 });
+
+            var field = Activator.CreateInstance(Field, true);
+            Field.GetField("ByElement").SetValue(field, new Dictionary<int, List<double>> { { 1, new List<double> { -3750.0 } } });
+            var bySection = Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(typeof(int), sectionType));
+            bySection.GetType().GetMethod("Add").Invoke(bySection, new[] { (object)1, section });
+            Field.GetField("BySection").SetValue(field, bySection);
+
+            Field.GetMethod("Scale").Invoke(field, new object[] { 1e-3 });
+
+            var scaled = bySection.GetType().GetProperty("Item").GetValue(Field.GetField("BySection").GetValue(field), new object[] { 1 });
+            var at = sectionType.GetMethod("At");
+            double before = (double)at.Invoke(section, new[] { top, forces[0], (object)3 });
+            double after = (double)at.Invoke(scaled, new[] { top, forces[0], (object)3 });
+            Check(Near(before, -3750.0), $"σx on the top face under +Mz: −3750 kN/m², compression ({before:G6})");
+            Check(Near(after, -3.75), $"−3.75 once the field is in MPa ({after:G6})");
+        }
+    }
+
     static void Main(string[] args)
     {
         var assembly = Assembly.LoadFrom(args.Length > 0 ? args[0] : "Alpaca4d.gha");
@@ -110,11 +397,18 @@ class ViewResultsTest
         Section("Beam stresses, against what Beam Stresses offers");
         {
             // ResultField picks each one off the BeamStress struct by position in this list, so the
-            // list has to match the component's outputs or σMy draws as σMz.
-            var expected = new[] { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
+            // list has to match the component's outputs or σMy draws as σMz - with σx, which only
+            // View Results draws, after its three parts.
+            var expected = new[] { "σN", "σMy", "σMz", "σx", "σmax", "σmin", "τV", "τT", "VonMises" };
             Check(ComponentNames("BeamStress").SequenceEqual(expected),
-                  "σN, σMy, σMz, σmax, σmin, τV, τT, VonMises - the outputs of Beam Stresses, in order");
+                  "σN, σMy, σMz, σx, σmax, σmin, τV, τT, VonMises - Beam Stresses' outputs, σx after its parts");
+
+            // Files saved before σx are moved one along from here, so this is the place it went in.
+            int sigmaX = (int)Field.GetField("SigmaX", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            Check(sigmaX == 3 && expected[sigmaX] == "σx", "σx is fourth, where σmax was");
         }
+
+        BeamStressOverSection(assembly);
 
         Section("Shell forces, against what Shell Forces View offers");
         {
@@ -248,6 +542,8 @@ class ViewResultsTest
                       $"{family} has {names.Length} components, all named");
             }
         }
+
+        Units(assembly);
 
         Console.WriteLine();
         Console.WriteLine(fails == 0 ? "all checks passed" : $"{fails} check(s) failed");

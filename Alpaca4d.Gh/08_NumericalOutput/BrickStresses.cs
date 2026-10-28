@@ -16,16 +16,17 @@ namespace Alpaca4d.Gh
           : base("Brick Stresses (Alpaca4d)", "Brick Stresses",
             "Reads the stress state of every solid element of an analysed model - the six components " +
             "of the stress tensor plus the Von Mises equivalent stress.\n" +
-            "One value per element. An SSP Brick and a Four Node Tetrahedron, the only two solid " +
-            "types, each have one integration point.\n" +
+            "One value per element. An SSP Brick and a Four Node Tetrahedron each have one " +
+            "integration point; a Ten Node Tetrahedron has four, and its value is their mean, which is " +
+            "the stress at its centre. View Results draws how the stress varies across it.\n" +
             "Axes picks the frame the six components are read in: the global one the solver works " +
             "in, or the element's own, taken from the order its nodes are numbered - 1 to 2 is " +
             "local 1, 1 to 4 (1 to 3 on a tetrahedron) sets local 2, and local 3 comes out along " +
             "1 to 5 (1 to 4). Plane says which frame was used, so it is never a guess.\n" +
-            "The local frame is for reading only. OpenSees gives neither solid an orientation " +
+            "The local frame is for reading only. OpenSees gives no solid an orientation " +
             "argument, so the analysis is run in the global axes whatever Axes says.\n" +
-            "Values come tetrahedra first, then SSP bricks - Element says which is which. Give " +
-            "ElementId to read part of a big model.",
+            "Values come four node tetrahedra first, then ten node ones, then SSP bricks - Element " +
+            "says which is which. Give ElementId to read part of a big model.",
             "Alpaca4d", "08_NumericalOutput")
         {
             // Draw a Description Underneath the component
@@ -160,20 +161,21 @@ namespace Alpaca4d.Gh
 
         /// <summary>
         /// The solid elements in the order <see cref="StressesAt"/> returns their stresses: every
-        /// tetrahedron first, then every SSP brick.
+        /// four node tetrahedron first, then every ten node one, then every SSP brick.
         ///
         /// Not the order the model holds them in. The recorder writes one dataset per element
-        /// class, and StressesAt concatenates the two, so a model mixing the two kinds reports
-        /// them regrouped by kind rather than interleaved as assembled. Building the matching
+        /// class, and StressesAt concatenates them, so a model mixing the kinds reports them
+        /// regrouped by kind rather than interleaved as assembled. Building the matching
         /// element list here is what makes the Element output honest about which value belongs
         /// to which element, and what the filter selects against.
         /// </summary>
         private static List<Alpaca4d.Generic.IBrick> RecordedOrder(Alpaca4d.Model alpacaModel)
         {
             var tetrahedra = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.FourNodeTetrahedron);
+            var tenNodeTetrahedra = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.TenNodeTetrahedron);
             var sspBricks = alpacaModel.Bricks.Where(x => x.ElementClass == Element.ElementClass.SSPBrick);
 
-            return tetrahedra.Concat(sspBricks).ToList();
+            return tetrahedra.Concat(tenNodeTetrahedra).Concat(sspBricks).ToList();
         }
 
         /// <summary>
@@ -209,18 +211,22 @@ namespace Alpaca4d.Gh
                 (sspSigma11, sspSigma22, sspSigma33, sspSigma12, sspSigma23, sspSigma13) = Alpaca4d.Result.Read.SSPBrickStress(alpacaModel, step, local: local);
             }
 
+            var tenNode = alpacaModel.HasTenNodeTetrahedron
+                ? Alpaca4d.Result.Read.TenNodeTetrahedronStress(alpacaModel, step, local: local)
+                : (new List<double>(), new List<double>(), new List<double>(), new List<double>(), new List<double>(), new List<double>());
 
-            // Tetrahedra then SSP bricks, which is the order RecordedOrder lists the elements in
-            // and the order the Element output reports. These used to carry an
-            // ".OrderBy(i => ids)", which sorted every value by the same whole list of IDs and so
-            // could not reorder anything; the concatenation below is what the order has always
-            // really been.
-            var sigma11 = tetraSigma11.Concat(sspSigma11).ToList();
-            var sigma22 = tetraSigma22.Concat(sspSigma22).ToList();
-            var sigma33 = tetraSigma33.Concat(sspSigma33).ToList();
-            var sigma12 = tetraSigma12.Concat(sspSigma12).ToList();
-            var sigma23 = tetraSigma23.Concat(sspSigma23).ToList();
-            var sigma13 = tetraSigma13.Concat(sspSigma13).ToList();
+
+            // Four node tetrahedra, ten node ones, then SSP bricks, which is the order
+            // RecordedOrder lists the elements in and the order the Element output reports. These
+            // used to carry an ".OrderBy(i => ids)", which sorted every value by the same whole
+            // list of IDs and so could not reorder anything; the concatenation below is what the
+            // order has always really been.
+            var sigma11 = tetraSigma11.Concat(tenNode.Item1).Concat(sspSigma11).ToList();
+            var sigma22 = tetraSigma22.Concat(tenNode.Item2).Concat(sspSigma22).ToList();
+            var sigma33 = tetraSigma33.Concat(tenNode.Item3).Concat(sspSigma33).ToList();
+            var sigma12 = tetraSigma12.Concat(tenNode.Item4).Concat(sspSigma12).ToList();
+            var sigma23 = tetraSigma23.Concat(tenNode.Item5).Concat(sspSigma23).ToList();
+            var sigma13 = tetraSigma13.Concat(tenNode.Item6).Concat(sspSigma13).ToList();
 
             // Calculate Con Mises stress
 

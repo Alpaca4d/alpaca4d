@@ -100,6 +100,21 @@ Empty means everything, as everywhere else. Two things the checks pin down for b
   Forces: a point with no support at it would otherwise vanish silently and read as a support
   carrying zero, which is a very different statement from "there is no support there".
 
+## Loads name their elements the same way
+
+Linear Load's `Beam|Id` and Mesh Load's `Shell|Id` take an element, as they always did, or text
+read exactly as a result filter reads one term. A load given a name goes on the elements of its
+kind that the name matches, resolved at Assemble. So a mesh given one ElementId on ASD Shell is
+loaded whole, every face of it, by that name.
+
+Two edges the checks pin down:
+
+- An empty name is no filter at all, so the load goes on everything, as with the input left
+  unplugged. A name that does not compile goes on **nothing**. The component has already
+  reported it as an error, and falling back on everything would put a load meant for a few
+  elements on the whole model.
+- An element wired in wins over a name.
+
 ## Running
 
     ./run.sh

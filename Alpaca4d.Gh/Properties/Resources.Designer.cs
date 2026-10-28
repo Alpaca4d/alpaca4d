@@ -63,6 +63,16 @@ namespace Alpaca4d.Gh.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
+        public static System.Drawing.Bitmap Alpaca_to_FEM_Design__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Alpaca_to_FEM_Design__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
         public static System.Drawing.Bitmap Analysis_settings__Alpaca4d_ {
             get {
                 object obj = ResourceManager.GetObject("Analysis_settings__Alpaca4d_", resourceCulture);
@@ -724,6 +734,16 @@ namespace Alpaca4d.Gh.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
+        public static System.Drawing.Bitmap Mesh_Brep__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Mesh_Brep__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
         public static System.Drawing.Bitmap Mesh_Loft__Alpaca4d_ {
             get {
                 object obj = ResourceManager.GetObject("Mesh_Loft__Alpaca4d_", resourceCulture);
@@ -1114,6 +1134,16 @@ namespace Alpaca4d.Gh.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
+        public static System.Drawing.Bitmap Ten_Node_Tetrahedron__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Ten_Node_Tetrahedron__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
         public static System.Drawing.Bitmap Text_to_model__Alpaca4d_ {
             get {
                 object obj = ResourceManager.GetObject("Text_to_model__Alpaca4d_", resourceCulture);
@@ -1217,6 +1247,165 @@ namespace Alpaca4d.Gh.Properties {
         public static System.Drawing.Bitmap Rigid_Link__Alpaca4d_ {
             get {
                 object obj = ResourceManager.GetObject("Rigid_Link__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Linear_Buckling_Analysis__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Linear_Buckling_Analysis__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Interaction_Domain__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Interaction_Domain__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Domain_Check__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Domain_Check__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Domain_3D__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Domain_3D__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap N_M_Diagram__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("N_M_Diagram__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap My_Mz_Diagram__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("My_Mz_Diagram__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Moment_Curvature_Diagram__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Moment_Curvature_Diagram__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Section_Optimiser__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Section_Optimiser__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Topology_Optimisation__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Topology_Optimisation__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Design_Group__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Design_Group__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Spring_Support__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Spring_Support__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Non_Linear_Optimisation__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Non_Linear_Optimisation__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Inputs__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Inputs__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Outputs__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Outputs__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Record__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Record__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Explorer_Subset__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Explorer_Subset__Alpaca4d_", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }

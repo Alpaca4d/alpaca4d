@@ -329,12 +329,57 @@ class ShellStressTest
         }
     }
 
+    /// <summary>
+    /// How close a Local X comes to a face's normal, which ASD Shell turns away within
+    /// Utils.ShellLocalXTolerance: ASDShellQ4 and ASDShellT3 stop OpenSees on a -local along the
+    /// normal, and flatten one a hair off it into an axis that turns with every tilt of the face.
+    /// </summary>
+    static void LocalXTests()
+    {
+        Console.WriteLine("\nA Local X along a face's normal\n");
+
+        var flat = new List<Point3d> { new Point3d(0,0,0), new Point3d(2,0,0), new Point3d(2,1,0), new Point3d(0,1,0) };
+        Func<Vector3d, double> Flat = v => Alpaca4d.Utils.ShellLocalXAngle(flat, v);
+        double tolerance = Alpaca4d.Utils.ShellLocalXTolerance;
+
+        Close(Flat(new Vector3d(0, 0, 1)), 0.0, 1e-12, "along the normal of a flat slab: 0 degrees");
+        Close(Flat(new Vector3d(0, 0, -3)), 0.0, 1e-12, "along it the other way, at any length: 0 too");
+        Close(Flat(new Vector3d(1, 0, 0)), 90.0, 1e-12, "in the slab: 90");
+        double hair = Flat(new Vector3d(1e-9, 0, 1));
+        Check(hair > 0.0 && hair < tolerance, $"a hair off the normal, which OpenSees runs: {hair:G3} degrees, inside the {tolerance} turned away");
+        double justIn = Flat(new Vector3d(0.017, 0, 1)), justOut = Flat(new Vector3d(0.018, 0, 1));
+        Check(justIn < tolerance && justOut > tolerance, $"the tolerance falls between 0.017 and 0.018 across the normal ({justIn:F3} and {justOut:F3} degrees)");
+
+        // A warped quad: OpenSees takes its plane from the two diagonals, not from its first corner.
+        var warped = new List<Point3d> { new Point3d(0,0,0), new Point3d(1,0,0), new Point3d(1,1,0.2), new Point3d(0,1,0) };
+        var diagonals = Vector3d.CrossProduct(warped[2] - warped[0], warped[3] - warped[1]);
+        var corner = Vector3d.CrossProduct(warped[1] - warped[0], warped[2] - warped[0]);
+        Close(Alpaca4d.Utils.ShellLocalXAngle(warped, diagonals), 0.0, 1e-9, "a warped quad's normal is the diagonals' cross product");
+        Check(Alpaca4d.Utils.ShellLocalXAngle(warped, corner) > tolerance,
+              $"not the first corner's, {Alpaca4d.Utils.ShellLocalXAngle(warped, corner):F2} degrees from it");
+
+        var tilted = new List<Point3d> { new Point3d(0,0,0), new Point3d(0,1,0), new Point3d(-1,0,1) };
+        Close(Alpaca4d.Utils.ShellLocalXAngle(tilted, new Vector3d(1, 0, 1)), 0.0, 1e-9, "a tilted triangle's normal is sides 1-2 by 1-3");
+        Close(Alpaca4d.Utils.ShellLocalXAngle(tilted, new Vector3d(0, 1, 0)), 90.0, 1e-9, "and its first side lies in it");
+
+        var line = new List<Point3d> { new Point3d(0,0,0), new Point3d(1,0,0), new Point3d(2,0,0) };
+        Check(double.IsNaN(Alpaca4d.Utils.ShellLocalXAngle(line, new Vector3d(0, 0, 1))), "a face with no normal gives no angle, rather than an error");
+        Check(double.IsNaN(Flat(Vector3d.Zero)), "and so does no Local X");
+
+        // ShellFrame reads its normal from the same place: on the warped quad it is still square to its axes.
+        var frame = Alpaca4d.Utils.ShellFrame(warped, Vector3d.Zero);
+        // Divided by hand: Unitize is native, which mono has not got.
+        var unit = diagonals / Math.Sqrt(diagonals * diagonals);
+        Close((frame.Z - unit).Length, 0.0, 1e-12, "ShellFrame stands on that same normal");
+    }
+
     static void Main(string[] args)
     {
         Console.WriteLine("Shell stresses through the thickness, and the layered section");
 
         LayerTests();
         LayeredSectionTests();
+        LocalXTests();
 
         string frame = args.Length > 2 ? args[2] : "frame.txt";
         if (File.Exists(frame)) FrameTests(frame);

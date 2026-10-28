@@ -44,7 +44,6 @@ YAK/
 └── [version]/           # Version-specific directories (created during publishing)
     ├── *.dll            # Plugin dependencies
     ├── Alpaca4d.Gh.gha  # Main Grasshopper assembly
-    ├── data.bin         # License data
     └── UserObject/      # User objects
 ```
 
@@ -92,7 +91,6 @@ If you prefer to publish manually:
    mkdir YAK/1.2.3
    cp Alpaca4d.Gh/bin/Release/*.dll YAK/1.2.3/
    cp Alpaca4d.Gh/bin/Release/Alpaca4d.Gh.gha YAK/1.2.3/
-   cp Alpaca4d.Gh/bin/Release/data.bin YAK/1.2.3/
    cp -r Alpaca4d.Gh/bin/Release/UserObject YAK/1.2.3/
    ```
 
@@ -113,13 +111,18 @@ The following files are automatically collected and included in the package:
 
 - **DLLs**: All dependency libraries
 - **Alpaca4d.Gh.gha**: Main Grasshopper assembly
-- **data.bin**: License and configuration data
 - **UserObject/**: Grasshopper user objects
 
 OpenSees is **not** included. Users install it themselves and point Alpaca4d at it with
 **Alpaca4d → Settings → Set OpenSees Executable**, which is the only solver Alpaca4d runs. The
-project file keeps `OpenSees-Solvers` out of the build output, and `publish.py` removes it from
-a version folder an older script filled.
+repository keeps no OpenSees either, and `publish.py` removes the `OpenSees-Solvers` folder an
+older script left in a version folder.
+
+`data.bin` is not included either. What the user sets - the license and `settings.json`, with the
+OpenSees path - is kept in `%APPDATA%\Alpaca4d` on Windows and `~/Library/Application Support/Alpaca4d`
+on a Mac, not beside the plugin: the Package Manager installs every version in a folder of its own,
+so anything written there was left behind by the next update. The first run of a newer version
+brings the files over from the folders of the versions installed before it.
 
 ## Version Management
 

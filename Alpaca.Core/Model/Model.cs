@@ -20,12 +20,47 @@ namespace Alpaca4d
         public List<Point3d> UniquePoints { get; set; }
         public List<Point3d> UniquePointsThreeNDF { get; set; } = new List<Point3d>();
         public List<Point3d> UniquePointsSixNDF { get; set; } = new List<Point3d>();
+
+        /// <summary>
+        /// The nodes of each pool by where they stand, which Assemble finds every node through:
+        /// an element's ends, a support, a load. See <see cref="NodeIndex"/>.
+        /// </summary>
+        public NodeIndex NodeIndexThreeNDF { get; set; } = new NodeIndex(0.0);
+        public NodeIndex NodeIndexSixNDF { get; set; } = new NodeIndex(0.0);
+
         public PointCloud PointCloud { get; set; }
-        public PointCloud CloudPointThreeNDF { get; set; }
-        public PointCloud CloudPointSixNDF { get; set; }
+
+        // The clouds and trees of the nodes, for whoever still asks for them; Assemble itself goes
+        // through the node indexes. Made when first read, since building them costs as much as
+        // the rest of a large model.
+        private PointCloud _cloudPointThreeNDF, _cloudPointSixNDF;
+        private RTree _rTreeCloudPointThreeNDF, _rTreeCloudPointSixNDF;
+
+        public PointCloud CloudPointThreeNDF
+        {
+            get => _cloudPointThreeNDF ?? (_cloudPointThreeNDF = this.UniquePointsThreeNDF.Count > 0 ? new PointCloud(this.UniquePointsThreeNDF) : null);
+            set => _cloudPointThreeNDF = value;
+        }
+
+        public PointCloud CloudPointSixNDF
+        {
+            get => _cloudPointSixNDF ?? (_cloudPointSixNDF = this.UniquePointsSixNDF.Count > 0 ? new PointCloud(this.UniquePointsSixNDF) : null);
+            set => _cloudPointSixNDF = value;
+        }
+
         public RTree RTreeCloudPoint { get; set; }
-        public RTree RTreeCloudPointThreeNDF { get; set; }
-        public RTree RTreeCloudPointSixNDF { get; set; }
+
+        public RTree RTreeCloudPointThreeNDF
+        {
+            get => _rTreeCloudPointThreeNDF ?? (_rTreeCloudPointThreeNDF = this.UniquePointsThreeNDF.Count > 0 ? RTree.CreateFromPointArray(this.UniquePointsThreeNDF) : null);
+            set => _rTreeCloudPointThreeNDF = value;
+        }
+
+        public RTree RTreeCloudPointSixNDF
+        {
+            get => _rTreeCloudPointSixNDF ?? (_rTreeCloudPointSixNDF = this.UniquePointsSixNDF.Count > 0 ? RTree.CreateFromPointArray(this.UniquePointsSixNDF) : null);
+            set => _rTreeCloudPointSixNDF = value;
+        }
         public static int NumberOfBeam { get; set; }
         public List<Node> Nodes { get; set; } = new List<Node> { };
         public List<IBeam> Beams { get; set; } = new List<IBeam> { };
@@ -95,7 +130,7 @@ namespace Alpaca4d
                     {
                         var shell = (IShell)item;
 
-                        double meshArea = Rhino.Geometry.AreaMassProperties.Compute(shell.Mesh).Area;
+                        double meshArea = Alpaca4d.Utils.MeshArea(shell.Mesh);
                         var areaDensity = shell.Section.Thickness * (shell.Section.Material.Rho ?? 0.0);
                         mass += areaDensity * meshArea;
                     }
@@ -103,7 +138,7 @@ namespace Alpaca4d
                     else if (item.Type == ElementType.Brick)
                     {
                         var brick = (IBrick)item;
-                        var meshVolume = Rhino.Geometry.VolumeMassProperties.Compute(brick.Mesh).Volume;
+                        var meshVolume = Alpaca4d.Utils.MeshVolume(brick.Mesh);
                         var density = brick.Material.Rho ?? 0.0;
                         mass += density * meshVolume;
                     }
@@ -143,7 +178,22 @@ namespace Alpaca4d
         public bool IsModal { get; set; }
         public int NumberOfModes { get; set; }
 
+        /// <summary>
+        /// Set by Linear Buckling Analysis on the model it hands on: its steps are buckling modes,
+        /// step 0 the first, and its beams may be split.
+        /// </summary>
+        public bool IsBuckling { get; set; }
+
+        /// <summary>The load factors of the buckling modes, lowest first, when <see cref="IsBuckling"/>.</summary>
+        public List<double> BucklingFactors { get; set; } = new List<double>();
+
         public List<string> Tcl { get; set; } = new List<string> { };
+
+        /// <summary>
+        /// Where the load patterns begin in <see cref="Tcl"/>: Assemble writes them last, and a
+        /// linear buckling analysis needs the model without them first. -1 when not assembled.
+        /// </summary>
+        public int LoadPatternTclStart { get; set; } = -1;
 
         public bool HasSSpBrick
         {
@@ -178,6 +228,8 @@ namespace Alpaca4d
                 return hasTetrahedron;
             }
         }
+
+        public bool HasTenNodeTetrahedron => this.Bricks.Any(brick => brick.ElementClass == ElementClass.TenNodeTetrahedron);
 
         public bool HasTriShell
         {
@@ -217,10 +269,10 @@ namespace Alpaca4d
         {
             Dictionary<int?, Vector3d> result = new Dictionary<int?, Vector3d>();
             var _resultType = this.IsModal == false ? Result.ResultType.DISPLACEMENT : Result.ResultType.MODES_OF_VIBRATION_U;
-            var dispVector = Alpaca4d.Result.Read.NodalOutput(this, step, _resultType);
+            var dispVector = Alpaca4d.Result.Read.NodalOutput(this, step, _resultType).ToList();
             foreach(var node in this.Nodes)
             {
-                result.Add(node.Id, dispVector.ElementAt( (int)node.Id - 1));
+                result.Add(node.Id, dispVector[(int)node.Id - 1]);
             }
             return result;
         }
@@ -466,67 +518,127 @@ namespace Alpaca4d
             return (Model)this.MemberwiseClone();
         }
 
+        /// <summary>
+        /// This model again, assembled, with other sections on its beams: one section per beam, in the
+        /// order of <see cref="Beams"/>. A beam that keeps its section is the same object; the others are
+        /// new beams (<see cref="IBeam.WithSection"/>), so nothing upstream changes. Supports,
+        /// constraints, masses and loads are this model's own, except that a line load on a beam that
+        /// changed is moved onto the new one. Self-weight follows the new sections.
+        /// </summary>
+        public Model WithBeamSections(IReadOnlyList<IUniaxialSection> sections)
+        {
+            if (sections == null || sections.Count != this.Beams.Count)
+                throw new ArgumentException($"{sections?.Count ?? 0} sections for {this.Beams.Count} beams.");
+
+            var replaced = new Dictionary<IBeam, IBeam>();
+            for (int i = 0; i < this.Beams.Count; i++)
+            {
+                var beam = this.Beams[i];
+                if (!ReferenceEquals(sections[i], beam.Section))
+                    replaced[beam] = beam.WithSection(sections[i]);
+            }
+
+            var elements = this.Elements
+                .Select(item => item is IBeam beam && replaced.TryGetValue(beam, out var other) ? other : item)
+                .ToList();
+
+            var model = new Model(elements, this.Supports, this.LoadPatterns.Select(pattern => Repointed(pattern, replaced)).ToList(),
+                                  this.Constraint, this.Recorders)
+            {
+                Mass = this.Mass,
+                Tollerance = this.Tollerance,
+            };
+            model.Assemble();
+            return model;
+        }
+
+        /// <summary>The pattern with its line loads on <paramref name="replaced"/> beams moved onto the new ones; itself when none are.</summary>
+        private static LoadPattern Repointed(LoadPattern pattern, Dictionary<IBeam, IBeam> replaced)
+        {
+            if (pattern.PatternType == PatternType.UniformExcitation || pattern.Load == null ||
+                !pattern.Load.Any(load => load is Alpaca4d.Loads.LineLoad line && line.Element != null && replaced.ContainsKey(line.Element)))
+                return pattern;
+
+            var loads = pattern.Load.Select(load =>
+            {
+                if (!(load is Alpaca4d.Loads.LineLoad line) || line.Element == null || !replaced.TryGetValue(line.Element, out var beam))
+                    return load;
+
+                return new Alpaca4d.Loads.LineLoad
+                {
+                    Id = line.Id,
+                    Range = line.Range,
+                    AllElements = line.AllElements,
+                    Element = beam,
+                    Filter = line.Filter,
+                    GlobalForce = line.GlobalForce,
+                    LocalForce = line.LocalForce,
+                    Ndf = line.Ndf,
+                    Type = line.Type,
+                    PatternTag = line.PatternTag,
+                    TimeSeries = line.TimeSeries,
+                    IsLocal = line.IsLocal,
+                };
+            }).ToList();
+
+            return new LoadPattern(pattern.PatternType, pattern.TimeSeries, loads, pattern.Factor) { Name = pattern.Name };
+        }
+
+        /// <summary>
+        /// The nodes of the model: every point an element or a constraint reaches, welded within
+        /// <see cref="Tollerance"/>, in the order they are reached - beams, shells, constraints for
+        /// the six degree of freedom nodes, solids for the three. Each point joins the node already
+        /// within tolerance of it, or becomes one, which is what Point3d.CullDuplicates kept, in the
+        /// same order, at a fraction of the cost.
+        /// </summary>
         public void GetUniquePoints(List<IBeam> beams, List<IShell> shells, List<IBrick> bricks, List<IConstraint> constraints)
         {
-            var threeNdfPoints = new List<Point3d>();
-            var sixNdfPoints = new List<Point3d>();
+            var three = new NodeIndex(this.Tollerance);
+            var six = new NodeIndex(this.Tollerance);
 
             foreach (var beam in beams)
             {
-                var PointAtStart = beam.Curve.PointAtStart;
-                var PointAtEnd = beam.Curve.PointAtEnd;
-                sixNdfPoints.Add(PointAtStart);
-                sixNdfPoints.Add(PointAtEnd);
+                six.Weld(beam.Curve.PointAtStart);
+                six.Weld(beam.Curve.PointAtEnd);
             }
 
             foreach (var shell in shells)
-            {
-                var points = shell.Mesh.Vertices.ToPoint3dArray();
-                sixNdfPoints.AddRange(points);
-
-            }
+                foreach (var point in shell.Mesh.Vertices.ToPoint3dArray())
+                    six.Weld(point);
 
             foreach (var brick in bricks)
-            {
-                var points = brick.Mesh.Vertices.ToPoint3dArray();
-                threeNdfPoints.AddRange(points);
-            }
+                foreach (var point in brick.Mesh.Vertices.ToPoint3dArray())
+                    three.Weld(point);
 
             foreach (var constraint in constraints)
             {
                 if(constraint.ConstraintType == Constraints.ConstraintType.RigidDiaphgram)
                 {
                     var rigid = (Alpaca4d.Constraints.RigidDiaphragm)constraint;
-                    sixNdfPoints.Add((Point3d)rigid.MasterNode);
-                    sixNdfPoints.AddRange(rigid.SlaveNodes);
+                    six.Weld((Point3d)rigid.MasterNode);
+                    foreach (var point in rigid.SlaveNodes)
+                        six.Weld(point);
                 }
                 else if (constraint.ConstraintType == Constraints.ConstraintType.EqualDof)
                 {
                     var equalDOF = (Alpaca4d.Constraints.EqualDOF)constraint;
-                    sixNdfPoints.Add((Point3d)equalDOF.MasterNode);
-                    sixNdfPoints.Add(equalDOF.SlaveNode);
+                    six.Weld((Point3d)equalDOF.MasterNode);
+                    six.Weld(equalDOF.SlaveNode);
                 }
                 else if (constraint.ConstraintType == Constraints.ConstraintType.RigidLink)
                 {
                     var rigidLink = (Alpaca4d.Constraints.RigidLink)constraint;
-                    sixNdfPoints.Add(rigidLink.RetainedNode);
-                    sixNdfPoints.Add(rigidLink.ConstrainedNode);
+                    six.Weld(rigidLink.RetainedNode);
+                    six.Weld(rigidLink.ConstrainedNode);
                 }
             }
 
-            if (threeNdfPoints.Any())
-            {
-                this.UniquePointsThreeNDF = Rhino.Geometry.Point3d.CullDuplicates(threeNdfPoints, this.Tollerance).ToList();
-                this.CloudPointThreeNDF = new Rhino.Geometry.PointCloud(this.UniquePointsThreeNDF);
-                this.RTreeCloudPointThreeNDF = Rhino.Geometry.RTree.CreateFromPointArray(this.UniquePointsThreeNDF);
-            }
-
-            if (sixNdfPoints.Any())
-            {
-                this.UniquePointsSixNDF = Rhino.Geometry.Point3d.CullDuplicates(sixNdfPoints, this.Tollerance).ToList();
-                this.CloudPointSixNDF = new Rhino.Geometry.PointCloud(this.UniquePointsSixNDF);
-                this.RTreeCloudPointSixNDF = Rhino.Geometry.RTree.CreateFromPointArray(this.UniquePointsSixNDF);
-            }
+            this.NodeIndexThreeNDF = three;
+            this.NodeIndexSixNDF = six;
+            this.UniquePointsThreeNDF = three.Points;
+            this.UniquePointsSixNDF = six.Points;
+            this._cloudPointThreeNDF = this._cloudPointSixNDF = null;
+            this._rTreeCloudPointThreeNDF = this._rTreeCloudPointSixNDF = null;
 
             if (!this.UniquePointsThreeNDF.Any())
                 this.UniquePoints = this.UniquePointsSixNDF;
@@ -538,8 +650,6 @@ namespace Alpaca4d
             {
                 this.UniquePoints = this.UniquePointsThreeNDF.Concat(this.UniquePointsSixNDF).ToList();
             }
-
-
         }
 
         /// <summary>
@@ -557,32 +667,39 @@ namespace Alpaca4d
         /// </summary>
         public int NodeTagAt(Point3d point, out int ndf, string owner)
         {
-            if (this.RTreeCloudPointSixNDF != null)
-            {
-                var found = Alpaca4d.Utils.NearestWithin(this.RTreeCloudPointSixNDF, point, this.Tollerance,
-                                                         this.UniquePointsSixNDF);
-                if (found >= 0)
-                {
-                    ndf = 6;
-                    return found + 1 + this.UniquePointsThreeNDF.Count;
-                }
-            }
-
-            if (this.RTreeCloudPointThreeNDF != null)
-            {
-                var found = Alpaca4d.Utils.NearestWithin(this.RTreeCloudPointThreeNDF, point, this.Tollerance,
-                                                         this.UniquePointsThreeNDF);
-                if (found >= 0)
-                {
-                    ndf = 3;
-                    return found + 1;
-                }
-            }
+            int tag = this.NodeTagNear(point, out ndf);
+            if (tag > 0)
+                return tag;
 
             throw new Exception($"{owner} sits at {point}, where the model has no node. A spring joins " +
                                 $"nodes that are already there; it does not make them. Move the end onto a " +
                                 $"beam end, a mesh vertex or another node, or raise the model tolerance " +
                                 $"(currently {this.Tollerance}).");
+        }
+
+        /// <summary>
+        /// The tag of the node within tolerance of <paramref name="point"/> - six degree of freedom
+        /// nodes first, as <see cref="NodeTagAt"/> explains - and through <paramref name="ndf"/> its
+        /// degrees of freedom; 0 when there is none.
+        /// </summary>
+        public int NodeTagNear(Point3d point, out int ndf)
+        {
+            int found = this.NodeIndexSixNDF.Nearest(point);
+            if (found >= 0)
+            {
+                ndf = 6;
+                return found + 1 + this.UniquePointsThreeNDF.Count;
+            }
+
+            found = this.NodeIndexThreeNDF.Nearest(point);
+            if (found >= 0)
+            {
+                ndf = 3;
+                return found + 1;
+            }
+
+            ndf = 0;
+            return 0;
         }
 
         /// <summary>
@@ -705,9 +822,31 @@ namespace Alpaca4d
                     throw new InvalidOperationException(Application.QuarantineHelp(openSeesPath));
                 }
 
+                // OpenSees exits 0 when the deck stops on an error - a command it does not know, a
+                // material that was never defined - just as when the deck runs to its end. Its main
+                // sets the exit code to 1 and then never uses it: it evaluates a buffer that still
+                // holds the argument count instead of "exit 1", and then "quit". 3.8.0 and master
+                // alike. What it does print is Tcl's trace of the error, so the code it meant is
+                // read off that.
+                string error = errorBuilder.ToString().Trim();
+                int exitCode = process.ExitCode == 0 && StoppedOnTclError(error) ? 1 : process.ExitCode;
+
                 this.IsAnalysed = true;
-                return (outputBuilder.ToString().Trim(), errorBuilder.ToString().Trim(), process.ExitCode);
+                return (outputBuilder.ToString().Trim(), error, exitCode);
             }
+        }
+
+        /// <summary>
+        /// Whether OpenSees's error stream holds Tcl's trace of an error that stopped the deck. The
+        /// trace ends on the line of the deck that stopped, <c>    (file "AlpacaModel.tcl" line 12)</c>,
+        /// whatever sourced file or procedure the error came from. Only Tcl prints such a line, and
+        /// only for an error nothing caught; a long path is cut short with "...", which still fits.
+        /// </summary>
+        public static bool StoppedOnTclError(string error)
+        {
+            return !string.IsNullOrEmpty(error) &&
+                   System.Text.RegularExpressions.Regex.IsMatch(error, @"^[ \t]+\(file "".*"" line \d+\)\r?$",
+                       System.Text.RegularExpressions.RegexOptions.Multiline);
         }
 
         /// <summary>
@@ -789,14 +928,13 @@ namespace Alpaca4d
 
         private void CreateNodes()
         {
+            // A node's tag is its place in its pool, from one, the three degree of freedom pool first.
             if (this.UniquePointsThreeNDF.Count != 0)
             {
                 this.Tcl.Add(Model.Initialise3ndf());
-                foreach (var point in this.UniquePointsThreeNDF)
+                for (int i = 0; i < this.UniquePointsThreeNDF.Count; i++)
                 {
-                    var node = new Alpaca4d.Element.Node(point);
-                    node.Ndf = 3;
-                    node.SetNodeTag(this); // it can accept a list
+                    var node = new Alpaca4d.Element.Node(this.UniquePointsThreeNDF[i]) { Ndf = 3, Id = i + 1 };
                     this.Nodes.Add(node);
 
                     this.Tcl.Add(node.WriteTcl());
@@ -806,11 +944,9 @@ namespace Alpaca4d
             if (this.UniquePointsSixNDF.Count != 0)
             {
                 this.Tcl.Add(Model.Initialise6ndf());
-                foreach (var point in this.UniquePointsSixNDF)
+                for (int i = 0; i < this.UniquePointsSixNDF.Count; i++)
                 {
-                    var node = new Alpaca4d.Element.Node(point);
-                    node.Ndf = 6;
-                    node.SetNodeTag(this);
+                    var node = new Alpaca4d.Element.Node(this.UniquePointsSixNDF[i]) { Ndf = 6, Id = i + 1 + this.UniquePointsThreeNDF.Count };
                     this.Nodes.Add(node);
 
                     this.Tcl.Add(node.WriteTcl());
@@ -820,46 +956,18 @@ namespace Alpaca4d
 
         private void CreateSupports()
         {
-            Rhino.Geometry.Point3d closestPointInThreeNDF = Rhino.Geometry.Point3d.Origin;
-            Rhino.Geometry.Point3d closestPointInSixNDF = Rhino.Geometry.Point3d.Origin;
-
-            //var uniquePoints = this.Supports.Select(x => x.Pos).ToHashSet();
-
-            //if (uniquePoints.Count != this.Supports.Count)
-            //{
-            //    var diff = this.Supports.Count - uniquePoints.Count;
-            //    throw new Exception($"{diff} duplicate support points found!");
-            //}
-
-
+            // A support lands on the node within tolerance of it, the six degree of freedom one when
+            // a point has one of each, as NodeTagAt has it. It used to have to be in both pools of
+            // a model with both, so no support of a mixed model could sit on a node of only one.
             foreach (var supportNode in this.Supports)
             {
-                if (this.UniquePointsThreeNDF.Count != 0)
-                {
-                    closestPointInThreeNDF = Rhino.Collections.Point3dList.ClosestPointInList(this.UniquePointsThreeNDF, supportNode.Pos);
-                    if (supportNode.Pos.DistanceTo(closestPointInThreeNDF) <= this.Tollerance)
-                    {
-                        supportNode.ndf = 3;
-                        this.ThreeNdfModel.Add(supportNode);
-                        supportNode.SetNodeTag(this);
-                    }
-                    else
-                        throw new Exception($"Support node at location '{supportNode.Pos}' is not part of the model!");
-                }
+                int tag = this.NodeTagNear(supportNode.Pos, out int ndf);
+                if (tag == 0)
+                    throw new Exception($"Support node at location '{supportNode.Pos}' is not part of the model!");
 
-                if (this.UniquePointsSixNDF.Count != 0)
-                {
-                    closestPointInSixNDF = Rhino.Collections.Point3dList.ClosestPointInList(this.UniquePointsSixNDF, supportNode.Pos);
-                    if (supportNode.Pos.DistanceTo(closestPointInSixNDF) <= this.Tollerance)
-                    {
-                        supportNode.ndf = 6;
-                        this.SixNdfModel.Add(supportNode);
-                        supportNode.SetNodeTag(this);
-                    }
-                    else
-                        throw new Exception($"Support node at location '{supportNode.Pos}' is not part of the model!");
-                }
-
+                supportNode.ndf = ndf;
+                supportNode.Id = tag;
+                (ndf == 3 ? this.ThreeNdfModel : this.SixNdfModel).Add(supportNode);
             }
 
             this.CreateSupportSprings();
@@ -887,6 +995,11 @@ namespace Alpaca4d
             // node block left behind.
             if (activeNdf != deckNdf)
                 this.Tcl.Add(deckNdf == 3 ? Model.Initialise3ndf() : Model.Initialise6ndf());
+
+            this.WarnOfSpringsHeldRigidly();
+
+            // Trusses make six degree of freedom nodes, so the builder is at six here.
+            this.RestrainTrussOnlyNodes();
         }
 
         /// <summary>
@@ -928,6 +1041,173 @@ namespace Alpaca4d
                 support.SpringElementId = ++springElementTag;
                 support.TranslationSpring = SupportSpring(stiffness.translation);
                 support.RotationSpring = SupportSpring(stiffness.rotation);
+
+                // A spring support's own springs, a rigid one standing for the same penalty stiffness
+                // a skewed support is held with.
+                if (support.IsSpring)
+                    support.SpringMaterials = support.RestrainedDirections
+                        .Select(direction => support.SpringAlong(direction).Material(direction <= 3 ? stiffness.translation : stiffness.rotation))
+                        .ToList();
+            }
+        }
+
+        /// <summary>
+        /// What Assemble found worth saying: things the model goes ahead with but that are probably not
+        /// what was meant. Assemble Model shows them as warnings.
+        /// </summary>
+        public List<string> Warnings { get; } = new List<string>();
+
+        /// <summary>
+        /// True when a bar or a support spring works one way only - a tension-only or compression-only
+        /// truss, a compression-only or gap spring. Its stiffness then depends on where the model is,
+        /// so it needs Newton iterations: a Linear algorithm solves once with the stiffness at zero
+        /// load and never finds out that a bar went slack.
+        /// </summary>
+        public bool HasOneWay =>
+            this.Beams.OfType<Truss>().Any(truss => truss.WorksIn != AxialBehaviour.Both) ||
+            this.Supports.Any(support => support.IsOneWay);
+
+        /// <summary>
+        /// Says so when a spring support and an ordinary one on the same node act along the same axis:
+        /// the rigid one then takes the whole load in that direction, and the spring does nothing.
+        /// Two springs on one axis are not a mistake - they act side by side.
+        /// </summary>
+        private void WarnOfSpringsHeldRigidly()
+        {
+            foreach (var node in this.Supports.Where(support => support.Id.HasValue).GroupBy(support => support.Id.Value))
+            {
+                var springs = node.Where(support => support.IsSpring).ToList();
+                var rigid = node.Where(support => !support.IsSpring).ToList();
+                if (springs.Count == 0 || rigid.Count == 0)
+                    continue;
+
+                foreach (var spring in springs)
+                foreach (int along in spring.RestrainedDirections)
+                {
+                    var springAxis = AxisOf(spring.Plane, along);
+                    bool held = rigid.Any(support => support.RestrainedDirections.Any(direction =>
+                        (direction <= 3) == (along <= 3) && Math.Abs(AxisOf(support.Plane, direction) * springAxis) > 1e-6));
+
+                    if (held)
+                        this.Warnings.Add($"The spring support at {spring.Pos} acts along an axis an ordinary support on the same node " +
+                                          "already holds, so the rigid support takes the whole load there and the spring does nothing. " +
+                                          "Free that direction on the ordinary support.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Says so when an edge of a ten node tetrahedron has a support at both corners and none at
+        /// the node in its middle. A support holds the one node at its point, so a face supported
+        /// at the corners of its triangles - the vertices of the mesh it was drawn from, which is
+        /// all a four node tetrahedron needs - leaves every edge node on it free, and the element
+        /// bulges between the points it is held at.
+        /// </summary>
+        private void WarnOfFreeEdgeNodes()
+        {
+            var held = new HashSet<int>(this.Supports.Where(support => support.Id.HasValue).Select(support => support.Id.Value));
+            var free = new HashSet<int>();
+
+            foreach (var tetrahedron in this.Bricks.OfType<TenNodeTetrahedron>())
+            {
+                var nodes = tetrahedron.IndexNodes;
+                for (int e = 0; e < Alpaca4d.Utils.TetrahedronEdges.Length; e++)
+                {
+                    var edge = Alpaca4d.Utils.TetrahedronEdges[e];
+                    int middle = nodes[4 + e] ?? 0;
+                    if (held.Contains(nodes[edge[0]] ?? 0) && held.Contains(nodes[edge[1]] ?? 0) && !held.Contains(middle))
+                        free.Add(middle);
+                }
+            }
+
+            if (free.Count > 0)
+                this.Warnings.Add((free.Count == 1
+                                      ? "An edge node of a ten node tetrahedron lies between two supported corners and has no support of its own. "
+                                      : $"{free.Count} edge nodes of ten node tetrahedra lie between two supported corners and have no support of their own. ") +
+                                  "A support holds only the node at its point, so a face supported at its mesh vertices is held at " +
+                                  "its corners and free in between. Support the edge nodes too: the Points output of Ten Node " +
+                                  "Tetrahedron has every node.");
+        }
+
+        /// <summary>The axis of <paramref name="plane"/> a support direction 1-6 runs along or turns about.</summary>
+        private static Vector3d AxisOf(Plane plane, int direction)
+        {
+            switch ((direction - 1) % 3)
+            {
+                case 0: return plane.XAxis;
+                case 1: return plane.YAxis;
+                default: return plane.ZAxis;
+            }
+        }
+
+        /// <summary>
+        /// A truss carries no moment, so a node only trusses reach has three rotations that nothing
+        /// holds, and the stiffness matrix is singular. They are fixed here - all three, less any a
+        /// support on the node already fixes, since OpenSees refuses a second fix of the same degree
+        /// of freedom. A node with a beam, a shell, a link that turns, or any constraint on it is left
+        /// alone: something there either holds the rotations or decides them.
+        /// </summary>
+        private void RestrainTrussOnlyNodes()
+        {
+            var trussNodes = new HashSet<int>();
+            var heldNodes = new HashSet<int>();
+
+            int Tag(Point3d point)
+            {
+                int found = this.NodeIndexSixNDF.Nearest(point);
+                return found < 0 ? 0 : found + 1 + this.UniquePointsThreeNDF.Count;
+            }
+
+            foreach (var beam in this.Beams)
+            {
+                var into = beam is Truss ? trussNodes : heldNodes;
+                into.Add(Tag(beam.Curve.PointAtStart));
+                into.Add(Tag(beam.Curve.PointAtEnd));
+            }
+
+            if (trussNodes.Count == 0)
+                return;
+
+            foreach (var shell in this.Shells)
+                foreach (var point in shell.Mesh.Vertices.ToPoint3dArray())
+                    heldNodes.Add(Tag(point));
+
+            foreach (var link in this.Links.OfType<Link>().Where(link => link.Directions.Any(direction => direction > 3)))
+            {
+                heldNodes.Add(Tag(link.Line.From));
+                heldNodes.Add(Tag(link.Line.To));
+            }
+
+            foreach (var constraint in this.Constraint)
+            {
+                if (constraint is Alpaca4d.Constraints.RigidDiaphragm diaphragm)
+                {
+                    heldNodes.Add(Tag((Point3d)diaphragm.MasterNode));
+                    foreach (var point in diaphragm.SlaveNodes)
+                        heldNodes.Add(Tag(point));
+                }
+                else if (constraint is Alpaca4d.Constraints.EqualDOF tie)
+                {
+                    heldNodes.Add(Tag((Point3d)tie.MasterNode));
+                    heldNodes.Add(Tag(tie.SlaveNode));
+                }
+                else if (constraint is Alpaca4d.Constraints.RigidLink rigidLink)
+                {
+                    heldNodes.Add(Tag(rigidLink.RetainedNode));
+                    heldNodes.Add(Tag(rigidLink.ConstrainedNode));
+                }
+            }
+
+            foreach (int node in trussNodes.Where(node => node > 0 && !heldNodes.Contains(node)).OrderBy(node => node))
+            {
+                // What a support on the node already fixes: only an axis-aligned rigid one writes a fix there.
+                var fixedHere = this.Supports.Where(support => support.Id == node && support.ndf == 6 && !support.NeedsSpring).ToList();
+                bool rx = !fixedHere.Any(support => support.Rx);
+                bool ry = !fixedHere.Any(support => support.Ry);
+                bool rz = !fixedHere.Any(support => support.Rz);
+
+                if (rx || ry || rz)
+                    this.Tcl.Add($"fix {node} 0 0 0 {Convert.ToInt16(rx)} {Convert.ToInt16(ry)} {Convert.ToInt16(rz)}\n");
             }
         }
 
@@ -1047,7 +1327,7 @@ namespace Alpaca4d
                 {
                     var shell = (IShell)item;
 
-                    double meshArea = Rhino.Geometry.AreaMassProperties.Compute(shell.Mesh).Area;
+                    double meshArea = Alpaca4d.Utils.MeshArea(shell.Mesh);
                     var areaDensity = shell.Section.Thickness * (shell.Section.Material.Rho ?? 0.0) * 9.81 / 1000.0;
                     mass += areaDensity * meshArea;
                     if (gravityLoad != null)
@@ -1081,7 +1361,7 @@ namespace Alpaca4d
                 if (item.Type == ElementType.Brick)
                 {
                     var brick = (IBrick)item;
-                    var meshVolume = Rhino.Geometry.VolumeMassProperties.Compute(brick.Mesh).Volume;
+                    var meshVolume = Alpaca4d.Utils.MeshVolume(brick.Mesh);
                     // A material given no density weighs nothing, which is a model, rather than a
                     // reason to stop: the cast this replaces threw on every nD material left at
                     // its default.
@@ -1089,9 +1369,16 @@ namespace Alpaca4d
                     mass += density * meshVolume;
                     if (gravityLoad != null)
                     {
-                        foreach (var index in brick.IndexNodes)
+                        // Evenly over the nodes is the element's own share-out for a brick or a
+                        // four node tetrahedron, but not for a ten node one: see BodyForceShares.
+                        var shares = brick is TenNodeTetrahedron
+                            ? TenNodeTetrahedron.BodyForceShares
+                            : Enumerable.Repeat(1.0 / brick.IndexNodes.Count, brick.IndexNodes.Count).ToList();
+
+                        for (int n = 0; n < brick.IndexNodes.Count; n++)
                         {
-                            var gravityBrickPointLoad = new Alpaca4d.Loads.PointLoad(index, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, -(density * meshVolume / (brick.Mesh.Vertices.Count))), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
+                            var index = brick.IndexNodes[n];
+                            var gravityBrickPointLoad = new Alpaca4d.Loads.PointLoad(index, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, -(density * meshVolume * shares[n])), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
                             gravityBrickPointLoad.Ndf = 3;
                             gravityBrickPointLoad.Pos = this.UniquePoints[(int)index -1];
                             gravityPointLoad.Add(gravityBrickPointLoad);
@@ -1125,14 +1412,11 @@ namespace Alpaca4d
                         {
                             item.SetTag(this);
                             var lineLoad = (Alpaca4d.Loads.LineLoad)item;
-                            // Assign the load to all the elements if the user does not specify the elements.
+                            // Without a beam of its own, the load goes on every beam its filter names, or on every beam.
                             if (lineLoad.Element == null)
                             {
-                                foreach (var beam in this.Beams)
-                                {
-                                    lineLoad = new Alpaca4d.Loads.LineLoad(beam, lineLoad.GlobalForce, lineLoad.TimeSeries);
-                                    myLoads.Add(lineLoad);
-                                }
+                                foreach (var beam in lineLoad.AppliedTo(this.Beams))
+                                    myLoads.Add(new Alpaca4d.Loads.LineLoad(beam, lineLoad.GlobalForce, lineLoad.TimeSeries));
                             }
                             else
                                 myLoads.Add(lineLoad);
@@ -1141,14 +1425,11 @@ namespace Alpaca4d
                         {
                             item.SetTag(this);
                             var meshLoad = (Alpaca4d.Loads.MeshLoad)item;
-                            // Assign the load to all the elements if the user does not specify the elements.
+                            // Without a shell of its own, the load goes on every shell its filter names, or on every shell.
                             if (meshLoad.Element == null)
                             {
-                                foreach (var mesh in this.Shells)
-                                {
-                                    meshLoad = new Alpaca4d.Loads.MeshLoad(mesh, meshLoad.GlobalForce, meshLoad.TimeSeries);
-                                    myLoads.Add(meshLoad);
-                                }
+                                foreach (var shell in meshLoad.AppliedTo(this.Shells))
+                                    myLoads.Add(new Alpaca4d.Loads.MeshLoad(shell, meshLoad.GlobalForce, meshLoad.TimeSeries));
                             }
                             else
                                 myLoads.Add(meshLoad);
@@ -1169,6 +1450,7 @@ namespace Alpaca4d
 
         public void Assemble()
         {
+            this.Warnings.Clear();
             this.GetElements();
             
             this.GetUniquePoints(this.Beams, this.Shells, this.Bricks, this.Constraint);
@@ -1188,35 +1470,22 @@ namespace Alpaca4d
             // create equalDOF when the model has 3df and 6df together
             // TODO
 
-            var Id = new List<int>();
-            var IdB = new List<int>();
-
-            void SearchCallback(object sender, RTreeEventArgs e)
+            // Where a solid meets a beam or a shell, a three and a six degree of freedom node stand
+            // together: their translations are tied, every pair within tolerance, in the order of
+            // the solid's nodes.
+            if (this.UniquePointsThreeNDF.Count != 0 && this.UniquePointsSixNDF.Count != 0)
             {
-                Id.Add(e.Id);
-                IdB.Add(e.IdB);
-            }
-
-
-            var lenThreeNDF = this.UniquePointsThreeNDF.Count;
-            var lenSixNDF = this.UniquePointsSixNDF.Count;
-
-            if(lenThreeNDF != 0 && lenSixNDF != 0)
-            {
-                Console.WriteLine("brick and beam together");
-                Rhino.Geometry.RTree.SearchOverlaps(this.RTreeCloudPointThreeNDF, this.RTreeCloudPointSixNDF, this.Tollerance, SearchCallback);
-
-                int i = 0;
-                for(i = 0; i < Id.Count; i++)
+                for (int i = 0; i < this.UniquePointsThreeNDF.Count; i++)
                 {
-                    Console.WriteLine($"{Id[i]} {IdB[i]}");
-                    var node_i = this.UniquePointsThreeNDF[Id[i]];
-                    var node_j = this.UniquePointsSixNDF[IdB[i]];
-
-                    var equalConstraint = new Alpaca4d.Constraints.EqualDOF(node_i, node_j, true, true, true, false, false, false);
-                    equalConstraint.MasterNodeId = this.CloudPointThreeNDF.ClosestPoint(node_i) + 1;
-                    equalConstraint.SlaveNodeId = this.CloudPointSixNDF.ClosestPoint(node_j) + 1 + (this.UniquePointsThreeNDF.Count);
-                    this.Tcl.Add(equalConstraint.WriteTcl());
+                    var node_i = this.UniquePointsThreeNDF[i];
+                    foreach (int j in this.NodeIndexSixNDF.Within(node_i))
+                    {
+                        var node_j = this.UniquePointsSixNDF[j];
+                        var equalConstraint = new Alpaca4d.Constraints.EqualDOF(node_i, node_j, true, true, true, false, false, false);
+                        equalConstraint.MasterNodeId = i + 1;
+                        equalConstraint.SlaveNodeId = j + 1 + this.UniquePointsThreeNDF.Count;
+                        this.Tcl.Add(equalConstraint.WriteTcl());
+                    }
                 }
             }
 
@@ -1279,6 +1548,8 @@ namespace Alpaca4d
                 index++;
             }
 
+            this.WarnOfFreeEdgeNodes();
+
             foreach(var item in this.Elements)
             {
                 // The identifier goes out as a comment because OpenSees has no command for one:
@@ -1305,6 +1576,7 @@ namespace Alpaca4d
                 this.Tcl.Add(item.WriteTcl());
             }
 
+            this.LoadPatternTclStart = this.Tcl.Count;
             this.addLoadPattern(this.LoadPatterns);
         }
 

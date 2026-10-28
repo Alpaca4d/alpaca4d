@@ -110,13 +110,52 @@ namespace Alpaca4d.Gh
 
             model.Tollerance = tolerance;
             model.Assemble();
-            
+            WarnOfLoadsOnNothing(model);
+            foreach (var warning in model.Warnings.Distinct())
+                this.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, warning);
+
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, model);
             DA.SetData(1, model.TotalMass);
         }
 
         private const double DefaultTolerance = 0.01;
+
+        /// <summary>
+        /// A load that names its elements by ElementId and names none of its kind goes on nothing,
+        /// and the analysis runs without it. Said here, where the elements are known, the way the
+        /// result components say so of a filter that finds nothing.
+        /// </summary>
+        private void WarnOfLoadsOnNothing(Model model)
+        {
+            var said = new HashSet<string>();
+            foreach (var pattern in model.LoadPatterns)
+            {
+                foreach (var load in pattern.Load ?? new List<Alpaca4d.Generic.ILoad>())
+                {
+                    string message = null;
+                    if (load is Alpaca4d.Loads.LineLoad line && line.Element == null && !string.IsNullOrWhiteSpace(line.Filter)
+                        && line.AppliedTo(model.Beams).Count == 0)
+                        message = OnNothing("Linear Load", line.Filter, "beam", model);
+                    else if (load is Alpaca4d.Loads.MeshLoad mesh && mesh.Element == null && !string.IsNullOrWhiteSpace(mesh.Filter)
+                        && mesh.AppliedTo(model.Shells).Count == 0)
+                        message = OnNothing("Mesh Load", mesh.Filter, "shell", model);
+
+                    if (message != null && said.Add(message))
+                        this.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, message);
+                }
+            }
+        }
+
+        private static string OnNothing(string component, string filter, string kind, Model model)
+        {
+            int others = Alpaca4d.Result.ElementFilter.Named(filter, model.Elements).Count;
+            if (others > 0)
+                return $"{component} \"{filter}\" names {others} element{(others == 1 ? "" : "s")}, but no {kind}, so it loads nothing.";
+
+            var why = Alpaca4d.Result.ElementFilter.Create(new[] { filter }, out _).Unmatched(model.Elements);
+            return $"{component}: {(why.Count > 0 ? why[0] : $"\"{filter}\" matched nothing.")} It loads nothing.";
+        }
 
         /// <summary>
         /// Alpaca4d never scales geometry: a coordinate is written to the deck as it stands and

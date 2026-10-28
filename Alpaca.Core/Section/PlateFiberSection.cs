@@ -11,6 +11,7 @@ namespace Alpaca4d.Section
     public partial class PlateFiberSection : ISerialize, IMultiDimensionSection
     {
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double Thickness { get; set; }
         public IMultiDimensionMaterial Material { get; set; }
         public IEnumerable<IMaterial> Materials => new IMaterial[] { this.Material };

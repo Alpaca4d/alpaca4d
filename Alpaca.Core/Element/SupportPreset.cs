@@ -125,7 +125,7 @@ namespace Alpaca4d.Element
 
         private static string State(bool locked)
         {
-            return locked ? "\U0001F512" : "free";
+            return locked ? "fixed" : "free";
         }
 
         /// <summary>Name on one line, the six states on the next - what a tooltip shows.</summary>

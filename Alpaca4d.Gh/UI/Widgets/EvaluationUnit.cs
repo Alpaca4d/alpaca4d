@@ -5,6 +5,7 @@ using Rhino;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Reflection;
 
 namespace Alpaca4d.UIWidgets
@@ -231,41 +232,11 @@ namespace Alpaca4d.UIWidgets
                 GH_IReader val = reader.FindChunk("params");
                 if (val.ChunkExists("input") && inputs != null)
                 {
-                    GH_IReader val2 = val.FindChunk("input");
-                    int num = -1;
-                    if (val2.TryGetInt32("count", ref num) && inputs.Count == num)
-                    {
-                        for (int i = 0; i < num; i++)
-                        {
-                            if (val2.ChunkExists("p", i))
-                            {
-                                inputs[i].Parameter.Read(val2.FindChunk("p", i));
-                            }
-                            else if (val2.ChunkExists("param", i))
-                            {
-                                inputs[i].Parameter.Read(val2.FindChunk("param", i));
-                            }
-                        }
-                    }
+                    ReadParams(val.FindChunk("input"), inputs);
                 }
                 if (val.ChunkExists("output") && outputs != null)
                 {
-                    GH_IReader val3 = val.FindChunk("output");
-                    int num2 = -1;
-                    if (val3.TryGetInt32("count", ref num2) && outputs.Count == num2)
-                    {
-                        for (int j = 0; j < num2; j++)
-                        {
-                            if (val3.ChunkExists("p", j))
-                            {
-                                outputs[j].Parameter.Read(val3.FindChunk("p", j));
-                            }
-                            else if (val3.ChunkExists("param", j))
-                            {
-                                outputs[j].Parameter.Read(val3.FindChunk("param", j));
-                            }
-                        }
-                    }
+                    ReadParams(val.FindChunk("output"), outputs);
                 }
             }
             try
@@ -281,6 +252,49 @@ namespace Alpaca4d.UIWidgets
                 RhinoApp.WriteLine("Component error:" + ex.Message + "\n" + ex.StackTrace);
             }
             return true;
+        }
+
+        /// <summary>
+        /// Reads each saved parameter into the one of its name, or failing that into the one in its
+        /// place - an input renamed since, as ν was once v.
+        ///
+        /// This read by position alone, and only when the file had exactly as many parameters as the
+        /// unit has now - otherwise none at all. So a unit given an input since a file was saved, as
+        /// the materials were given Colour, came back from that file with every value and every wire
+        /// gone. New inputs go last, so a file with no more parameters than the unit has now still
+        /// lines up with its first ones; one with more is read by name alone.
+        /// </summary>
+        private static void ReadParams(GH_IReader reader, List<ExtendedPlug> plugs)
+        {
+            int count = -1;
+            if (!reader.TryGetInt32("count", ref count)) return;
+
+            var chunks = new List<GH_IReader>();
+            var names = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                GH_IReader chunk = reader.ChunkExists("p", i) ? reader.FindChunk("p", i)
+                                 : reader.ChunkExists("param", i) ? reader.FindChunk("param", i)
+                                 : null;
+                string name = null;
+                chunk?.TryGetString("Name", ref name);
+                chunks.Add(chunk);
+                names.Add(name);
+            }
+
+            var read = new HashSet<ExtendedPlug>();
+            for (int i = 0; i < count; i++)
+            {
+                if (chunks[i] == null) continue;
+
+                ExtendedPlug plug = plugs.FirstOrDefault(p => p.Parameter.Name == names[i] && !read.Contains(p));
+                if (plug == null && count <= plugs.Count && !read.Contains(plugs[i]) && !names.Contains(plugs[i].Parameter.Name))
+                    plug = plugs[i];
+                if (plug == null) continue;
+
+                read.Add(plug);
+                plug.Parameter.Read(chunks[i]);
+            }
         }
 
         public string GetMenuDescription()

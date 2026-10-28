@@ -15,6 +15,7 @@ namespace Alpaca4d.Section
         public int? Id { get; set; } = IdGenerator.GenerateId();
         public IUniaxialMaterial Material { get; set; }
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double Diameter { get; set; }
         public double Thickness { get; set; }
         public double Area

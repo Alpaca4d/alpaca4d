@@ -9,5 +9,5 @@ RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.d
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 cp ElementId.cs "$work/"; cp "$CORE" "$RHINO" "$work/"
 ( cd "$work"
-  mcs -target:exe -out:ElementId.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll ElementId.cs
+  mcs -target:exe -out:ElementId.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:System.Drawing.dll ElementId.cs
   mono ElementId.exe )

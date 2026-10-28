@@ -153,13 +153,38 @@ namespace Alpaca4d.Gh
             }
 
 
-            analysisModel.FileName = System.IO.Path.GetFullPath("AlpacaModel");
+            // A deck and a recorder of its own for every run, so that a tree of models - one per load
+            // case - keeps each branch's results apart. See AnalysisFiles.
+            var files = AnalysisFiles.For(this, DA);
+            analysisModel.FileName = files.OwnFile("AlpacaModel", ".tcl");
 
 
+
+            if (settings?.Algorithm?.Type == Alpaca4d.Algorithm.AlgorithmType.Linear && model.HasOneWay)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "The model has tension-only or compression-only bars or one-way supports, and the Linear algorithm solves once " +
+                    "with them all holding both ways. Pick Newton in Analysis Settings, with several steps, so that they can let go.");
+
+            if (settings != null && model.HasOneWay)
+            {
+                var safer = settings.WithTestFor(model);
+                if (safer != null)
+                {
+                    settings = safer;
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        "The model has one-way bars or supports, so the convergence test checks the unbalanced force too " +
+                        "(NormDispAndUnbalance): an energy test alone can pass the first iteration while a support is still pulling.");
+                }
+                else if (settings.TestIgnoresUnbalance)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        $"The convergence test ({settings.Test.Type}) looks only at how far an iteration moves. With one-way bars or " +
+                        "supports a first iteration that barely moves can pass it while a support is still pulling, and the results " +
+                        "are wrong. Pick NormUnbalance or NormDispAndUnbalance in the Test component.");
+            }
 
             if(settings != null)
             {
-                string recorderName = "recorder.mpco";
+                string recorderName = files.OwnFile("recorder", ".mpco");
                 analysisModel.Settings = settings;
                 // Recorder
                 var recorder = new Alpaca4d.Recorder();
@@ -175,11 +200,20 @@ namespace Alpaca4d.Gh
                     analysisModel.IsTransient = true;
                 }
 
-                // Recorders from Assemble Model are the user's choice and go in as they are, in
-                // place of the one picked above. The result components read the first of them.
-                analysisModel.Recorders = model.Recorders != null && model.Recorders.Count > 0
-                    ? new List<IRecorder>(model.Recorders)
+                // Recorders from Assemble Model are the user's choice and go in, in place of the one
+                // picked above, under the name the user gave - with "_" and the run added when this
+                // component solves more than one model, as every run would write the same file
+                // otherwise. They go in as copies, so the user's own recorders keep their name. The
+                // result components read the first of them.
+                bool userRecorders = model.Recorders != null && model.Recorders.Count > 0;
+                analysisModel.Recorders = userRecorders
+                    ? model.Recorders.Select(item => ForThisRun(item, files)).ToList()
                     : new List<IRecorder> { recorder };
+
+                if (userRecorders && files.Runs > 1 && files.Run == 0)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        "This component solves more than one model, so each run writes its recorders with \"_\" and its number added to the " +
+                        "file name - recorder_0.mpco, recorder_1.mpco - and keeps its own results.");
 
                 // Two recorders on one file would have the second overwrite the first.
                 var shared = analysisModel.Recorders
@@ -220,45 +254,31 @@ namespace Alpaca4d.Gh
                 return;
             }
 
-            const string AnalyzeResultTag = "ALPACA_ANALYZE_RESULT";
             string log = string.IsNullOrEmpty(error) ? output : error + "\n" + output;
 
-            if (exitCode != 0)
+            // Looked for first: it says why the deck stopped, where the exit code only says it did.
+            string failure = Alpaca4d.Element.TenNodeTetrahedron.SolverTooOld(log) ?? AnalysisOutcome.Failure(output, error, exitCode);
+            if (failure != null)
             {
-                // A non-zero exit code means the Tcl script itself errored out
-                // (e.g. bad command, undefined material) - see TclInterpreter::run.
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Analysis Failed: OpenSees exited with an error. See log for details.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, failure);
                 analysisModel = null;
             }
-            else
+            else if ((settings?.SystemEquation?.WithoutExpectedWarnings(error) ?? error).Contains("WARNING"))
             {
-                // analyze() always returns TCL_OK to Tcl even on non-convergence; the
-                // actual result is a negative integer captured via the sentinel below.
-                int? analyzeResult = null;
-                var resultLine = output
-                    .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
-                    .LastOrDefault(l => l.Contains(AnalyzeResultTag));
-
-                if (resultLine != null)
-                {
-                    var token = resultLine.Substring(resultLine.IndexOf(AnalyzeResultTag) + AnalyzeResultTag.Length).Trim();
-                    if (int.TryParse(token, out int parsed))
-                        analyzeResult = parsed;
-                }
-
-                if (analyzeResult.HasValue && analyzeResult.Value < 0)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Analysis Failed: OpenSees 'analyze' did not converge.");
-                    analysisModel = null;
-                }
-                else if (error.Contains("WARNING"))
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Warning! Double check the log!");
-                }
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Warning! Double check the log!");
             }
 
             DA.SetData(ModelOutput, analysisModel);
             DA.SetData(LogOutput, log);
+        }
+
+        /// <summary>A copy of one of the user's recorders, writing to this run's file.</summary>
+        private static IRecorder ForThisRun(IRecorder recorder, AnalysisFiles files)
+        {
+            if (recorder is Recorder mpco)
+                return new Recorder(files.UserFile(mpco.FileName), mpco.NodeResults, mpco.ElementResults);
+
+            return recorder;
         }
 
         public override GH_Exposure Exposure => GH_Exposure.primary;

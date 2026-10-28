@@ -13,6 +13,7 @@ namespace Alpaca4d.Material
     {
         public int? Id { get; set; } = IdGenerator.GenerateId();
         public string MatName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double E { get; set; }
 
         public double? Eneg { get; set; }

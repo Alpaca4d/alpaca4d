@@ -189,6 +189,23 @@ namespace Alpaca4d.Result
         }
 
         /// <summary>
+        /// The elements out of <paramref name="elements"/> that one term names, in the order given,
+        /// for a load that goes on elements by name rather than by wire.
+        ///
+        /// A blank term names every element, as an unplugged filter does. One that does not compile
+        /// names none: the component that took it has already said so, and falling back on every
+        /// element would put a load meant for a few of them on the whole model.
+        /// </summary>
+        public static List<T> Named<T>(string term, IEnumerable<T> elements) where T : IElement
+        {
+            var filter = Create(new[] { term }, out var badTerms);
+            if (badTerms.Count > 0 || elements == null)
+                return new List<T>();
+
+            return elements.Where(element => filter.Matches(element)).ToList();
+        }
+
+        /// <summary>
         /// The positions in <paramref name="elements"/> that pass, in the order given.
         ///
         /// Positions rather than the elements themselves because that is what the callers need:

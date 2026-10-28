@@ -5,8 +5,9 @@
 //   1. An analysis is free up to FreeElementLimit elements. Past it, Run Analysis and Natural
 //      Vibration Analysis refuse without a license - checked on every run, where it used to be
 //      checked once every five minutes and let everything through in between.
-//   2. Some components need a license whatever the model: View Results, Model View and Moment
-//      Curvature. They ask ValidateFeature.
+//   2. Some components need a license whatever the model: View Results, Model View, Moment
+//      Curvature, Explorer Inputs, Explorer Record (to write a study) and Non-Linear Optimisation
+//      (to start a run). They ask ValidateFeature.
 //
 // Either refusal opens the License window, but no more than once every five minutes, because a
 // refused component re-solves whenever anything upstream changes.

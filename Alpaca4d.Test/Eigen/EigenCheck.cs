@@ -3,12 +3,16 @@
 // same stream - FullGenEigenSolver about its workspace or a complex eigenvalue - and that used to
 // be read as eigenvalues too. See README.md.
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using Alpaca4d;
+using Alpaca4d.Generic;
+using Alpaca4d.Result;
+using Rhino.Geometry;
 
 class EigenCheck
 {
@@ -130,6 +134,16 @@ for {set i 2} {$i <= 11} {incr i} {
             Check("a section ends at the blank line after it", sections[0].Count == 3 && sections[0][2].Trim() == "1        3445.7");
         }
 
+        Console.WriteLine("\nSizing the modes\n");
+        {
+            // A mode is read with its largest translation 1, as a buckling mode is: OpenSees hands
+            // them out mass-normalised, which made their size go with the mass of the model.
+            Check("the largest translation becomes 1", Read.ModeScale(new double[,] { { 0.0, 0.25, 0.0 }, { 0.0, 0.5, 0.125 } }) == 2.0);
+            Check("and points the positive way", Read.ModeScale(new double[,] { { 0.0, 0.25, 0.0 }, { 0.0, -0.5, 0.0 } }) == -2.0);
+            Check("rotations, past the third column, do not count", Read.ModeScale(new double[,] { { 0.0, 0.25, 0.0, 4.0, 0.0, 0.0 } }) == 4.0);
+            Check("a mode that does not move is left alone", Read.ModeScale(new double[,] { { 0.0, 0.0, 0.0 } }) == 1.0);
+        }
+
         string openSees = args.Length > 0 ? args[0] : "";
         if (!File.Exists(openSees))
         {
@@ -187,6 +201,47 @@ for {set i 2} {$i <= 11} {incr i} {
                           string.Join(" ", Enumerable.Range(0, 9).Select(Rows)));
                     Check("one row under the masses and the centre of mass", new[] { 1, 2, 3 }.All(slot => Rows(slot) == 1));
                 }
+
+                // The first mode at the tip, read the way Nodal Displacements and View Results read
+                // it, at the cantilever's own mass and at ten thousand times it. As OpenSees records
+                // them the two differ a hundred times over; read, both move the tip 1.
+                var raw = new List<double[]>();
+                var tips = new List<(Vector3d U, Vector3d R)>();
+                foreach (double times in new[] { 1.0, 1e4 })
+                {
+                    string file = Path.Combine(folder, $"modes{tips.Count}.mpco");
+                    string deck = Cantilever
+                        .Replace("0.019625", (0.019625 * times).ToString("R", CultureInfo.InvariantCulture))
+                        .Replace("0.03925", (0.03925 * times).ToString("R", CultureInfo.InvariantCulture));
+                    printed = RunOpenSees(openSees, deck + Recorder.MpcoEigen(file).WriteTcl() + Eigen.WriteTcl("-fullGenLapack", 2) +
+                                          "modalProperties -file \"ModalReport.txt\" -unorm\n" +
+                                          "puts \"RAW [nodeEigenvector 11 1]\"\nrecord\nwipe\n", folder);
+                    string line = printed.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith("RAW "));
+                    raw.Add(line == null ? null : line.Substring(4).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                                      .Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray());
+
+                    var model = new Model { Recorders = new List<IRecorder> { Recorder.MpcoEigen(file) }, IsModal = true };
+                    var tip = new List<int?> { 11 };
+                    tips.Add((Read.NodalOutput(model, 0, ResultType.MODES_OF_VIBRATION_U, tip).Single(),
+                              Read.NodalOutput(model, 0, ResultType.MODES_OF_VIBRATION_R, tip).Single()));
+                }
+
+                Func<double[], int, double> Length = (v, at) => Math.Sqrt(v[at] * v[at] + v[at + 1] * v[at + 1] + v[at + 2] * v[at + 2]);
+                Func<Vector3d, double> Largest = v => new[] { v.X, v.Y, v.Z }.OrderByDescending(Math.Abs).First();
+                bool both = raw.All(r => r != null && r.Length == 6);
+                Check("as recorded, the tip moves a hundred times less on the heavy one",
+                      both && Close(Length(raw[0], 0) / Length(raw[1], 0), 100.0, 1e-6),
+                      both ? $"{Length(raw[0], 0):G4} and {Length(raw[1], 0):G4}" : "not printed");
+                Check("as read, its largest translation is 1 on both",
+                      tips.All(t => Close(Largest(t.U), 1.0, 1e-9)),
+                      string.Join(" and ", tips.Select(t => $"{t.U.X:G4} {t.U.Y:G4} {t.U.Z:G4}")));
+
+                // The rotations come down by the factor of the translations, not one of their own,
+                // so the tip turns as much for its movement as the shape OpenSees gave.
+                double turn = both ? Length(raw[0], 3) / Length(raw[0], 0) : double.NaN;
+                Check($"and it turns {turn:G4} rad per unit it moves, as it did before reading",
+                      tips.All(t => Close(t.R.Length / t.U.Length, turn, 1e-6)),
+                      string.Join(" and ", tips.Select(t => $"{t.R.Length / t.U.Length:G6}")));
 
                 // -symmBandLapack really does refuse, which is why Natural Vibration turns it away.
                 printed = RunOpenSees(openSees, Cantilever + Eigen.WriteTcl("-symmBandLapack", 6), folder);

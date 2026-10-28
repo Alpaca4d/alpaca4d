@@ -20,6 +20,42 @@ namespace Alpaca4d
         public AnalysisStep AnalysisStep { get; set; }
         public Damping Damping { get; set; }
 
+        /// <summary>
+        /// True when nobody chose <see cref="Test"/>: Analysis Settings filled it in. Run Analysis may then
+        /// pick a safer one for the model it solves - see <see cref="WithTestFor"/>.
+        /// </summary>
+        public bool TestIsDefault { get; set; }
+
+        /// <summary>
+        /// Convergence tests that look only at how far an iteration moved, or how much energy it
+        /// moved, and never at the force left unbalanced.
+        /// </summary>
+        private static readonly Test.TestType[] Blind =
+        {
+            Test.TestType.EnergyIncr, Test.TestType.NormDispIncr, Test.TestType.RelativeEnergyIncr,
+            Test.TestType.RelativeNormDispIncr, Test.TestType.RelativeTotalNormDispIncr,
+        };
+
+        /// <summary>True when <see cref="Test"/> can pass while a force is still left unbalanced.</summary>
+        public bool TestIgnoresUnbalance => this.Test != null && Blind.Contains(this.Test.Type);
+
+        /// <summary>
+        /// These settings for a model with one-way bars or supports: the same, except that a default
+        /// test that ignores the unbalanced force is swapped for one that does not. A rigid one-way
+        /// spring starts stiff, so the first iteration barely moves the node; an energy or displacement
+        /// test passes it while the spring is still pulling, and the analysis reports a support that
+        /// never let go. Settings chosen by hand are left as they are; null when nothing changes.
+        /// </summary>
+        public Settings WithTestFor(Model model)
+        {
+            if (!this.TestIsDefault || !this.TestIgnoresUnbalance || model == null || !model.HasOneWay)
+                return null;
+
+            return new Settings(this.Constraint, this.Numberer, this.SystemEquation,
+                                Test.NormDispAndUnbalance(1e-8, 1e-8, Math.Max(this.Test.Iter, 25)),
+                                this.Algorithm, this.Integrator, this.Analysis, this.AnalysisStep, this.Damping);
+        }
+
         public Settings()
         {
 
@@ -97,6 +133,12 @@ namespace Alpaca4d
     public class SystemEquation
     {
         public SystemType Type { get; set; }
+
+        /// <summary>
+        /// How many cores Mumps factorises on; 0 takes them all. The other systems solve on one.
+        /// </summary>
+        public int Cores { get; set; }
+
         public enum SystemType
         {
             BandGen,
@@ -108,18 +150,57 @@ namespace Alpaca4d
             SparseSPD,
             SparseGeneral,
             FullGeneral,
+            Mumps,
+            Auto,
         }
 
-        public SystemEquation(string type)
+        /// <summary>What an OpenSees without Mumps prints when a deck asks for it.</summary>
+        public const string MumpsMissing = "WARNING system Mumps is unknown or not installed";
+
+        public SystemEquation(string type, int cores = 0)
         {
             this.Type = (SystemType) Enum.Parse(typeof(SystemType), type, true);
+            this.Cores = Math.Max(0, cores);
         }
 
         public string WriteTcl()
         {
-            return $"system {Type}\n";
+            switch (Type)
+            {
+                case SystemType.Mumps:
+                    return MumpsTcl(Cores, "WARNING Alpaca4d: this OpenSees has no Mumps solver, so BandSPD solves instead");
+                case SystemType.Auto:
+                    return MumpsTcl(Cores, "Alpaca4d: this OpenSees has no Mumps solver, so BandSPD solves, on one core");
+                default:
+                    return $"system {Type}\n";
+            }
         }
 
+        /// <summary>
+        /// Mumps, a multifrontal sparse solver that factorises on several cores at once, for a
+        /// symmetric matrix (-matrixType 1, the assumption BandSPD makes too). Only an OpenSees
+        /// built with it has it - see Tools/OpenSees - so an OpenSees without it says so in the
+        /// log and solves with BandSPD, rather than stopping the analysis. BandSPD and not UmfPack:
+        /// in OpenSees UmfPack runs out of memory on a frame or a solid of 100 000 to 150 000 DOF,
+        /// where BandSPD solves the frame, slowly (Alpaca4d.Test/SolverChoice).
+        /// </summary>
+        private static string MumpsTcl(int cores, string notice)
+        {
+            return $"if {{[catch {{system Mumps -matrixType 1 -numThreads {Math.Max(0, cores)}}}]}} {{\n" +
+                   $"    puts stderr \"{notice}\"\n" +
+                   "    system BandSPD\n" +
+                   "}\n";
+        }
+
+        /// <summary>
+        /// <paramref name="stderr"/> less what Auto expects from an OpenSees without Mumps: falling
+        /// back is what Auto asks for, so it is not something to warn about. Unchanged otherwise.
+        /// </summary>
+        public string WithoutExpectedWarnings(string stderr)
+        {
+            if (Type != SystemType.Auto || string.IsNullOrEmpty(stderr)) return stderr;
+            return string.Join("\n", stderr.Split('\n').Where(line => !line.Contains(MumpsMissing)));
+        }
     }
 
     public class Test

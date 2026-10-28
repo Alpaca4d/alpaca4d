@@ -64,12 +64,19 @@ class RecorderTest
         // in the same order. It wrote two spaces after -N and -E, which Tcl does not see.
         Check(Words(Recorder.MpcoStatic("recorder.mpco").WriteTcl()) ==
               "recorder mpco recorder.mpco -N displacement rotation reactionForce reactionMoment " +
-              "-E stresses section.force section.fiber.stress", "static");
+              "-E stresses section.force section.fiber.stress axialForce", "static");
         Check(Words(Recorder.MpcoTransient("recorder.mpco").WriteTcl()) ==
               "recorder mpco recorder.mpco -N displacement rotation velocity angularVelocity acceleration " +
-              "angularAcceleration reactionForce reactionMoment -E stresses section.force section.fiber.stress", "transient");
+              "angularAcceleration reactionForce reactionMoment -E stresses section.force section.fiber.stress axialForce", "transient");
         Check(Words(Recorder.MpcoEigen("recorder_eigen.mpco").WriteTcl()) ==
               "recorder mpco recorder_eigen.mpco -N modesOfVibration modesOfVibrationRotational -E", "eigen");
+
+        // Run Analysis now hands every recorder a full path, one file per branch it solves. Tcl
+        // would split one with a space and eat its backslashes, so it goes in braces.
+        Check(Words(Recorder.MpcoStatic("/Users/Jane Doe/AlpacaResults/recorder_0.mpco").WriteTcl())
+              .StartsWith("recorder mpco {/Users/Jane Doe/AlpacaResults/recorder_0.mpco} -N "), "a path with a space, in braces");
+        Check(Words(Recorder.MpcoStatic(@"C:\Users\Jane\AlpacaResults\recorder_0.mpco").WriteTcl())
+              .StartsWith(@"recorder mpco {C:\Users\Jane\AlpacaResults\recorder_0.mpco} -N "), "a Windows path, in braces");
 
         Console.WriteLine("\nThe tick boxes, by the position they are saved at");
 
@@ -80,7 +87,7 @@ class RecorderTest
         }), "nodal results, in their saved order");
         Check(Recorder.ElementResultTypes.SequenceEqual(new[]
         {
-            "stresses", "section.force", "section.fiber.stress",
+            "stresses", "section.force", "section.fiber.stress", "axialForce",
         }), "element results, in their saved order");
 
         // The boxes start ticked at these, so they have to be boxes.
@@ -137,8 +144,9 @@ class RecorderTest
 
             // Brick Stresses reads the solids out of "stresses", Beam Forces the beams and Shell
             // Forces the shells out of "section.force", Shell Stresses the shells out of
-            // "section.fiber.stress". A shell here is ASDShellQ4, ASDShellT3 and ShellDKGT; the two
-            // beams sit on a fibre section, so they answer to section.fiber.stress as well.
+            // "section.fiber.stress", and Beam Forces the trusses out of "axialForce". A shell here is
+            // ASDShellQ4, ASDShellT3 and ShellDKGT; the two beams sit on a fibre section, so they
+            // answer to section.fiber.stress as well.
             string[] beam = { "ForceBeamColumn3d" };
             string[] shells = { "ASDShellQ4", "ASDShellT3", "ShellDKGT" };
             string[] solids = { "SSPbrick", "FourNodeTetrahedron" };
@@ -147,6 +155,7 @@ class RecorderTest
                 ["stresses"] = shells.Concat(solids).ToArray(),
                 ["section.force"] = beam.Concat(shells).ToArray(),
                 ["section.fiber.stress"] = beam.Concat(shells).ToArray(),
+                ["axialForce"] = new[] { "CorotTruss" },
             };
 
             Check(expected.Keys.OrderBy(k => k).SequenceEqual(Recorder.ElementResultTypes.OrderBy(k => k)),

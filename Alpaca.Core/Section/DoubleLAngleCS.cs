@@ -19,6 +19,7 @@ namespace Alpaca4d.Section
         public int? Id { get; set; } = IdGenerator.GenerateId();
         public IUniaxialMaterial Material { get; set; }
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         
         /// <summary>First leg dimension (height)</summary>
         public double Height { get; set; }
@@ -46,27 +47,17 @@ namespace Alpaca4d.Section
         public double AlphaY => 0.7; // Conservative shear area factor for angle sections
         public double AlphaZ => 0.7;
         
-        public double Izz
-        {
-            get
-            {
-                // Moment of inertia about z-z axis (horizontal bending)
-                // For double L-section with gap, considering parallel axis theorem
-                double area = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).Area;
-                double izz = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).CentroidCoordinatesMomentsOfInertia.X;
-                return izz;
-            }
-        }
+        /// <summary>Moment of inertia about z-z (horizontal bending), of the outline as drawn, gap included.</summary>
+        public double Izz => this.Outline.Izz;
 
-        public double Iyy
-        {
-            get
-            {
-                // Moment of inertia about y-y axis (vertical bending)
-                double iyy = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).CentroidCoordinatesMomentsOfInertia.Y;
-                return iyy;
-            }
-        }
+        /// <summary>Moment of inertia about y-y (vertical bending).</summary>
+        public double Iyy => this.Outline.Iyy;
+
+        private readonly MeasuredOutline _outline = new MeasuredOutline();
+
+        private MeasuredOutline Outline => _outline.Of(
+            new[] { this.Height, this.Width, this.Thickness, this.Gap },
+            () => this.Brep);
 
         public double J
         {

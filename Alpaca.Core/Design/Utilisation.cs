@@ -58,6 +58,12 @@ namespace Alpaca4d.Design
         public double? Combined;
         public double? BucklingY;
         public double? BucklingZ;
+        /// <summary>Lateral-torsional buckling, the worst piece between lateral restraints.</summary>
+        public double? LateralTorsional;
+        /// <summary>Bending and axial compression as a member, the one of (6.61) and (6.62) whose χ is about local y.</summary>
+        public double? InteractionY;
+        /// <summary>As <see cref="InteractionY"/>, about local z.</summary>
+        public double? InteractionZ;
 
         /// <summary>Everything worked out on the way, for checking by hand.</summary>
         public string Report = "";
@@ -83,6 +89,9 @@ namespace Alpaca4d.Design
                 yield return new KeyValuePair<string, double?>("Combined", Combined);
                 yield return new KeyValuePair<string, double?>("BucklingY", BucklingY);
                 yield return new KeyValuePair<string, double?>("BucklingZ", BucklingZ);
+                yield return new KeyValuePair<string, double?>("LTB", LateralTorsional);
+                yield return new KeyValuePair<string, double?>("InteractionY", InteractionY);
+                yield return new KeyValuePair<string, double?>("InteractionZ", InteractionZ);
             }
         }
 

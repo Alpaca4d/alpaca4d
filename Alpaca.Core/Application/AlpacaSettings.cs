@@ -20,8 +20,11 @@ namespace Alpaca4d
     }
 
     /// <summary>
-    /// Alpaca4d's settings, kept in settings.json beside the plugin: where OpenSees is, and the
-    /// colours Model View and View Results draw their text and loads in.
+    /// Alpaca4d's settings, kept in settings.json in <see cref="Application.UserFolder"/>: where
+    /// OpenSees is, and the colours Model View and View Results draw their text and loads in.
+    ///
+    /// The file used to sit beside the plugin, and was left behind by every update. Where there is
+    /// none in the user folder yet, the newest one an earlier version kept is brought over.
     ///
     /// The file used to hold the OpenSees path alone, as a JSON string. It is still read that way,
     /// and is written as an object from the first save on.
@@ -29,7 +32,7 @@ namespace Alpaca4d
     public static class AlpacaSettings
     {
         private static readonly string SettingsFilePath =
-            System.IO.Path.Combine(Application.GhAlpacaFolder, "settings.json");
+            System.IO.Path.Combine(Application.UserFolder, "settings.json");
 
         private static string _openSeesPath;
         private static bool _loaded;
@@ -113,6 +116,7 @@ namespace Alpaca4d
 
             try
             {
+                Application.AdoptFromPluginFolders("settings.json", SettingsFilePath);
                 if (!File.Exists(SettingsFilePath))
                     return;
 
@@ -168,6 +172,7 @@ namespace Alpaca4d
                 foreach (var entry in _colours)
                     stored.Colours[entry.Key.ToString()] = $"#{entry.Value.R:X2}{entry.Value.G:X2}{entry.Value.B:X2}";
 
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsFilePath));
                 File.WriteAllText(SettingsFilePath, JsonConvert.SerializeObject(stored, Formatting.Indented));
             }
             catch

@@ -1,52 +1,48 @@
-using Grasshopper;
 using Grasshopper.Kernel;
 using Rhino.Display;
 using Rhino.Geometry;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Globalization;
+using System.Linq;
 
 namespace Alpaca4d.Gh
 {
-    public class Legend : GH_Component
+    /// <summary>
+    /// Legend, as two components that differ only in their GUID: <see cref="Legend"/>, and the
+    /// one 0.12.0-beta.1 shipped with a Range input, kept hidden so its definitions still open
+    /// (see <see cref="Legend_obsolete"/>).
+    /// </summary>
+    public abstract class LegendBase : GH_Component
     {
-        private List<Color> _colors = new List<Color>();
-        private List<double> _data = new List<double>();
         private readonly LegendConduit _conduit;
 
-        // UI options / state
-        private double _scale = 1.5;        // scale factor
-        private int _pos = 2;               // 0: left vertical, 1: right vertical, 2: bottom center horizontal
-        private string _title = string.Empty;
-        private readonly string _fontFace = "Arial";
-        private readonly Color _black = Color.Black;
-        private double _min = -1.0;
-        private double _max = 1.0;
-        private double _diff = 2.0;
-        private int _range = 0;             // colors.Count + 1
-
-        public Legend()
+        protected LegendBase()
           : base("Legend (Alpaca4d)", "Legend",
             "Draw a fixed on-screen legend with colors and labels",
             "Alpaca4d", "09_Visualisation")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
-            _conduit = new LegendConduit();
-            _conduit.SetShouldDrawProvider(() => !this.Hidden && !this.Locked);
+            _conduit = new LegendConduit(ShouldDraw);
         }
+
+        private const string ValuesDescription =
+            "Numbers the labels run from the smallest to the largest of - the Values output of View Results, " +
+            "which follows the Range given to it. To label a range of your own, give its two ends.\n" +
+            "One value more than there are colours, as View Results gives with Iso-surfaces on, labels the edges between the colours rather than the colours.";
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
             pManager.AddTextParameter("Title", "Title", "Legend title", GH_ParamAccess.item, "");
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Data", "Data", "Numeric data to derive min/max labels", GH_ParamAccess.list);
+            pManager.AddNumberParameter("Values", "Values", ValuesDescription, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddColourParameter("Colors", "Colors", "Legend colors (gradient steps)", GH_ParamAccess.list);
+            pManager.AddColourParameter("Colors", "Colors", "Legend colors, from the low end to the high - the Colors output of View Results, so the legend and the model agree. " +
+                "Fewer than two fall back to the default gradient, as in View Results.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Position", "Pos", "0: Left, 1: Right, 2: Bottom Center", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Scale", "Scale", "Size scale factor", GH_ParamAccess.item, 1.5);
+            pManager.AddNumberParameter("Scale", "Scale", "Size scale factor. The legend shrinks below it where it would not fit the viewport.", GH_ParamAccess.item, 1.5);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -54,59 +50,88 @@ namespace Alpaca4d.Gh
         {
         }
 
+        /// <summary>
+        /// Values was called Data, and renamed after the View Results output wired into it. A file
+        /// puts back the name, nickname and description each input was saved with, so one saved
+        /// before would go on showing Data: renamed here, the nickname too unless it was given one
+        /// of its own.
+        /// </summary>
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            if (!base.Read(reader)) return false;
+
+            var values = Params.Input.Count > 1 ? Params.Input[1] : null;
+            if (values != null && values.Name == "Data")
+            {
+                values.Name = "Values";
+                values.Description = ValuesDescription;
+                if (values.NickName == "Data") values.NickName = "Values";
+            }
+
+            return true;
+        }
+
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            _colors.Clear();
-            _data.Clear();
+            // Locals rather than fields: an input that brings no data then leaves its default,
+            // not whatever the last solution read.
+            string title = string.Empty;
+            var data = new List<double>();
+            var colors = new List<Color>();
+            int position = 0;
+            double scale = 1.5;
 
-            DA.GetData(0, ref _title);
-            DA.GetDataList(1, _data);
-            DA.GetDataList(2, _colors);
-            DA.GetData(3, ref _pos);
-            DA.GetData(4, ref _scale);
+            DA.GetData(0, ref title);
+            DA.GetDataList(1, data);
+            DA.GetDataList(2, colors);
+            DA.GetData(3, ref position);
+            DA.GetData(4, ref scale);
 
-            if (_scale <= 0) _scale = 1.5;
+            if (!(scale > 0)) scale = 1.5;
 
-            if (_colors.Count == 0)
+            if (position < 0 || position > 2)
             {
-                _colors = Alpaca4d.Colors.Gradient(0);
+                int clamped = Math.Max(0, Math.Min(2, position));
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"Position is 0 (left), 1 (right) or 2 (bottom); {position} is read as {clamped}.");
+                position = clamped;
             }
 
-            if (_data != null && _data.Count > 0)
+            // As View Results does: one colour is not a gradient, and the two have to agree.
+            if (colors.Count < 2)
+                colors = Alpaca4d.Colors.Gradient(0);
+
+            double min = -1.0;
+            double max = 1.0;
+            var finite = data.Where(x => !double.IsNaN(x) && !double.IsInfinity(x)).ToList();
+            if (finite.Count > 0)
             {
-                _min = double.MaxValue;
-                _max = double.MinValue;
-                foreach (var v in _data)
-                {
-                    if (v < _min) _min = v;
-                    if (v > _max) _max = v;
-                }
-            }
-            else
-            {
-                _min = -1.0;
-                _max = 1.0;
+                min = finite.Min();
+                max = finite.Max();
             }
 
-            _diff = _max - _min;
-            _range = _colors.Count;
+            // One more value than colours is View Results with iso-surfaces on, handing over the
+            // edges of its bands: a label at each edge, between the swatches. A flat range is one
+            // value either way, and one swatch.
+            bool edges = data.Count == colors.Count + 1;
+            var values = ColourScale.LabelValues(min, max, colors.Count + (edges ? 1 : 0));
+            int swatches = values.Count > 1 && edges ? values.Count - 1 : values.Count;
 
-            // Update conduit state and request a redraw
-            _conduit?.Update(
-                _title,
-                _colors,
-                _min,
-                _max,
-                _pos,
-                _scale,
-                _fontFace,
-                _black,
-                !this.Hidden && !this.Locked
-            );
+            _conduit.Update(title, colors.Take(swatches).ToList(), values.Select(value => ColourScale.Format(value, min, max)).ToList(), position, scale);
             Rhino.RhinoDoc.ActiveDoc?.Views?.Redraw();
         }
 
-        // DrawViewportWires is intentionally omitted; legend rendering is handled by a DisplayConduit in DrawForeground.
+        /// <summary>Whether the legend belongs on screen. Asked on every redraw.</summary>
+        private bool ShouldDraw()
+        {
+            if (Hidden || Locked) return false;
+
+            // The conduit draws outside Grasshopper's own preview, so the document-wide preview
+            // settings have to be asked here as well.
+            var document = OnPingDocument();
+            if (document == null || document.PreviewMode == GH_PreviewMode.Disabled) return false;
+            return document.PreviewFilter != GH_PreviewFilter.Selected || (Attributes?.Selected ?? false);
+        }
 
         public override void AddedToDocument(GH_Document document)
         {
@@ -120,15 +145,16 @@ namespace Alpaca4d.Gh
             base.RemovedFromDocument(document);
         }
 
-        public override BoundingBox ClippingBox
+        public override void DocumentContextChanged(GH_Document document, GH_DocumentContext context)
         {
-            get
-            {
-                return new BoundingBox(
-                    new Point3d(-1e9, -1e9, -1e9),
-                    new Point3d( 1e9,  1e9,  1e9)
-                );
-            }
+            // Closing a document, or bringing another one forward, does not remove its components -
+            // it only tells them. A conduit left on would keep the legend over whatever came next.
+            if (context == GH_DocumentContext.Close || context == GH_DocumentContext.Unloaded)
+                _conduit.Enabled = false;
+            else if (context == GH_DocumentContext.Loaded)
+                _conduit.Enabled = true;
+
+            base.DocumentContextChanged(document, context);
         }
 
         protected override void BeforeSolveInstance()
@@ -141,170 +167,204 @@ namespace Alpaca4d.Gh
         public override GH_Exposure Exposure => GH_Exposure.quarternary;
         public override bool IsPreviewCapable => true;
         protected override Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Legend__Alpaca4d_;
-        public override Guid ComponentGuid => new Guid("{A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5}");
 
+        /// <summary>
+        /// Draws the legend in screen space, in every viewport. Sized from the Scale input, then
+        /// shrunk where it would not fit: a size fixed in pixels against margins in percent ran
+        /// off the edge of any viewport smaller than the one it was tuned on.
+        /// </summary>
         private class LegendConduit : DisplayConduit
         {
+            private const string FontFace = "Arial";
+            private const int Stroke = 2;
+            private const int MinTextPx = 8;
+
+            // Fractions of the viewport. The top margin keeps clear of the viewport's name, and a
+            // bar down the side keeps as far off the bottom, where the axes icon sits.
+            private const double MarginSide = 0.025;
+            private const double MarginTop = 0.075;
+            private const double MarginBottomVertical = 0.075;
+            private const double MarginBottomHorizontal = 0.025;
+
+            private static readonly Color Ink = Color.Black;
+
+            private readonly Func<bool> _shouldDraw;
             private string _title = string.Empty;
             private List<Color> _colors = new List<Color>();
-            private double _min = -1.0;
-            private double _max = 1.0;
-            private int _pos = 2;
+            private List<string> _labels = new List<string>();
+            private int _position;
             private double _scale = 1.5;
-            private string _fontFace = "Arial";
-            private Color _stroke = Color.Black;
-            private bool _shouldDraw = false;
-            private Func<bool> _shouldDrawProvider;
 
-            public void SetShouldDrawProvider(Func<bool> provider)
+            // Only the size of a measured box is used, so text is measured in the middle of the
+            // viewport, where no part of the box can be off the screen.
+            private Point2d _measureAt;
+
+            public LegendConduit(Func<bool> shouldDraw)
             {
-                _shouldDrawProvider = provider;
+                _shouldDraw = shouldDraw;
             }
 
-            public void Update(string title, List<Color> colors, double min, double max, int pos, double scale, string fontFace, Color stroke, bool shouldDraw)
+            /// <summary>
+            /// One label per colour, each read at the middle of its swatch - or one more than
+            /// that, the edges of bands, each read at the line between two swatches.
+            /// </summary>
+            public void Update(string title, List<Color> colors, List<string> labels, int position, double scale)
             {
                 _title = title ?? string.Empty;
-                _colors = colors != null ? new List<Color>(colors) : new List<Color>();
-                _min = min;
-                _max = max;
-                _pos = pos;
-                _scale = scale > 0 ? scale : 1.5;
-                _fontFace = string.IsNullOrWhiteSpace(fontFace) ? "Arial" : fontFace;
-                _stroke = stroke;
-                _shouldDraw = shouldDraw;
+                _colors = colors;
+                _labels = labels;
+                _position = position;
+                _scale = scale;
             }
 
             protected override void DrawForeground(DrawEventArgs e)
             {
-                bool allow = _shouldDrawProvider != null ? _shouldDrawProvider() : _shouldDraw;
-                if (!allow) return;
-                if (_colors == null || _colors.Count == 0) return;
+                if (!_shouldDraw() || _colors.Count == 0) return;
 
-                // Viewport dimensions
-                int left, right, bottom, top, near, far;
-                e.Viewport.GetScreenPort(out left, out right, out bottom, out top, out near, out far);
+                e.Viewport.GetScreenPort(out int left, out int right, out int bottom, out int top, out _, out _);
                 int width = right - left;
                 int height = bottom - top;
+                _measureAt = new Point2d(0.5 * width, 0.5 * height);
 
-                // Common constants and derived values
-                const double topBottomMarginFactor = 0.075;   // 7.5% from top/bottom
-                const double leftMarginFactor = 0.025;         // 2.5% from left
-                const double rightMarginFactor = 0.075;        // 7.5% from right
-                const int strokeThickness = 2;
-
-                double baseUnit = 15.0 * _scale;
-                double rectWidth = (_pos == 2) ? baseUnit * 3.5 : baseUnit;
-                double rectHeight = (_pos == 2) ? baseUnit : baseUnit * 3.5;
-                double textHeight = (baseUnit * 2.0) * 0.6;
-                double titleHeight = (baseUnit * 2.0) * 0.9;
-
-                int rectWidthPx = (int)Math.Round(rectWidth);
-                int rectHeightPx = (int)Math.Round(rectHeight);
-                int textHeightPx = (int)Math.Round(textHeight);
-                int titleHeightPx = (int)Math.Round(titleHeight);
-
-                // Label offsets (group repeated magic numbers)
-                double titleYOffsetVertical = -(3.0 / 1.6) * textHeight;
-                double labelYOffsetVertical = -(1.0 / (1.6 * 2.0)) * textHeight; // used for all vertical labels including max
-                double titleYOffsetHorizontal = (2.5 / 1.6) * textHeight;
-                double labelYOffsetHorizontal = -1.5 * textHeight;               // used for all horizontal labels
-                double labelXOffsetHorizontal = -(1.0 / 1.6) * textHeight;       // value labels
-                double labelXOffsetHorizontalMax = -(1.0 / 1.2) * textHeight;    // max label only
-
-                // Anchor position based on desired legend position
-                double anchorX;
-                double anchorY = height * topBottomMarginFactor;
-                if (_pos == 0)
-                {
-                    anchorX = width * leftMarginFactor;
-                }
-                else if (_pos == 1)
-                {
-                    anchorX = width * (1.0 - rightMarginFactor);
-                }
+                if (_position == 2)
+                    DrawHorizontal(e.Display, width, height);
                 else
+                    DrawVertical(e.Display, width, height);
+            }
+
+            /// <summary>Labels on the edges between swatches, not on the swatches: see <see cref="Update"/>.</summary>
+            private bool Edges => _labels.Count == _colors.Count + 1;
+
+            /// <summary>A column of swatches with their labels to the right, at the left or right edge.</summary>
+            private void DrawVertical(DisplayPipeline display, int width, int height)
+            {
+                int count = _colors.Count;
+                double unit = 15.0 * _scale;
+                double gap = 0.5 * unit;
+                int textPx = Px(1.2 * unit);
+                int titlePx = Px(1.8 * unit);
+
+                bool hasTitle = !string.IsNullOrWhiteSpace(_title);
+                var titleBox = hasTitle ? Measure(display, _title, titlePx) : Size.Empty;
+                double titleBlock = hasTitle ? titleBox.Height + gap : 0.0;
+
+                // A label on the top edge stands half its height above the column, and one on the
+                // bottom edge half below, so the column is a label shorter and starts half lower.
+                double overhang = Edges ? textPx : 0.0;
+
+                double available = height * (1.0 - MarginTop - MarginBottomVertical) - titleBlock - overhang;
+                double length = Math.Min(3.5 * unit, available / count);
+                if (length < 1.0) return;
+
+                // Each label is centred on its swatch, so it can be no taller than one.
+                textPx = Math.Min(textPx, Math.Max(MinTextPx, (int)Math.Floor(length)));
+                var boxes = _labels.Select(label => Measure(display, label, textPx)).ToList();
+
+                // Right-aligned by the whole block, labels included: placing the swatches by the
+                // margin left the labels to run off the edge.
+                double blockWidth = Math.Max(unit + gap + boxes.Max(box => box.Width), titleBox.Width);
+                double x = _position == 0 ? width * MarginSide : width * (1.0 - MarginSide) - blockWidth;
+                double y = height * MarginTop;
+
+                if (hasTitle)
                 {
-                    anchorX = width * 0.5;
-                    anchorY = height * (1.0 - topBottomMarginFactor);
+                    DrawText(display, _title, titleBox, titlePx, x, y);
+                    y += titleBlock;
                 }
 
-                // Small positional nudges per request
-                if (_pos == 1)
+                y += 0.5 * overhang;
+
+                for (int k = 0; k < count; k++)
                 {
-                    anchorX += rectWidth * 0.5; // move legend slightly right
+                    int swatchTop = Px(y + k * length);
+                    int swatchBottom = Px(y + (k + 1) * length);
+                    display.Draw2dRectangle(new Rectangle(Px(x), swatchTop, Px(unit), swatchBottom - swatchTop), Ink, Stroke, _colors[k]);
                 }
-                else if (_pos == 2)
+
+                for (int k = 0; k < _labels.Count; k++)
                 {
-                    anchorY += rectHeight * 0.5; // move legend slightly down
-                }
-
-                // Data range
-                int colorCount = _colors.Count;
-                double diff = _max - _min;
-                int range = colorCount;
-
-                if (_pos == 0 || _pos == 1)
-                {
-                    // Vertical layouts (left/right)
-                    if (!string.IsNullOrWhiteSpace(_title))
-                    {
-                        var titlePt = new Point2d(anchorX, anchorY + titleYOffsetVertical);
-                        e.Display.Draw2dText(_title, _stroke, titlePt, false, titleHeightPx, _fontFace);
-                    }
-
-                    for (int i = 0; i < colorCount; i++)
-                    {
-                        int rx = (int)Math.Round(anchorX);
-                        int ry = (int)Math.Round(anchorY + i * rectHeight);
-                        var rec2d = new Rectangle(rx, ry, rectWidthPx, rectHeightPx);
-                        e.Display.Draw2dRectangle(rec2d, _stroke, strokeThickness, _colors[i]);
-
-                        double value = diff * (double)i / range + _min;
-                        string valueText = value.ToString("0.00", CultureInfo.InvariantCulture);
-                        var pt = new Point2d(anchorX + 1.5 * rectWidth, anchorY + labelYOffsetVertical + i * rectHeight);
-                        e.Display.Draw2dText(valueText, _stroke, pt, false, textHeightPx, _fontFace);
-                    }
-
-                    // Max value label
-                    {
-                        int i = colorCount;
-                        var pt = new Point2d(anchorX + 1.5 * rectWidth, anchorY + labelYOffsetVertical + i * rectHeight);
-                        string maxText = _max.ToString("0.00", CultureInfo.InvariantCulture);
-                        e.Display.Draw2dText(maxText, _stroke, pt, false, textHeightPx, _fontFace);
-                    }
-                }
-                else
-                {
-                    // Horizontal layout (bottom center)
-                    if (!string.IsNullOrWhiteSpace(_title))
-                    {
-                        var titlePt = new Point2d(anchorX, anchorY + titleYOffsetHorizontal);
-                        e.Display.Draw2dText(_title, _stroke, titlePt, false, titleHeightPx, _fontFace);
-                    }
-
-                    double startX = anchorX - 0.5 * colorCount * rectWidth;
-                    for (int i = 0; i < colorCount; i++)
-                    {
-                        int rx = (int)Math.Round(startX + i * rectWidth);
-                        int ry = (int)Math.Round(anchorY);
-                        var rec2d = new Rectangle(rx, ry, rectWidthPx, rectHeightPx);
-                        e.Display.Draw2dRectangle(rec2d, _stroke, strokeThickness, _colors[i]);
-
-                        double value = diff * (double)i / range + _min;
-                        string valueText = value.ToString("0.00", CultureInfo.InvariantCulture);
-                        var pt = new Point2d(startX + labelXOffsetHorizontal + i * rectWidth, anchorY + labelYOffsetHorizontal);
-                        e.Display.Draw2dText(valueText, _stroke, pt, false, textHeightPx, _fontFace);
-                    }
-
-                    // Max value label
-                    {
-                        int i = colorCount;
-                        var pt = new Point2d(startX + labelXOffsetHorizontalMax + i * rectWidth, anchorY + labelYOffsetHorizontal);
-                        string maxText = _max.ToString("0.00", CultureInfo.InvariantCulture);
-                        e.Display.Draw2dText(maxText, _stroke, pt, false, textHeightPx, _fontFace);
-                    }
+                    double at = y + (Edges ? k : k + 0.5) * length;
+                    DrawText(display, _labels[k], boxes[k], textPx, x + unit + gap, at - 0.5 * boxes[k].Height);
                 }
             }
+
+            /// <summary>A row of swatches along the bottom, centred, labels above and the title below.</summary>
+            private void DrawHorizontal(DisplayPipeline display, int width, int height)
+            {
+                int count = _colors.Count;
+                double unit = 15.0 * _scale;
+                double gap = 0.5 * unit;
+                int textPx = Px(1.2 * unit);
+                int titlePx = Px(1.8 * unit);
+
+                // Labels on the edges stand half a swatch past either end of the row.
+                double length = Math.Min(3.5 * unit, width * (1.0 - 2.0 * MarginSide) / (Edges ? count + 1 : count));
+                if (length < 1.0) return;
+
+                // Labels sit side by side over their swatches, so the text shrinks until the
+                // widest of them fits over one.
+                var boxes = _labels.Select(label => Measure(display, label, textPx)).ToList();
+                double widest = boxes.Max(box => box.Width);
+                if (widest > 0.9 * length)
+                {
+                    textPx = Math.Max(MinTextPx, (int)Math.Floor(textPx * 0.9 * length / widest));
+                    boxes = _labels.Select(label => Measure(display, label, textPx)).ToList();
+                }
+
+                bool hasTitle = !string.IsNullOrWhiteSpace(_title);
+                var titleBox = hasTitle ? Measure(display, _title, titlePx) : Size.Empty;
+
+                // Stacked up from the bottom margin: title, then the bar, then the labels.
+                double titleTop = height * (1.0 - MarginBottomHorizontal) - titleBox.Height;
+                double barTop = (hasTitle ? titleTop - gap : titleTop) - unit;
+                double x = 0.5 * (width - count * length);
+
+                for (int k = 0; k < count; k++)
+                {
+                    int swatchLeft = Px(x + k * length);
+                    int swatchRight = Px(x + (k + 1) * length);
+                    display.Draw2dRectangle(new Rectangle(swatchLeft, Px(barTop), swatchRight - swatchLeft, Px(unit)), Ink, Stroke, _colors[k]);
+                }
+
+                for (int k = 0; k < _labels.Count; k++)
+                {
+                    double at = x + (Edges ? k : k + 0.5) * length;
+                    DrawText(display, _labels[k], boxes[k], textPx, at - 0.5 * boxes[k].Width, barTop - gap - boxes[k].Height);
+                }
+
+                if (hasTitle)
+                    DrawText(display, _title, titleBox, titlePx, 0.5 * (width - titleBox.Width), titleTop);
+            }
+
+            /// <summary>The size of <paramref name="text"/> drawn <paramref name="height"/> pixels high.</summary>
+            private Size Measure(DisplayPipeline display, string text, int height)
+            {
+                var box = display.Measure2dText(text, _measureAt, true, 0.0, height, FontFace);
+                return new Size(Math.Abs(box.Width), Math.Abs(box.Height));
+            }
+
+            /// <summary>
+            /// Draws <paramref name="text"/> in a box of <paramref name="size"/> with its top-left at
+            /// (x, y), centred in it. Text that is not centred hangs from a corner: Rhino's
+            /// documentation says the lower-left, the hand-tuned offsets this legend first had only
+            /// worked from the top-left, and placing it by the corner Measure2dText reports put the
+            /// title well off in every position. Centred text has no corner to disagree about.
+            /// </summary>
+            private static void DrawText(DisplayPipeline display, string text, Size size, int height, double x, double y)
+            {
+                display.Draw2dText(text, Ink, new Point2d(x + 0.5 * size.Width, y + 0.5 * size.Height), true, height, FontFace);
+            }
+
+            private static int Px(double value) => (int)Math.Round(value);
         }
+    }
+
+    /// <summary>
+    /// The GUID Legend had up to 0.11.0, and has again now that its inputs are the same five, so
+    /// definitions from then open as the current Legend.
+    /// </summary>
+    public class Legend : LegendBase
+    {
+        public override Guid ComponentGuid => new Guid("{A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5}");
     }
 }

@@ -33,10 +33,10 @@ namespace Alpaca4d.Constraints
         /// </summary>
         public void SetTopologyRTree(Model model)
         {
-            this.RetainedNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { this.RetainedNode }, model.Tollerance)
+            this.RetainedNodeId = Alpaca4d.Utils.NodeSearch(model.NodeIndexSixNDF, new List<Point3d> { this.RetainedNode }, "A Rigid Link")
                 .Select(x => x + 1 + model.UniquePointsThreeNDF.Count)
                 .First();
-            this.ConstrainedNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { this.ConstrainedNode }, model.Tollerance)
+            this.ConstrainedNodeId = Alpaca4d.Utils.NodeSearch(model.NodeIndexSixNDF, new List<Point3d> { this.ConstrainedNode }, "A Rigid Link")
                 .Select(x => x + 1 + model.UniquePointsThreeNDF.Count)
                 .First();
 

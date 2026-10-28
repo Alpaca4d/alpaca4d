@@ -1,0 +1,473 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 78e499a2b..2052e1775 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -702,6 +702,38 @@ target_link_libraries(OpenSees
+   Eigen3::Eigen
+ )
+ 
++#
++# system Mumps in the single-process interpreter: sequential MUMPS (libseq, no MPI)
++# built with OpenMP, so one process factorises on several cores.
++#   -DMUMPS_SEQ_DIR=<install prefix of MUMPS built with -Dparallel=OFF -Dopenmp=ON>
++#
++
++if (DEFINED MUMPS_SEQ_DIR)
++    # the static libraries by name, as for OpenSeesSP/MP, so MUMPS uses the LAPACK OpenSees links
++    set(MUMPS_SEQ_LIBRARIES "")
++    foreach(lib dmumps mumps_common pord mpiseq)
++        find_library(MUMPS_SEQ_${lib} NAMES ${lib} PATHS ${MUMPS_SEQ_DIR}/lib NO_DEFAULT_PATH REQUIRED)
++        list(APPEND MUMPS_SEQ_LIBRARIES ${MUMPS_SEQ_${lib}})
++    endforeach()
++
++    target_sources(OpenSees PRIVATE
++      ${OPS_SRC_DIR}/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp
++      ${OPS_SRC_DIR}/system_of_eqn/linearSOE/mumps/MumpsSolver.cpp
++    )
++    target_include_directories(OpenSees PRIVATE ${MUMPS_SEQ_DIR}/include)
++    target_compile_definitions(OpenSees PRIVATE _MUMPS_SEQUENTIAL)
++    target_link_libraries(OpenSees ${MUMPS_SEQ_LIBRARIES} ${LAPACK_LIBRARIES})
++
++    if (APPLE)
++        # gfortran's OpenMP runtime, linked statically like libgfortran above
++        execute_process(COMMAND gfortran --print-file-name=libgomp.a OUTPUT_VARIABLE GOMP_STATIC OUTPUT_STRIP_TRAILING_WHITESPACE)
++        target_link_libraries(OpenSees "${GOMP_STATIC}")
++    else()
++        find_package(OpenMP REQUIRED COMPONENTS Fortran)
++        target_link_libraries(OpenSees OpenMP::OpenMP_Fortran)
++    endif()
++endif()
++
+ 
+ #
+ # OpenSeesSP Tcl Parallel Interpreter
+diff --git a/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp b/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp
+index 7ae5e19d0..6a8aaa60a 100644
+--- a/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp
++++ b/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp
+@@ -37,9 +37,19 @@
+ #include <math.h>
+ 
+ #include <stdlib.h>
++#include <algorithm>
+ #include <Channel.h>
+ #include <FEM_ObjectBroker.h>
+ 
++// location in A of (row, column) when the column runs from start to end in rowA, its rows in
++// increasing order; -1 if the entry is not in the matrix
++static inline int
++findRow(const int *rowA, int start, int end, int row)
++{
++  const int *found = std::lower_bound(rowA + start, rowA + end, row);
++  return (found != rowA + end && *found == row) ? int(found - rowA) : -1;
++}
++
+ MumpsSOE::MumpsSOE(MumpsSolver &the_Solver, int _matType)
+ :LinearSOE(the_Solver, LinSOE_TAGS_MumpsSOE),
+  size(0), nnz(0), 
+@@ -136,6 +146,7 @@ MumpsSOE::setSize(Graph &theGraph)
+   if (newNNZ > Asize) { // we have to get more space for A and rowA
+     if (A != 0) delete [] A;
+     if (rowA != 0) delete [] rowA;
++    if (colA != 0) delete [] colA;
+     
+     A = new double[newNNZ];
+     rowA = new int[newNNZ];
+@@ -215,60 +226,20 @@ MumpsSOE::setSize(Graph &theGraph)
+       }
+       
+       int vertexTag = theVertex->getTag();
+-      rowA[lastLoc++] = vertexTag; // place diag in first
++      rowA[lastLoc++] = vertexTag; // the diag
+       const ID &theAdjacency = theVertex->getAdjacency();
+       int idSize = theAdjacency.Size();
+       
+-      // now we have to place the entries in the ID into order in rowA
+-
+-      if (matType != 0) {
+-
+-	for (int i=0; i<idSize; i++) {
+-	  int row = theAdjacency(i);
+-	  if (row > vertexTag) {
+-	    bool foundPlace = false;
+-	    // find a place in rowA for current col
+-	    for (int j=startLoc; j<lastLoc; j++)
+-	      if (rowA[j] > row) { 
+-		// move the entries already there one further on
+-		// and place col in current location
+-		for (int k=lastLoc; k>j; k--)
+-		  rowA[k] = rowA[k-1];
+-		rowA[j] = row;
+-		foundPlace = true;
+-		j = lastLoc;
+-	      }
+-	    
+-	    if (foundPlace == false) // put in at the end
+-	      rowA[lastLoc] = row;
+-	    lastLoc++;
+-	  }
+-	}
+-
+-      } else {
+-
+-	for (int i=0; i<idSize; i++) {
+-	  int row = theAdjacency(i);
+-	  bool foundPlace = false;
+-	  // find a place in rowA for current col
+-	  for (int j=startLoc; j<lastLoc; j++)
+-	    if (rowA[j] > row) { 
+-	      // move the entries already there one further on
+-	      // and place col in current location
+-	      for (int k=lastLoc; k>j; k--)
+-		rowA[k] = rowA[k-1];
+-	      rowA[j] = row;
+-	      foundPlace = true;
+-	      j = lastLoc;
+-	    }
+-	  if (foundPlace == false) // put in at the end
+-	    rowA[lastLoc] = row;
+-	  
+-	  lastLoc++;
+-	}
++      // the rows of the column (below the diag only, if symmetric), in increasing order,
++      // which is what lets addA() find an entry by binary search
++      for (int i=0; i<idSize; i++) {
++	int row = theAdjacency(i);
++	if (matType == 0 || row > vertexTag)
++	  rowA[lastLoc++] = row;
+       }
++      std::sort(rowA + startLoc, rowA + lastLoc);
+ 
+-      colStartA[a+1] = lastLoc;;	    
++      colStartA[a+1] = lastLoc;
+       startLoc = lastLoc;
+     }
+   }
+@@ -320,11 +291,9 @@ MumpsSOE::addA(const Matrix &m, const ID &id, double fact)
+ 	      int row = id(j);
+ 	      if (row >= col && row < size && row >= 0) {
+ 		// find place in A using rowA
+-		for (int k=startColLoc; k<endColLoc; k++)
+-		  if (rowA[k] == row) {
+-		    A[k] += m(j,i);
+-		    k = endColLoc;
+-		  }
++		int k = findRow(rowA, startColLoc, endColLoc, row);
++		if (k >= 0)
++		  A[k] += m(j,i);
+ 	      }
+ 	    }  // for j		
+ 	  } 
+@@ -340,11 +309,9 @@ MumpsSOE::addA(const Matrix &m, const ID &id, double fact)
+ 	      int row = id(j);
+ 	      if (row >= col && row <size && row >= 0) {
+ 		// find place in A using rowA
+-		for (int k=startColLoc; k<endColLoc; k++)
+-		  if (rowA[k] == row) {
+-		    A[k] += fact * m(j,i);
+-		    k = endColLoc;
+-		  }
++		int k = findRow(rowA, startColLoc, endColLoc, row);
++		if (k >= 0)
++		  A[k] += fact * m(j,i);
+ 	      }
+ 	    }  // for j		
+ 	  } 
+@@ -365,11 +332,9 @@ MumpsSOE::addA(const Matrix &m, const ID &id, double fact)
+ 	      int row = id(j);
+ 	      if (row <size && row >= 0) {
+ 		// find place in A using rowA
+-		for (int k=startColLoc; k<endColLoc; k++)
+-		  if (rowA[k] == row) {
+-		    A[k] += m(j,i);
+-		    k = endColLoc;
+-		  }
++		int k = findRow(rowA, startColLoc, endColLoc, row);
++		if (k >= 0)
++		  A[k] += m(j,i);
+ 	      }
+ 	    }  // for j		
+ 	  } 
+@@ -384,11 +349,9 @@ MumpsSOE::addA(const Matrix &m, const ID &id, double fact)
+ 	      int row = id(j);
+ 	      if (row <size && row >= 0) {
+ 		// find place in A using rowA
+-		for (int k=startColLoc; k<endColLoc; k++)
+-		  if (rowA[k] == row) {
+-		    A[k] += fact * m(j,i);
+-		    k = endColLoc;
+-		  }
++		int k = findRow(rowA, startColLoc, endColLoc, row);
++		if (k >= 0)
++		  A[k] += fact * m(j,i);
+ 	      }
+ 	    }  // for j		
+ 	  } 
+diff --git a/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.cpp b/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.cpp
+index 1ff1fed5e..35a18abb6 100644
+--- a/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.cpp
++++ b/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.cpp
+@@ -47,43 +47,52 @@
+ #define OPENSEES_INCLUDED_MPI
+ #endif
+ 
+-#ifndef OPENSEES_INCLUDED_MPI
+-#include <libseq\mpi.h>
+-#endif
+-
+-MumpsSolver::MumpsSolver(int ICNTL7, int ICNTL14)
++MumpsSolver::MumpsSolver(int ICNTL7, int ICNTL14, int nThreads)
+   :LinearSOESolver(SOLVER_TAGS_MumpsSolver),
+-   theMumpsSOE(0)
++   theMumpsSOE(0), icntl14(ICNTL14), icntl7(ICNTL7), numThreads(nThreads)
+ {
+-
+-  std::cerr << "MumpsSOlver - constructor\n";
+-
+   memset(&id, 0, sizeof(id));
+ 
+   init = false;
+   id.job=-1; 
+   id.par=1; 
+ 
+-#ifdef _OPENMPI
++#ifndef OPENSEES_INCLUDED_MPI
++  // the sequential MUMPS (libseq) ignores the communicator; -987654 is its USE_COMM_WORLD
++  id.comm_fortran=-987654;
++#elif defined(_OPENMPI)
+   //  id.comm_fortran=-987654;
+   id.comm_fortran=0;
+ #else
+   id.comm_fortran=MPI_Comm_c2f(MPI_COMM_WORLD);
+ #endif
+ 
+-  id.ICNTL(14) = ICNTL14;
+-  id.ICNTL(7)=ICNTL7;;
+-
+   needsSetSize = false;
+ }
+ 
+ MumpsSolver::~MumpsSolver()
+ {
+-  std::cerr << "MumpsSOlver - destructor\n";
+-  opserr << "MumpsParallelSOlver::DESTRUCTOR - start\n";
+-  id.job=-2; 
+-  dmumps_c(&id); /* Terminate instance */
+-  opserr << "MumpsParallelSOlver::DESTRUCTOR - end\n";
++  if (init == true) {
++    id.job=-2;
++    dmumps_c(&id); /* Terminate instance */
++  }
++}
++
++// JOB=-1 resets every ICNTL to its default, so the controls are set after it, not in the constructor
++void
++MumpsSolver::setControls(void)
++{
++  // No outputs
++  id.ICNTL(1)=-1; id.ICNTL(2)=-1; id.ICNTL(3)=-1; id.ICNTL(4)=0;
++
++  id.ICNTL(7) = icntl7;
++  id.ICNTL(14) = icntl14;
++  id.ICNTL(16) = numThreads;
++
++  // KEEP(401): tree parallelism (L0-OpenMP), the leaves of the elimination tree factored on
++  // separate threads. Off by default in MUMPS 5.5; from 5.6 it is ICNTL(48), on by default.
++  if (numThreads != 1)
++    id.keep[400] = 1;
+ }
+ 
+ int 
+@@ -95,11 +104,11 @@ MumpsSolver::initializeMumps(void)
+   else {
+     
+     if (init == false) {
+-      std::cerr << "MumpsSOlver - initMumps\n";
+       id.sym = theMumpsSOE->matType;
+       id.job=-1; 
+       dmumps_c(&id);
+       init = true;
++      setControls();
+     }
+     
+     int nnz = theMumpsSOE->nnz;
+@@ -120,19 +129,9 @@ MumpsSolver::initializeMumps(void)
+     id.a = theMumpsSOE->A;
+     id.rhs = theMumpsSOE->X;
+     
+-    // No outputs 
+-    id.ICNTL(1) = -1; id.ICNTL(2) = -1; id.ICNTL(3) = -1; id.ICNTL(4) = 0;
+-
+-    // Call the MUMPS package to factor & solve the system
++    // Call the MUMPS package to analyse the system
+     id.job = 1;
+     dmumps_c(&id);
+-
+-    int info = id.infog[0];
+-    if (info != 0) {
+-      opserr << "WARNING MumpsSolver::setSize(void)- ";
+-      opserr << " Error " << info << " returned in substitution dmumps()\n";
+-      return info;
+-    }
+     
+     // decrement row and col A values by 1 to return to C++ indexing
+     for (int i = 0; i < nnz; i++) {
+@@ -140,7 +139,15 @@ MumpsSolver::initializeMumps(void)
+       colA[i]--;
+     }
+     
++    int info = id.infog[0];
++    if (info < 0) {
++      opserr << "WARNING MumpsSolver::setSize(void)- ";
++      opserr << " Error " << info << " returned in analysis dmumps()\n";
++      return info;
++    }
++
+     needsSetSize = false;
++    info = 0;
+     
+     return info;
+   }
+@@ -178,15 +185,13 @@ MumpsSolver::solveAfterInitialization(void)
+     id.a   = theMumpsSOE->A; 
+     id.rhs = theMumpsSOE->X;
+ 
+-    // No outputs 
+-    id.ICNTL(1)=-1; id.ICNTL(2)=-1; id.ICNTL(3)=-1; id.ICNTL(4)=0;
+     // Call the MUMPS package to factor & solve the system
+     id.job = 5;
+     dmumps_c(&id);
+ 
+-    theMumpsSOE->factored = true;
++    theMumpsSOE->factored = id.infog[0] >= 0;
+   } else {
+-    // factor the matrix
++    // solve with the factors already there
+     id.n   = theMumpsSOE->size; 
+     id.nz  = theMumpsSOE->nnz; 
+     id.irn = theMumpsSOE->rowA;
+@@ -194,32 +199,35 @@ MumpsSolver::solveAfterInitialization(void)
+     id.a   = theMumpsSOE->A; 
+     id.rhs = theMumpsSOE->X;
+ 
+-    // No outputs 
+-    id.ICNTL(1)=-1; id.ICNTL(2)=-1; id.ICNTL(3)=-1; id.ICNTL(4)=0;
+-    // Call the MUMPS package to factor & solve the system
+     id.job = 3;
+     dmumps_c(&id);
+   }	
+ 
+-
+-  
+   info = id.infog[0];
+-  if (info != 0) {	
++  if (info < 0) {
++    // return to C++ indexing before leaving, as on success
++    for (int i=0; i<nnz; i++) {
++      rowA[i]--;
++      colA[i]--;
++    }
++
+     opserr << "WARNING MumpsSolver::solve(void)- ";
+     opserr << " Error " << info << " returned in substitution dmumps()\n";
+ 	switch(info) {
+ 	  case -5:
+-		opserr << " out of memory allocation error\n";
+-      case -6:  
+-		opserr << " cause: Matrix is Singular in Structure: check your model\n";
+ 	  case -7:
+ 		opserr << " out of memory allocation error\n";
++		break;
++	  case -6:
++		opserr << " cause: Matrix is Singular in Structure: check your model\n";
++		break;
+ 	  case -8:
+-		opserr << "Work array too small; use -ICNTL14 option, the default is -ICNTL 20 make 20 larger\n";
+ 	  case -9:
+ 		opserr << "Work array too small; use -ICNTL14 option, the default is -ICNTL 20 make 20 larger\n";
++		break;
+ 	  case -10:  
+ 		opserr << " cause: Matrix is Singular Numerically\n";
++		break;
+ 	  default:
+ 		  ;
+ 	}
+diff --git a/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.h b/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.h
+index 81faea4a6..8bded226f 100644
+--- a/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.h
++++ b/SRC/system_of_eqn/linearSOE/mumps/MumpsSolver.h
+@@ -54,7 +54,7 @@ class MumpsSOE;
+ class MumpsSolver : public LinearSOESolver
+ {
+   public:
+-  MumpsSolver(int ICNTL7=7, int ICNTL14=20);
++  MumpsSolver(int ICNTL7=7, int ICNTL14=20, int numThreads=0);
+ 	      
+   virtual ~MumpsSolver();
+   
+@@ -72,12 +72,14 @@ class MumpsSolver : public LinearSOESolver
+ 
+   int initializeMumps(void);
+   int solveAfterInitialization(void);
++  void setControls(void);
+ 
+   DMUMPS_STRUC_C id;
+   MumpsSOE *theMumpsSOE;
+   bool init;
+   int icntl14;
+   int icntl7;
++  int numThreads; // ICNTL(16): OpenMP threads, 0 = the OpenMP default (all cores)
+   bool needsSetSize;
+ };
+ 
+diff --git a/SRC/tcl/commands.cpp b/SRC/tcl/commands.cpp
+index cef0359a1..17efdfa44 100644
+--- a/SRC/tcl/commands.cpp
++++ b/SRC/tcl/commands.cpp
+@@ -340,7 +340,7 @@ extern void OPS_SetReliabilityDomain(ReliabilityDomain *);
+ #include <CulaSparseSolverS5.h>
+ #endif
+ 
+-#ifdef _MUMPS
++#if defined(_MUMPS) || defined(_MUMPS_SEQUENTIAL)
+ #ifdef _PARALLEL_PROCESSING
+ #include <MumpsParallelSOE.h>
+ #include <MumpsParallelSolver.h>
+@@ -3533,13 +3533,14 @@ specifySOE(ClientData clientData, Tcl_Interp *interp, int argc, TCL_Char **argv)
+ #endif
+ 
+ 
+-#ifdef _MUMPS
++#if defined(_MUMPS) || defined(_MUMPS_SEQUENTIAL)
+ 
+   else if (strcmp(argv[1],"Mumps") == 0) {
+ 
+     int icntl14 = 20;    
+     int icntl7 = 7;
+     int matType = 0; // 0: unsymmetric, 1: symmetric positive definite, 2: symmetric general
++    int numThreads = 0; // ICNTL(16): 0 leaves the thread count to OpenMP (all cores)
+ 
+     int currentArg = 2;
+     while (currentArg < argc) {
+@@ -3560,6 +3561,12 @@ specifySOE(ClientData clientData, Tcl_Interp *interp, int argc, TCL_Char **argv)
+ 		  matType = 0;
+ 	  }
+ 	  currentArg += 2;
++	} else  if (strcmp(argv[currentArg],"-numThreads") == 0 || strcmp(argv[currentArg],"-ICNTL16") == 0) {
++	  if (currentArg+1 >= argc || Tcl_GetInt(interp, argv[currentArg+1], &numThreads) != TCL_OK || numThreads < 0) {
++		  opserr << "Mumps Warning: failed to get -numThreads. The OpenMP default (all cores) is used\n";
++		  numThreads = 0;
++	  }
++	  currentArg += 2;
+ 	} else 
+ 	  currentArg++;
+       }    
+@@ -3575,7 +3582,7 @@ specifySOE(ClientData clientData, Tcl_Interp *interp, int argc, TCL_Char **argv)
+     theParallelSOE->setChannels(numChannels, theChannels);
+     theSOE = theParallelSOE;
+ #else
+-    MumpsSolver *theSolver = new MumpsSolver(icntl7, icntl14);
++    MumpsSolver *theSolver = new MumpsSolver(icntl7, icntl14, numThreads);
+     theSOE = new MumpsSOE(*theSolver, matType);
+ #endif
+ 

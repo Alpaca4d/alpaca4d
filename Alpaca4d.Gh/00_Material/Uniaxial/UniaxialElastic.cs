@@ -42,6 +42,10 @@ namespace Alpaca4d.Gh
 
             evaluationUnit.RegisterInputParam(new Param_Number(), "Rho", "Rho", $"Density [{Units.Mass}/{Units.Length}³]", GH_ParamAccess.item, new GH_Number(7850));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
+
+            // Last, so the inputs before it keep their indices.
+            evaluationUnit.RegisterInputParam(new Param_Colour(), ColourInput.Name, ColourInput.Name, ColourInput.MaterialDescription, GH_ParamAccess.item);
+            evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
         }
 
         public override void SolveInstance(IGH_DataAccess DA, out string msg, out GH_RuntimeMessageLevel level)
@@ -68,6 +72,7 @@ namespace Alpaca4d.Gh
 
             //rho = rho * 9.81 / 1000;
             var material = new Alpaca4d.Material.UniaxialMaterialElastic(matName, e, eNeg, eta, g, v, rho);
+            material.Color = ColourInput.Read(DA, 7);
 
             DA.SetData(0, material);
         }

@@ -16,8 +16,8 @@ namespace Alpaca4d.Gh
 
         public BeamBase()
           : base("ForceBeamColumn (Alpaca4d)", "ForceBeamColumn",
-            "Construct a beam element. Switch between a standard ForceBeamColumn (Beam) " +
-            "and a beam with plastic hinge zones (WithHinges).",
+            "Construct a beam element. Switch between a standard ForceBeamColumn (Beam), " +
+            "a beam with plastic hinge zones (WithHinges) and a bar that carries axial force only (Truss).",
             "Alpaca4d", "02_Element")
         {
             ((GH_Component)this).Hidden = false;
@@ -50,6 +50,7 @@ namespace Alpaca4d.Gh
         {
             _subcomponents.Add(new ForceBeamColumnSubComponent());
             _subcomponents.Add(new WithHingesSubComponent());
+            _subcomponents.Add(new TrussSubComponent());
 
             foreach (var sub in _subcomponents)
                 sub.registerEvaluationUnits(mngr);
