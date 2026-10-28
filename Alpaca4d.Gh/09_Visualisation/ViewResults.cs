@@ -123,6 +123,8 @@ namespace Alpaca4d.Gh
             "elements and greys the rest, so what you are looking at stays in the model around it.\n" +
             "With Extruded beams on, beam stresses that differ across a section - σx, σMy, σMz, τV, τT, Von Mises - " +
             "are painted point by point over it; drawn as lines, each section shows its worst.\n" +
+            "A vibration or buckling mode is drawn at deformation scale 1 with its largest movement as far off " +
+            "the model as the diagrams stand; any other displacement at true size.\n" +
             "Work in progress, and meant to grow into the replacement for the separate view components.",
             "Alpaca4d", "09_Visualisation")
         {
@@ -745,7 +747,7 @@ namespace Alpaca4d.Gh
             Dictionary<int, Vector3d> displacement = null;
             if (_ckDeformed?.Active ?? false)
             {
-                double scale = _slDeformScale?.Value ?? 1.0;
+                double scale = (_slDeformScale?.Value ?? 1.0) * ModeFit();
                 displacement = _cachedDisplacement.ToDictionary(x => x.Key, x => x.Value * scale);
             }
 
@@ -764,6 +766,22 @@ namespace Alpaca4d.Gh
             DA.SetDataList(2, palette);
 
             Rhino.RhinoDoc.ActiveDoc?.Views?.Redraw();
+        }
+
+        /// <summary>
+        /// What a mode shape is multiplied by on top of the deformation scale, so that at 1 its
+        /// largest movement stands off the model as far as the diagrams do (<see cref="Reach"/>).
+        /// A vibration or buckling mode has no size of its own - it is read with its largest
+        /// translation 1 m - and a metre is a shudder on a bridge and a fold on a bracket. A
+        /// displacement of any other analysis is drawn at true size, times the scale.
+        /// </summary>
+        private double ModeFit()
+        {
+            if (!_model.IsModal && !_model.IsBuckling)
+                return 1.0;
+
+            double largest = _cachedDisplacement.Values.Select(v => v.Length).DefaultIfEmpty(0.0).Max();
+            return largest > 0.0 ? Reach() / largest : 1.0;
         }
 
         /// <summary>Displacement at every node, at true size. Scaled when it is used, not here.</summary>
