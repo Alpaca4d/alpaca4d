@@ -1083,6 +1083,61 @@ namespace Alpaca4d
         }
 
         /// <summary>
+        /// A shell face's unit normal, the way OpenSees forms it: on a triangle the cross product
+        /// of sides 1-2 and 1-3 (ASDShellT3LocalCoordinateSystem, ShellNLDKGT::updateBasis), on a
+        /// quad that of its two diagonals (ASDShellQ4LocalCoordinateSystem), which is the plane a
+        /// warped quad is flattened onto.
+        /// </summary>
+        public static Vector3d ShellNormal(IList<Point3d> nodes)
+        {
+            if (nodes.Count == 3)
+                return Unit(Vector3d.CrossProduct(nodes[1] - nodes[0], nodes[2] - nodes[0]),
+                            "This shell face has its three corners on one line, so it has no normal.");
+            if (nodes.Count == 4)
+                return Unit(Vector3d.CrossProduct(nodes[2] - nodes[0], nodes[3] - nodes[1]),
+                            "This shell face is degenerate, so it has no normal.");
+
+            throw new Exception($"A shell face has three corners or four, not {nodes.Count}.");
+        }
+
+        /// <summary>
+        /// How close the ASD shells' Local X may come to a face's normal, in degrees, before ASD
+        /// Shell turns it away. Along the normal it leaves nothing to flatten into the face:
+        /// ASDShellQ4 and ASDShellT3 stop OpenSees there, in setDomain, with exit code 255 and no
+        /// more than Run Analysis's "Analysis Failed". Only a hair off it they run, flattening what
+        /// little is left in the plane, so the axis turns with the slightest tilt of the face - on
+        /// a curved mesh, every face its own way. A degree off leaves 1.7% of the vector in the
+        /// plane: an axis that sits still.
+        /// </summary>
+        public const double ShellLocalXTolerance = 1.0;
+
+        /// <summary>
+        /// The angle between <paramref name="localX"/> and the normal of a shell face, in degrees:
+        /// 0 along it either way, 90 in the face. NaN for a face with no normal, or no vector.
+        /// </summary>
+        public static double ShellLocalXAngle(IList<Point3d> nodes, Vector3d localX)
+        {
+            if (!localX.IsValid || localX.Length <= Rhino.RhinoMath.ZeroTolerance)
+                return double.NaN;
+
+            Vector3d normal;
+            try
+            {
+                normal = ShellNormal(nodes);
+            }
+            catch (Exception)
+            {
+                return double.NaN;
+            }
+
+            // From the part across the normal rather than the cosine, which is flat near 0 and
+            // would put a vector a millionth of a degree off at exactly 0.
+            double across = Vector3d.CrossProduct(normal, localX).Length / localX.Length;
+            double along = Math.Abs(normal * localX) / localX.Length;
+            return Math.Atan2(across, along) * 180.0 / Math.PI;
+        }
+
+        /// <summary>
         /// The local frame of a shell: the axes its section forces and stresses are reported in.
         ///
         /// Not simply the first edge, the way a solid's is. Every shell element in OpenSees builds
@@ -1107,27 +1162,20 @@ namespace Alpaca4d
         /// </summary>
         public static (Vector3d X, Vector3d Y, Vector3d Z) ShellFrame(IList<Point3d> nodes, Vector3d localX)
         {
-            if (nodes.Count != 3 && nodes.Count != 4)
-                throw new Exception($"A shell face has three corners or four, not {nodes.Count}.");
-
-            Vector3d normal, referenceX, target;
+            var normal = ShellNormal(nodes);
+            Vector3d referenceX, target;
 
             if (nodes.Count == 3)
             {
                 // ASDShellT3LocalCoordinateSystem, and ShellNLDKGT::updateBasis, which agree.
                 var side12 = nodes[1] - nodes[0];
-                normal = Unit(Vector3d.CrossProduct(side12, nodes[2] - nodes[0]),
-                              "This shell face has its three corners on one line, so it has no normal.");
                 referenceX = Unit(side12, "This shell face has its first two corners at the same point.");
                 target = referenceX;
             }
             else
             {
-                // ASDShellQ4LocalCoordinateSystem: the normal from the two diagonals, and x from
-                // side 1-2 with whatever part of it stands out of the plane taken off.
-                normal = Unit(Vector3d.CrossProduct(nodes[2] - nodes[0], nodes[3] - nodes[1]),
-                              "This shell face is degenerate, so it has no normal.");
-
+                // ASDShellQ4LocalCoordinateSystem: x from side 1-2 with whatever part of it stands
+                // out of the plane taken off.
                 var side12 = nodes[1] - nodes[0];
                 referenceX = Unit(side12 - (side12 * normal) * normal,
                                   "This shell face has side 1-2 along its own normal.");
