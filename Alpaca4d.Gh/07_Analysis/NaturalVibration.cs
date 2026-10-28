@@ -95,7 +95,7 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item, new GH_String("-genBandArpack"));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
-            unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel", "The solved model. Feed it to Nodal Displacements to read a mode shape.");
+            unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel", "The solved model. Feed it to Nodal Displacements or View Results to read a mode shape, scaled so that its largest translation is 1.");
             unit.RegisterOutputParam(new Param_Number(), "Eigenvalues", "Eigenvalues", "One eigenvalue per mode, lowest first. Each is omega squared, in rad²/s².");
             unit.RegisterOutputParam(new Param_Number(), "Period", "Period", $"One period per mode, longest first [{Units.Time}]");
             unit.RegisterOutputParam(new Param_Number(), "Frequencies", "Frequencies", "One frequency per mode, lowest first, in Hz.");
