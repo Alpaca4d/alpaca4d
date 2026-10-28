@@ -35,6 +35,17 @@ class ViewResultsFilesTest
         (Alpaca4d.UIWidgets.MenuDropDown)typeof(Alpaca4d.Gh.ViewResults)
             .GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(view);
 
+    static Alpaca4d.UIWidgets.MenuSlider Slider(Alpaca4d.Gh.ViewResults view, string field) =>
+        (Alpaca4d.UIWidgets.MenuSlider)typeof(Alpaca4d.Gh.ViewResults)
+            .GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(view);
+
+    /// <summary>What a solve does with the model wired in before it reads anything from it.</summary>
+    static void Wire(Alpaca4d.Gh.ViewResults view, Alpaca4d.Model model)
+    {
+        typeof(Alpaca4d.Gh.ViewResults).GetField("_model", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(view, model);
+        typeof(Alpaca4d.Gh.ViewResults).GetMethod("FitScaleRange", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
+    }
+
     static Alpaca4d.Gh.ViewResults Make()
     {
         var view = new Alpaca4d.Gh.ViewResults();
@@ -119,6 +130,40 @@ class ViewResultsFilesTest
             var view = SaveAndOpen(6, 7, "BeamStressSigmaX", "ResultMenuOrder", "ResultUnits");
             Check(Family(view) == "Beam stresses", $"the family comes back as beam stresses ({Family(view)})");
             Check(Shown(view) == "VonMises", $"and Von Mises as Von Mises ({Shown(view)})");
+        }
+
+        Section("The deformation scale's range follows the model wired in");
+        {
+            var view = Make();
+            var scale = Slider(view, "_slDeformScale");
+            Func<string> Range = () => $"{scale.MinValue} to {scale.MaxValue} at {scale.Value}";
+            Check(scale.MinValue == 0.0 && scale.MaxValue == 200.0, $"a new one runs from 0 to 200 ({Range()})");
+
+            scale.Value = 50.0;
+            Wire(view, new Alpaca4d.Model { IsModal = true });
+            Check(scale.MinValue == -2.0 && scale.MaxValue == 2.0 && scale.Value == 1.0 && scale.NumDecimals == 2,
+                  $"a natural vibration model makes it -2.00 to 2.00, at 1 rather than an out-of-range 50 ({Range()}, {scale.NumDecimals} decimals)");
+
+            scale.Value = -1.25;
+            Wire(view, new Alpaca4d.Model { IsModal = true });
+            Check(scale.Value == -1.25, $"wired in again, it stays where it was put ({Range()})");
+
+            Wire(view, new Alpaca4d.Model());
+            Check(scale.MinValue == 0.0 && scale.MaxValue == 200.0 && scale.Value == 1.0 && scale.NumDecimals == 1,
+                  $"any other model takes it back to 0.0 to 200.0 ({Range()}, {scale.NumDecimals} decimal)");
+
+            Wire(view, new Alpaca4d.Model { IsAnalysed = true, IsStatic = true, IsBuckling = true });
+            Check(scale.MinValue == -2.0 && scale.MaxValue == 2.0 && scale.Value == 1.0 && scale.NumDecimals == 2,
+                  $"so does a buckling model ({Range()}, {scale.NumDecimals} decimals)");
+
+            Wire(view, new Alpaca4d.Model { IsAnalysed = true, IsStatic = true });
+            Check(scale.MinValue == 0.0 && scale.MaxValue == 200.0, $"and a static one takes it back ({Range()})");
+
+            // A range of its own, as Inigo the Dragon gives it, or as double-clicking the slider does.
+            scale.MaxValue = 0.8;
+            scale.Value = 0.4;
+            Wire(view, new Alpaca4d.Model { IsModal = true });
+            Check(scale.MinValue == 0.0 && scale.MaxValue == 0.8 && scale.Value == 0.4, $"a range of its own is kept ({Range()})");
         }
 
         Console.WriteLine();
