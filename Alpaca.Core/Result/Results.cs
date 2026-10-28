@@ -168,11 +168,17 @@ namespace Alpaca4d.Result
             }
             else
             {
-                var dataset = h5File.Dataset($"MODEL_STAGE[1]/RESULTS/ON_NODES/{_resultType}/DATA/STEP_0/MODE_{step}");
-                var dimX = (long)dataset.Space.Dimensions[0];
-                var dimY = (long)dataset.Space.Dimensions[1];
+                values = ModeData(h5File, _resultType, step);
 
-                values = dataset.Read<double>().ToArray2D(dimX, dimY);
+                // Rotations by the factor of the translations of the same mode, so the two still
+                // make one shape.
+                var translations = resultType == ResultType.MODES_OF_VIBRATION_R
+                    ? ModeData(h5File, Alpaca4d.Helper.EnumHelper.ResultTypeConvert(ResultType.MODES_OF_VIBRATION_U), step)
+                    : values;
+                double scale = ModeScale(translations);
+                for (int i = 0; i < values.GetLength(0); i++)
+                    for (int j = 0; j < values.GetLength(1); j++)
+                        values[i, j] *= scale;
             }
 
 
@@ -211,6 +217,41 @@ namespace Alpaca4d.Result
             }
 
             return dataOutput;
+        }
+
+        /// <summary>Mode <paramref name="mode"/> of a modal run, a node per row, as the file holds it.</summary>
+        private static double[,] ModeData(PureHDF.IH5Group h5File, string resultType, int mode)
+        {
+            var dataset = h5File.Dataset($"MODEL_STAGE[1]/RESULTS/ON_NODES/{resultType}/DATA/STEP_0/MODE_{mode}");
+            var dimX = (long)dataset.Space.Dimensions[0];
+            var dimY = (long)dataset.Space.Dimensions[1];
+
+            return dataset.Read<double>().ToArray2D(dimX, dimY);
+        }
+
+        /// <summary>
+        /// What a mode's translations, a node per row, are multiplied by to make its largest
+        /// translation 1, in model length units, pointing the positive way - the size
+        /// <see cref="Buckling.Normalise"/> gives a buckling mode.
+        ///
+        /// OpenSees hands the modes out mass-normalised, φᵀMφ = 1, so their size went with the mass
+        /// of the model: the tip of one cantilever moved 3.2 m at 0.39 t and 0.03 m at 3925 t, and a
+        /// heavy building needed a deformation scale of hundreds to show anything. The -unorm that
+        /// Natural Vibration passes to modalProperties scales the copy its report is worked out
+        /// from, not the modes in the domain the recorder writes.
+        /// </summary>
+        public static double ModeScale(double[,] translations)
+        {
+            double largest = 0.0, signed = 0.0;
+            for (int i = 0; i < translations.GetLength(0); i++)
+                for (int j = 0; j < Math.Min(3, translations.GetLength(1)); j++)
+                    if (Math.Abs(translations[i, j]) > largest)
+                    {
+                        largest = Math.Abs(translations[i, j]);
+                        signed = translations[i, j];
+                    }
+
+            return largest == 0.0 ? 1.0 : 1.0 / signed;
         }
 
         /// <summary>
