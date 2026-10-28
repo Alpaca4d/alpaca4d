@@ -116,7 +116,11 @@ and the user folder pointed at the test folder:
   Point Load, Assemble Model and Topology Optimisation, with Keep naming the column under the load:
   the first compliance is the hand-written deck's to 1e-12, and the whole run is (57 iterations, to
   1e-11); Keep stays at 1; the surface is one closed mesh; the deck has `stdBrick` lines only and no
-  result files are left. Run off keeps the result, and on again leaves a run that converged as it is.
+  result files are left. Solid has the 118 bricks at 0.5 and 13 joining steps, as copies; AlpacaModel is
+  them assembled, on the 12 of the 27 supports that stand on them, and Run Analysis and Nodal
+  Displacements on it give the tip loads' work as 7786 - of the order of the compliance, softer than
+  the Core's 5955 as Run Analysis solves SSP Bricks, not stdBricks. Run off keeps the result, and on
+  again leaves a run that converged as it is.
   Iterations lowered to 20 starts again and stops at 20, saying Iterations can take it on; raised to
   200, the run goes on from the 21st - the first 20 iterations are the same objects - and converges
   where the run of all of them did. A model assembled again starts a new run.

@@ -292,8 +292,32 @@ public static class GrasshopperCheck
         double designed = elements.Select((e, n) => (e, n)).Where(x => x.e.ElementId != "UnderLoad").Average(x => density[x.n]);
         Check(Math.Abs(designed - 0.3) < 2e-3, $"and the others keep 30% of their volume ({designed:0.0000})");
 
-        var solid = All<object>(Out(topology, "Solid")).Count;
-        Check(solid == density.Count(d => d >= 0.5), $"Solid has the {solid} bricks at 0.5 or more");
+        // On a grid this coarse the diagonals are staircases: Solid has the bricks at 0.5 or more, and a
+        // brick at each step that joins it to the next face to face (13, as TopologyOptimisation.cs finds).
+        var solidBricks = All<object>(Out(topology, "Solid")).OfType<Alpaca4d.Generic.IBrick>().ToList();
+        int solid = solidBricks.Count, atHalf = density.Count(d => d >= 0.5);
+        Check(solid >= atHalf && solid <= atHalf + atHalf / 4, $"Solid has the {atHalf} bricks at 0.5 or more and the ones joining their steps ({solid})");
+        Check(solidBricks.All(b => !elements.Contains(b)), "as copies: the model's own bricks are not handed out to be assembled again");
+
+        // The design as a model, analysed by the components a user would wire to it.
+        var design = All<object>(Out(topology, "AlpacaModel")).OfType<Alpaca4d.Model>().SingleOrDefault();
+        Check(design != null && design.Bricks.Count == solid, $"AlpacaModel is the design assembled ({design?.Bricks.Count} bricks)");
+        Check(design != null && design.Supports.Count > 0 && design.Supports.Count < fixedEnd.Count,
+            $"held by the supports that stand on it ({design?.Supports.Count} of {fixedEnd.Count}: the others stand where the end went void)");
+        var settings = doc.Add<Alpaca4d.Gh.AnalysisSettings>();
+        var analysis = doc.Add<Alpaca4d.Gh.RunAnalysis>();
+        Wire(topology, "AlpacaModel", analysis, "AlpacaModel");
+        Wire(settings, "Settings", analysis, "Settings");
+        var displacements = doc.Add<Alpaca4d.Gh.NodalDisplacement>();
+        Wire(analysis, "AlpacaModel", displacements, "AlpacaModel");
+        doc.Solve(everything: false);
+        NoErrors(doc, "Run Analysis and Nodal Displacements on AlpacaModel");
+        var positions = All<Point3d>(Out(displacements, "Position"));
+        var moved = All<Vector3d>(Out(displacements, "Displacement"));
+        double work = Enumerable.Range(0, positions.Count).Where(n => tip.Any(p => p.DistanceTo(positions[n]) < 1e-6)).Sum(n => -moved[n].Z);
+        Check(work > 0.5 * LastCompliance && work < 2.5 * LastCompliance,
+            $"it carries the load: the tip loads' work, {work:0.0}, is of the order of the optimiser's compliance, {LastCompliance:0.0} " +
+            "(the Core checks find 5955 for this design; a mechanism would give 1e10)");
 
         var surface = All<Mesh>(Out(topology, "Surface")).SingleOrDefault();
         Check(surface != null && surface.Faces.Count > 0 && surface.IsClosed, $"the surface is one closed mesh ({surface?.Faces.Count} faces)");
