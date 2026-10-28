@@ -1,4 +1,4 @@
-# Eigenvalues from OpenSees
+# Eigenvalues and modes from OpenSees
 
     ./run.sh
 
@@ -22,5 +22,14 @@ found, solves a steel cantilever with each solver:
 | `-fullGenLapack` | asked for 36 modes when the 30 masses give 30, it prints warnings among the output; all 36 are still read, the first six those of Arpack |
 | `-symmBandLapack` | no eigenvalues: it solves only the standard problem, without the mass, which is why Natural Vibration turns it away before running |
 
+It also checks the size the modes are read at. OpenSees records them mass-normalised,
+φᵀMφ = 1, so their size went with the mass of the model, and a heavy one needed a deformation
+scale of hundreds; `Read.NodalOutput` now gives each mode its largest translation 1, as a buckling
+mode has, and its rotations the same factor. `Read.ModeScale` is checked on a few small tables,
+and the cantilever, recorded as Natural Vibration records it, at its own mass and ten thousand
+times it: as recorded the tip moves 3.18 and 0.0318, as read 1 on both, turning 0.2761 rad per
+unit it moves either way.
+
 `OPENSEES=/path/to/OpenSees ./run.sh` picks the build; otherwise the first on the PATH, then the
-newest under `/Applications`. Passes with 3.5.0 and 3.8.0.
+newest under `/Applications`. Passes with 3.8.0 and with master of October 2026; the checks before the
+modes passed with 3.5.0 too.
