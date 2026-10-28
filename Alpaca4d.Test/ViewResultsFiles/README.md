@@ -33,3 +33,11 @@ of what a newer one saved, which is all that tells the two apart:
 Needs a Release build of `Alpaca4d.Gh`, mono, Grasshopper and RhinoCommon 7.18 from the NuGet cache,
 and Rhino 7 for Mac for the Visual Basic runtime and the libraries Grasshopper loads - what
 `ColourBy` needs.
+
+## The deformation scale's range
+
+A mode goes either way, so a natural vibration or buckling model wired in switches the Deformation
+scale from 0.0 to 200.0 over to -2.00 to 2.00, and any other model switches it back.
+Checked on the real component, with the model put where a solve puts it: the switch, a value
+outside the new range brought back to 1, a value inside it kept, and a range of its own - set by
+double-clicking the slider, or saved so in a file, as Inigo the Dragon's is - left alone.

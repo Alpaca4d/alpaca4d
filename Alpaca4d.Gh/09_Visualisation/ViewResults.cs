@@ -123,6 +123,9 @@ namespace Alpaca4d.Gh
             "elements and greys the rest, so what you are looking at stays in the model around it.\n" +
             "With Extruded beams on, beam stresses that differ across a section - σx, σMy, σMz, τV, τT, Von Mises - " +
             "are painted point by point over it; drawn as lines, each section shows its worst.\n" +
+            "A vibration or buckling mode is drawn at deformation scale 1 with its largest movement as far off " +
+            "the model as the diagrams stand; any other displacement at true size. On a natural vibration or " +
+            "buckling model the scale runs from -2 to 2, so Animate swings the mode both ways.\n" +
             "Work in progress, and meant to grow into the replacement for the separate view components.",
             "Alpaca4d", "09_Visualisation")
         {
@@ -232,7 +235,7 @@ namespace Alpaca4d.Gh
             _ckDeformed = new MenuCheckBox(0, "Deformed", "Deformed shape");
             _ckDeformed.ValueChanged += OnWidgetChanged;
 
-            _slDeformScale = new MenuSlider(0, "DeformScale", 0.0, 200.0, 1.0, 1);
+            _slDeformScale = new MenuSlider(0, "DeformScale", StaticScale.Min, StaticScale.Max, 1.0, StaticScale.Decimals);
             _slDeformScale.ValueChanged += OnWidgetChanged;
 
             _ckAnimate = new MenuCheckBox(1, "Animate", AnimateLabel);
@@ -660,6 +663,8 @@ namespace Alpaca4d.Gh
                 return;
             }
 
+            FitScaleRange();
+
             int step = 0;
             DA.GetData(1, ref step);
 
@@ -745,7 +750,7 @@ namespace Alpaca4d.Gh
             Dictionary<int, Vector3d> displacement = null;
             if (_ckDeformed?.Active ?? false)
             {
-                double scale = _slDeformScale?.Value ?? 1.0;
+                double scale = (_slDeformScale?.Value ?? 1.0) * ModeFit();
                 displacement = _cachedDisplacement.ToDictionary(x => x.Key, x => x.Value * scale);
             }
 
@@ -764,6 +769,56 @@ namespace Alpaca4d.Gh
             DA.SetDataList(2, palette);
 
             Rhino.RhinoDoc.ActiveDoc?.Views?.Redraw();
+        }
+
+        /// <summary>
+        /// What a mode shape is multiplied by on top of the deformation scale, so that at 1 its
+        /// largest movement stands off the model as far as the diagrams do (<see cref="Reach"/>).
+        /// A vibration or buckling mode has no size of its own - it is read with its largest
+        /// translation 1 m - and a metre is a shudder on a bridge and a fold on a bracket. A
+        /// displacement of any other analysis is drawn at true size, times the scale.
+        /// </summary>
+        private double ModeFit()
+        {
+            if (!_model.IsModal && !_model.IsBuckling)
+                return 1.0;
+
+            double largest = _cachedDisplacement.Values.Select(v => v.Length).DefaultIfEmpty(0.0).Max();
+            return largest > 0.0 ? Reach() / largest : 1.0;
+        }
+
+        /// <summary>The deformation scale's range for a model of each kind, and how many decimals it shows.</summary>
+        private static readonly (double Min, double Max, int Decimals) StaticScale = (0.0, 200.0, 1);
+        private static readonly (double Min, double Max, int Decimals) ModeShapeScale = (-2.0, 2.0, 2);
+
+        /// <summary>
+        /// The deformation scale's range set to suit the model: -2 to 2 for a natural vibration or
+        /// buckling model, 0 to 200 for any other. A mode is already fitted to the model at 1
+        /// (<see cref="ModeFit"/>) and goes either way - a vibration swings through its rest, and a
+        /// buckle, like the imperfection it stands for, is as likely one way as the other - so
+        /// Animate sweeps it through zero and out the other side. A displacement has one way to go
+        /// and a size of its own.
+        ///
+        /// Only a slider still on the other kind's range is switched. One given a range of its own -
+        /// double-clicked, or saved so in a file - keeps it whatever is wired in.
+        /// </summary>
+        private void FitScaleRange()
+        {
+            if (_slDeformScale == null) return;
+
+            bool mode = _model.IsModal || _model.IsBuckling;
+            var from = mode ? StaticScale : ModeShapeScale;
+            var to = mode ? ModeShapeScale : StaticScale;
+            if (_slDeformScale.MinValue != from.Min || _slDeformScale.MaxValue != from.Max)
+                return;
+
+            double value = _slDeformScale.Value;
+            _slDeformScale.MinValue = to.Min;
+            _slDeformScale.MaxValue = to.Max;
+            _slDeformScale.NumDecimals = to.Decimals;
+            _slDeformScale.Value = value >= to.Min && value <= to.Max ? value : 1.0;
+
+            Attributes?.ExpireLayout();
         }
 
         /// <summary>Displacement at every node, at true size. Scaled when it is used, not here.</summary>

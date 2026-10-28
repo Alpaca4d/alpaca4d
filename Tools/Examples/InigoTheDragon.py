@@ -70,11 +70,11 @@ FACES = ((0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0))
 # View Results' Result menu: Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses,
 # Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
 DISPLACEMENT, MAGNITUDE = 0, 0
-# A mode is drawn at the size OpenSees gives it, scaled to a modal mass of one: 2.5 m/sqrt(t) at the
-# wing tip, for a dragon of 28 t. A tenth of that is a quarter of a metre; Animate sweeps the scale
-# from 0 to SWEEP and back, which is half a metre.
-DEFORMATION_SCALE = 0.1
-SWEEP = 0.2
+# A mode is read with its largest translation 1, and View Results draws it at scale 1 with its
+# largest movement 8% of the model's diagonal: 0.68 m on this 8.5 m one. 0.4 moves the wing tip by a
+# quarter of a metre; Animate sweeps the scale from 0 to SWEEP and back, which is half a metre.
+DEFORMATION_SCALE = 0.4
+SWEEP = 0.8
 
 
 def read_tetrahedra():
@@ -428,7 +428,7 @@ def build(doc):
     scale.MaxValue = SWEEP
     scale.Value = DEFORMATION_SCALE
     legend = component(m, LEGEND, "Legend", None, SHOWN, ANALYSED)
-    legend_title = text(m, "Title", "Mode shape, mass-normalised", SHOWN, ANALYSED, width=160.0)
+    legend_title = text(m, "Title", "Mode shape, largest translation 1", SHOWN, ANALYSED, width=160.0)
     wire(inp(legend, 0), legend_title)
     wire(inp(legend, 1), out(results, 1))
     wire(inp(legend, 2), out(results, 2))
@@ -473,9 +473,8 @@ def build(doc):
          "5. Mode picks the mode to draw, 0 being the first. The dragon sways "
          "forward and back at 7.7 Hz (0), side to side at 22 Hz (1), wags its tail at 42 Hz (2), and "
          "flaps its wings together at 59 Hz (3) and against each other at 60 Hz (4). Tick Animate "
-         "under View Results' Display to watch it move. A mode has no size of its own: it is drawn as "
-         "OpenSees scales it, to a modal mass of one, so its numbers say where the dragon moves most, "
-         "not by how much.".format(len(tetrahedra), len(nodes), volume(nodes, tetrahedra), 2.5 * volume(nodes, tetrahedra)),
+         "under View Results' Display to watch it move. A mode has no size of its own: it is read with "
+         "its largest translation 1, so its numbers say where the dragon moves most, not by how much.".format(len(tetrahedra), len(nodes), volume(nodes, tetrahedra), 2.5 * volume(nodes, tetrahedra)),
          0, -440, 640, 370)
 
 
