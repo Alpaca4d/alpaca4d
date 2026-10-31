@@ -7,10 +7,11 @@ using Alpaca4d.Generic;
 namespace Alpaca4d.Design
 {
     /// <summary>
-    /// Beams that share one section, for the section optimiser: the beams whose ElementId matches,
-    /// and the sections they may have, in the order to try them. The whole group takes one of them, the
-    /// first that every beam of the group can carry its forces with. A member drawn as several beams
-    /// is a group of its own, so that it ends up with one section, as it will be built.
+    /// Beams sized from one list of sections, for the section optimiser: the beams whose ElementId
+    /// matches, and the sections they may have, in the order to try them. Uniform, the whole group
+    /// takes one of them, the first that every beam of the group can carry its forces with: a member
+    /// drawn as several beams is a group of its own, so that it ends up with one section, as it will
+    /// be built. Not uniform, each beam takes the first it can carry its forces with.
     /// </summary>
     public class DesignGroup
     {
@@ -25,10 +26,13 @@ namespace Alpaca4d.Design
         /// <summary>The sections the group's beams may have, in the order the optimiser tries them: it never sorts them.</summary>
         public List<IUniaxialSection> Sections { get; set; } = new List<IUniaxialSection>();
 
+        /// <summary>Every beam of the group takes the same section; false for each its own, from the same list.</summary>
+        public bool Uniform { get; set; } = true;
+
         public override string ToString()
         {
             string name = string.IsNullOrWhiteSpace(this.Name) ? "" : $" {this.Name.Trim()}";
-            return $"Design Group{name}: {this.Sections.Count} section(s)";
+            return $"Design Group{name}: {this.Sections.Count} section(s), " + (this.Uniform ? "one for every beam" : "one per beam");
         }
     }
 }

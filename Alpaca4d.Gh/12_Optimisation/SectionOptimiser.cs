@@ -34,7 +34,8 @@ namespace Alpaca4d.Gh
             "list that keeps its utilisation at or below MaxUtilisation, and analyses again, as the new sections change the " +
             "self-weight and, in a statically indeterminate structure, where the forces go. It stops when no section changes, or " +
             "after Iterations analyses.\n" +
-            "A beam's list is its Design Group's, in the order given. A beam in no group is sized within the family of the " +
+            "A beam's list is its Design Group's, in the order given: the group's beams all take one section, or, with its Uniform off, " +
+            "each its own. A beam in no group is sized within the family of the " +
             "section it starts with in Section Library - an HEA200 among the HEAs, a CHS among the CHS - smallest area first; " +
             "a section that is not from Section Library has no family, and keeps its place.\n" +
             "Every beam takes part unless ElementId says which. Those left out keep their sections, and are still checked.\n" +

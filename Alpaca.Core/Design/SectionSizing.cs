@@ -27,8 +27,8 @@ namespace Alpaca4d.Design
         public string Label = "";
 
         /// <summary>
-        /// Every beam of the group has the same section, as a design group's do. A family's beams, in
-        /// no design group, each have their own.
+        /// Every beam of the group has the same section, as a uniform design group's do. A family's
+        /// beams, in no design group, each have their own, as do those of a design group that is not uniform.
         /// </summary>
         public bool Uniform;
     }
@@ -226,7 +226,7 @@ namespace Alpaca4d.Design
                     Design = design,
                     Label = string.IsNullOrWhiteSpace(design.Name) ? $"Group {g + 1}" : design.Name.Trim(),
                     Sections = sections,
-                    Uniform = true,
+                    Uniform = design.Uniform,
                 };
                 int matched = 0;
                 for (int i = 0; i < beams.Count; i++)
