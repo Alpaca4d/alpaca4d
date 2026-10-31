@@ -141,3 +141,37 @@ copy of femdesign-api-2.0's sources, adding only what .NET Framework lacks; see
 `Alpaca4d.FemDesign/lib/README.md`.
 
 Copyright (c) StruSoft AB.
+
+## LilyPad
+
+Principal Stress Lines (`Alpaca4d.Gh/09_Visualisation`, `Alpaca.Core/Result/PrincipalField.cs` and
+`StressLineTracer.cs`) follows LilyPad's method: lines traced along the principal directions with
+fourth-order Runge-Kutta steps, and a field of them grown by neighbour seeding. Alpaca4d 0.11
+shipped a port of LilyPad's code; the component has since been rewritten for Alpaca4d, but keeps
+LilyPad's design. None of LilyPad's dependencies is used.
+
+<https://github.com/formateng/LilyPad>
+
+```
+MIT License
+
+Copyright (c) 2024 MSRChurch
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
