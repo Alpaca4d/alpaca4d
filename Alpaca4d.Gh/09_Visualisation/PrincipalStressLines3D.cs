@@ -215,7 +215,7 @@ namespace Alpaca4d.Gh
 
         public override GH_Exposure Exposure => GH_Exposure.tertiary;
 
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.PrincipalStressLines__Alpaca4D_;
+        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Principal_Stress_Lines_3D__Alpaca4d_;
 
         public override Guid ComponentGuid => new Guid("{193DED43-F74B-4C29-9617-B3486B36D01F}");
     }
