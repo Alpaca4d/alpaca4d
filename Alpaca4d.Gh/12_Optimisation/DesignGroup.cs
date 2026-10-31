@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using GH_IO.Serialization;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
 
 using Alpaca4d.Design;
@@ -13,17 +15,18 @@ using Alpaca4d.Result;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// Design Group: beams the Section Optimiser gives one section, and the sections it may be. The
-    /// beams are named by ElementId, the way the result components filter them, so a group is drawn on
-    /// the beam components and needs no wire back to them.
+    /// Design Group: beams the Section Optimiser sizes from one list of sections - one section for them
+    /// all, or with Uniform off each its own. The beams are named by ElementId, the way the result
+    /// components filter them, so a group is drawn on the beam components and needs no wire back to them.
     /// </summary>
     public class DesignGroupComponent : GH_Component
     {
         public DesignGroupComponent()
           : base("Design Group (Alpaca4d)", "Design Group",
-            "Beams that the Section Optimiser gives one section: the beams with these ElementIds, and the sections it may be. " +
-            "The whole group takes the first section of the list, in the order given, that every one of its beams can carry its forces with. " +
-            "Give a member drawn as several beams a group of its own, so that it ends up with one section, as it will be built.",
+            "Beams that the Section Optimiser sizes from one list of sections: the beams with these ElementIds, and the sections they may be. " +
+            "Uniform, the whole group takes the first section of the list, in the order given, that every one of its beams can carry its forces with: " +
+            "give a member drawn as several beams a group of its own, so that it ends up with one section, as it will be built. " +
+            "With Uniform off, each beam takes the first section of the list that it can carry its forces with.",
             "Alpaca4d", "12_Optimisation")
         {
             // Draw a Description Underneath the component
@@ -43,6 +46,24 @@ namespace Alpaca4d.Gh
                 "the group takes the first that works, so put first the one you would rather have - the lightest, the cheapest, the one " +
                 "in stock. The list is never sorted. Each needs a steel material and a shape to be checked - an Elastic Section cannot be.",
                 GH_ParamAccess.list);
+            pManager.AddParameter(UniformInput());
+        }
+
+        private const string UniformName = "Uniform";
+
+        private static IGH_Param UniformInput()
+        {
+            var param = new Param_Boolean
+            {
+                Name = UniformName,
+                NickName = UniformName,
+                Description = "True: every beam of the group takes the same section, the first of the list that all of them work with. " +
+                              "False: each beam takes its own, the first of the list that it works with.",
+                Access = GH_ParamAccess.item,
+                Optional = true,
+            };
+            param.SetPersistentData(true);
+            return param;
         }
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -55,10 +76,12 @@ namespace Alpaca4d.Gh
             string name = "";
             var elementIds = new List<string>();
             var items = new List<object>();
+            bool uniform = true;
 
             DA.GetData(0, ref name);
             if (!DA.GetDataList(1, elementIds)) return;
             if (!DA.GetDataList(2, items)) return;
+            DA.GetData(3, ref uniform);
 
             ElementFilter.Create(elementIds, out var badTerms);
             foreach (var problem in badTerms)
@@ -95,7 +118,17 @@ namespace Alpaca4d.Gh
                 Name = name ?? "",
                 ElementIds = elementIds,
                 Sections = sections,
+                Uniform = uniform,
             });
+        }
+
+        public override bool Read(GH_IReader reader)
+        {
+            // A file saved before the Uniform input has one input fewer; see StoredInputs.
+            StoredInputs.Match(this, reader, name => null);
+            bool read = base.Read(reader);
+            StoredInputs.Ensure(this, UniformInput, UniformName);
+            return read;
         }
 
         private static string Names(List<IUniaxialSection> sections)
