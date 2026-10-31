@@ -156,6 +156,9 @@ class SectionOptimiserTest
         var groups = SectionSizing.Resolve(beams, new[] { columns }, errors, warnings, null, remarks, SteelCatalogue.FamilyOf);
         Check(groups.Count == 3 && groups[0].Beams.SequenceEqual(new[] { 0, 1 }), "a design group comes first");
         Check(groups[0].Uniform && !groups[1].Uniform && !groups[2].Uniform, "a design group gives its beams one section; within a family each has its own");
+        var apart = SectionSizing.Resolve(beams, new[] { Apart(columns) }, new List<string>(), new List<string>(), null, null, SteelCatalogue.FamilyOf);
+        Check(!apart[0].Uniform && apart[0].Beams.SequenceEqual(new[] { 0, 1 }), "with its Uniform off, a design group's beams each have their own section of its list");
+        Check(columns.ToString().EndsWith("one for every beam") && Apart(columns).ToString().EndsWith("one per beam"), $"and the group says which: {columns}, {Apart(columns)}");
         Check(groups[1].Label == "HEA family" && groups[1].Beams.SequenceEqual(new[] { 2 }) && groups[1].Sections.Count == 24, "an HEA300 in no group, among the HEAs");
         Check(groups[2].Label == "IPE family" && groups[2].Beams.SequenceEqual(new[] { 3 }), "an IPE among the IPEs");
         Check(errors.Count == 0 && warnings.Count == 0 && remarks.Count == 1 && remarks[0].Contains("element 5") && remarks[0].Contains("no family"),
@@ -350,22 +353,21 @@ class SectionOptimiserTest
         return design;
     }
 
-    /// <summary>
-    /// The rounds from <paramref name="start"/>. A design group gives its beams one section; with
-    /// <paramref name="each"/> its beams are taken each on their own instead, as the beams of a family
-    /// are, to test how a beam is sized by itself.
-    /// </summary>
+    /// <summary>The rounds from <paramref name="start"/>.</summary>
     static SizingResult Size(Model start, DesignGroup group, double target, Func<Model, Model> analyse, int maxRounds = 10, ElementFilter only = null,
-                             Func<IUniaxialSection, SectionFamily> family = null, bool each = false,
+                             Func<IUniaxialSection, SectionFamily> family = null,
                              bool screen = true, bool parallel = true)
     {
         var groups = SectionSizing.Resolve(start.Beams, group == null ? new DesignGroup[0] : new[] { group }, new List<string>(), new List<string>(), only, null, family);
-        if (each)
-            foreach (var g in groups)
-                g.Uniform = false;
         var options = new SizingOptions { Target = target, MaxRounds = maxRounds, Design = Settings, Members = Members, Screen = screen, Parallel = parallel };
         // The file the rebuilt design is given does not matter: every analyse picks its own.
         return SectionSizing.Run(start, groups, options, analyse, null, (original, sections) => Design(start.Recorders[0].FileName, sections));
+    }
+
+    /// <summary>The group with its Uniform off: its beams are taken each on their own, as the beams of a family are.</summary>
+    static DesignGroup Apart(DesignGroup group)
+    {
+        return new DesignGroup { Name = group.Name, ElementIds = group.ElementIds, Sections = group.Sections, Uniform = false };
     }
 
     static void Rounds(string folder)
@@ -390,7 +392,7 @@ class SectionOptimiserTest
         Check(one != null && two != null && Catalogue.IndexOf(one) > Catalogue.IndexOf(two),
               $"(the heavier-loaded cantilever needs the heavier section: {one}, {two})");
 
-        var result = Size(start, catalogue, 1.0, design => Always(design, heavy), each: true);
+        var result = Size(start, Apart(catalogue), 1.0, design => Always(design, heavy));
         Check(result.Sections[0] == one && result.Sections[1] == two, $"each beam on the first section of the list that holds: {result.Sections[0]}, {result.Sections[1]}");
         Check(result.Converged && result.Rounds.Count == 2, $"two rounds, the second changing nothing: {result.Rounds.Count}, converged {result.Converged}");
         Check(result.Rounds[0].Changed == 2 && result.Rounds[1].Changed == 0, "both moved in the first round, from the I400 they started on");
@@ -416,13 +418,13 @@ class SectionOptimiserTest
         var oneMixed = First(heavy, 0, 1.0, mixed);
         var twoMixed = First(heavy, 1, 1.0, mixed);
         Check(oneMixed == Catalogue[6] && twoMixed == Catalogue[3], $"(in the order I240, I400, I300, beam 1 first holds on {oneMixed}, beam 2 on {twoMixed})");
-        var ordered = Size(start, new DesignGroup { ElementIds = catalogue.ElementIds, Sections = mixed }, 1.0, design => Always(design, heavy), each: true);
+        var ordered = Size(start, new DesignGroup { ElementIds = catalogue.ElementIds, Sections = mixed, Uniform = false }, 1.0, design => Always(design, heavy));
         Check(ordered.Sections[0] == Catalogue[6] && ordered.Sections[1] == Catalogue[3],
               $"the list is tried in the order given, not by weight: {ordered.Sections[0]}, {ordered.Sections[1]}");
 
         // A lower target.
         var oneAt08 = First(heavy, 0, 0.8);
-        var lower = Size(start, catalogue, 0.8, design => Always(design, heavy), each: true);
+        var lower = Size(start, Apart(catalogue), 0.8, design => Always(design, heavy));
         Check(lower.Sections[0] == oneAt08 && Catalogue.IndexOf(oneAt08) >= Catalogue.IndexOf(one), $"Threshold 0.8: {lower.Sections[0]}");
 
         // A design group: the one section the worse beam needs.
@@ -476,15 +478,15 @@ class SectionOptimiserTest
         var scenarios = new List<KeyValuePair<string, Func<bool, bool, SizingResult>>>
         {
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("each beam its own",
-                (sc, pa) => Size(start, catalogue, 1.0, design => Always(design, heavy), each: true, screen: sc, parallel: pa)),
+                (sc, pa) => Size(start, Apart(catalogue), 1.0, design => Always(design, heavy), screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("a design group",
                 (sc, pa) => Size(start, catalogue, 1.0, design => Always(design, heavy), screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("a list in its own order",
-                (sc, pa) => Size(start, new DesignGroup { ElementIds = catalogue.ElementIds, Sections = mixed }, 1.0, design => Always(design, heavy), each: true, screen: sc, parallel: pa)),
+                (sc, pa) => Size(start, new DesignGroup { ElementIds = catalogue.ElementIds, Sections = mixed, Uniform = false }, 1.0, design => Always(design, heavy), screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("a list nothing in passes",
-                (sc, pa) => Size(start, small, 1.0, design => Always(design, heavy), each: true, screen: sc, parallel: pa)),
+                (sc, pa) => Size(start, Apart(small), 1.0, design => Always(design, heavy), screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("Threshold 0.8",
-                (sc, pa) => Size(start, catalogue, 0.8, design => Always(design, heavy), each: true, screen: sc, parallel: pa)),
+                (sc, pa) => Size(start, Apart(catalogue), 0.8, design => Always(design, heavy), screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("the HEA family",
                 (sc, pa) => Size(fromHea, null, 1.0, design => Always(design, heavy), 10, null, SteelCatalogue.FamilyOf, screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("a design that comes round",
