@@ -22,12 +22,17 @@ description: Draw or change a 24 px Alpaca4d Grasshopper component icon (pixel a
     and scale it down: the neck smears and the outlines vanish.
 - **A load arrow** narrows to a 1 px point in odd widths, rows 1-1-5-3-1. 2-4-2 reads as a
   cross.
-- **Colours already in use:**
-  - dark #1E1E1E for axes and outlines;
-  - blue #3B4CC0, shaded #1F2A80;
-  - red #ED0B2B;
-  - hooves #7D7D7D.
-- **Node dots** are a 3 x 3 dark ring with a white centre.
+- **No black.** The dark of a new icon is DarkTech #2A2D31, Alpaca4d's dark grey (user,
+  2026-11-01). Take the other colours from the brand palette in `Alpaca.Core/Utils/BrandColors.cs`:
+  AlpacaLightBlue #4288F7, AlpacaDarkBlue #011EFE, AlpacaOrange #EB6C3F, AlpacaPurple #9E35DA,
+  AlpacaLightGreen #AFC930. Node Forces gives each force its own brand colour and draws its
+  moment as a curved arrow: the user turned down red arrows, then all-blue ones.
+- **A moment** is a 1 px arc with a filled right-angle head at its end. **A 45° arrow** has a
+  filled head three pixels on a side, its right angle at the tip; four reads as a block beside a
+  5-3-1 head.
+- **Colours in older icons**, left as they are unless the user names the icon: dark #1E1E1E,
+  blue #3B4CC0 shaded #1F2A80, red #ED0B2B, hooves #7D7D7D.
+- **Node dots** are a 3 x 3 DarkTech ring with a white centre.
 - **Only touch the icons the user names.** A toolbar-wide redraw was stopped on 2026-10-23.
 
 ## Working
