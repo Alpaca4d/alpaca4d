@@ -29,7 +29,10 @@ description: Run Alpaca4d code, or real Grasshopper components, inside a live Rh
   `StartScriptServer` in it.
 - **Other sessions drive Rhino too.** Target your own with
   `rhinocode --rhino rhinocode_remotepipe_<pid> script ...`.
-- **Close only a Rhino you started:** `rhinocode --rhino <id> command "_-Exit"`.
+- **Close only a Rhino you started**, from a script: `RhinoDoc.ActiveDoc.Modified = false`, then
+  `RhinoApp.Exit(false)` from a `RhinoApp.Idle` handler. `_-Exit` and `RhinoApp.Exit()` can wait on
+  a question nobody answers. Kill it only as a last resort: the next Rhino can then start with a
+  dialog that stops its `-runscript`, and `rhinocode list` never shows it.
 - **While Rhino runs, never build into the live Grasshopper folder.** Build with
   `-p:GrasshopperLibrariesPath=<scratch>`.
 
