@@ -970,6 +970,8 @@ namespace Alpaca4d
                 (ndf == 3 ? this.ThreeNdfModel : this.SixNdfModel).Add(supportNode);
             }
 
+            this.MergeRepeatedSupports();
+
             this.CreateSupportSprings();
 
             // A skewed support writes a node and a fix of its own, and both of those read
@@ -1000,6 +1002,81 @@ namespace Alpaca4d
 
             // Trusses make six degree of freedom nodes, so the builder is at six here.
             this.RestrainTrussOnlyNodes();
+        }
+
+        /// <summary>
+        /// Makes one support of the ordinary supports that land on the same node - a point given
+        /// twice, or two points within tolerance of each other - holding every direction any of them
+        /// holds. OpenSees keeps that union anyway, after a warning for every degree of freedom fixed a
+        /// second time; doing it here keeps the log clean, and gives the node one reaction, where
+        /// Reaction Forces would list it once per support and a sum of them would count it twice.
+        /// Skewed and spring supports are left as they are: each is a zeroLength of its own, and side
+        /// by side they share the load rather than repeat it.
+        /// </summary>
+        private void MergeRepeatedSupports()
+        {
+            var repeated = this.Supports.Where(support => !support.IsSpring && !support.NeedsSpring)
+                                        .GroupBy(support => support.Id.Value)
+                                        .Where(node => node.Count() > 1)
+                                        .ToList();
+            if (repeated.Count == 0)
+                return;
+
+            var merged = new Dictionary<int, Support>();
+            var same = new List<Support>();
+            var different = new List<Support>();
+
+            foreach (var node in repeated)
+            {
+                // A new support rather than the first one changed: that one is the user's, and goes
+                // into the next assembly as it was drawn. On world axes, because every support here
+                // is written as a fix, which only speaks global directions.
+                var support = new Support(node.First().Pos,
+                    node.Any(s => s.Tx), node.Any(s => s.Ty), node.Any(s => s.Tz),
+                    node.Any(s => s.Rx), node.Any(s => s.Ry), node.Any(s => s.Rz))
+                { Id = node.Key, ndf = node.First().ndf };
+                merged[node.Key] = support;
+
+                bool alike = node.Select(s => string.Join(" ", s.RestrainedDirections)).Distinct().Count() == 1;
+                (alike ? same : different).Add(support);
+            }
+
+            // Each node keeps the place its first support had in the list.
+            var placed = new HashSet<int>();
+            var kept = new List<Support>();
+            foreach (var support in this.Supports)
+            {
+                if (support.IsSpring || support.NeedsSpring || !merged.TryGetValue(support.Id.Value, out var one))
+                    kept.Add(support);
+                else if (placed.Add(support.Id.Value))
+                    kept.Add(one);
+            }
+            this.Supports = kept;
+
+            // Three positions at most: a message has no room for a list of points.
+            string NodesHave(List<Support> supports)
+            {
+                if (supports.Count == 1)
+                    return $"The node at {supports[0].Pos} has";
+                var named = string.Join("; ", supports.Take(3).Select(support => support.Pos.ToString()));
+                return $"{supports.Count} nodes (at {named}{(supports.Count > 3 ? $" and {supports.Count - 3} more" : "")}) have";
+            }
+
+            if (same.Count > 0)
+                this.Remarks.Add($"{NodesHave(same)} more than one support, all holding the same directions. " +
+                                 "Assemble keeps one support per node, so a node has one reaction rather than one per support.");
+
+            // A remark too: supports stacked to hold a node in what each holds are as good a way to
+            // build one as any, and the node is held just as they say.
+            if (different.Count > 0)
+            {
+                var one = different[0];
+                var holds = different.Count == 1
+                    ? $" ({one.Preset?.Label ?? SupportPreset.DofSummary(one.Tx, one.Ty, one.Tz, one.Rx, one.Ry, one.Rz)})"
+                    : "";
+                this.Remarks.Add($"{NodesHave(different)} supports holding different directions. Assemble keeps one support " +
+                                 $"per node, holding every direction any of them holds{holds}, as OpenSees would anyway.");
+            }
         }
 
         /// <summary>
@@ -1056,6 +1133,12 @@ namespace Alpaca4d
         /// what was meant. Assemble Model shows them as warnings.
         /// </summary>
         public List<string> Warnings { get; } = new List<string>();
+
+        /// <summary>
+        /// What Assemble did that is worth knowing but is no mistake in itself, such as the supports
+        /// on one node made one. Assemble Model shows them as remarks.
+        /// </summary>
+        public List<string> Remarks { get; } = new List<string>();
 
         /// <summary>
         /// True when a bar or a support spring works one way only - a tension-only or compression-only
@@ -1451,6 +1534,7 @@ namespace Alpaca4d
         public void Assemble()
         {
             this.Warnings.Clear();
+            this.Remarks.Clear();
             this.GetElements();
             
             this.GetUniquePoints(this.Beams, this.Shells, this.Bricks, this.Constraint);
