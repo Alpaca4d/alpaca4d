@@ -50,6 +50,7 @@ public partial class TrussCheck
             SupportsOnTrussNodes();
             BearingAssembled();
             SpringsHeldRigidly();
+            RepeatedSupports();
             ExportedToFemDesign();
         }
         catch (Exception e)
@@ -344,6 +345,40 @@ public partial class TrussCheck
             };
             var model = Assembled(new List<IElement> { Beam(a, b) }, supports);
             Check(model.Warnings.Count == 1 && model.Warnings[0].Contains("does nothing"), $"Assemble Model says so: {model.Warnings.FirstOrDefault()}");
+        }
+    }
+
+    static void RepeatedSupports()
+    {
+        Section("Two supports on one node");
+        {
+            Point3d a = new Point3d(0, 0, 0), m = new Point3d(2, 0, 0), b = new Point3d(4, 0, 0);
+            var supports = new List<Support>
+            {
+                Held(a, true, true, true, true, false, false),
+                Held(b, false, true, true, false, false, false),
+                Held(a, true, true, true, true, false, false),
+                // Within tolerance of b, and holding less: the node is held in what either holds.
+                Held(b + new Vector3d(0.004, 0, 0), false, false, true, false, false, false),
+            };
+            var model = Assembled(new List<IElement> { Beam(a, m), Beam(m, b) }, supports, Pattern(Force(m, new Vector3d(0, 0, -10))));
+            var fixes = Fixes(model, out bool twice);
+
+            Check(!twice, "no degree of freedom fixed twice");
+            Check(model.Supports.Count == 2 && model.Supports[0].Id == NodeAt(model, a) && model.Supports[1].Id == NodeAt(model, b),
+                  "one support per node, in the order the nodes were first given");
+            Check(fixes[NodeAt(model, a)].SequenceEqual(new[] { 1, 2, 3, 4 }) && fixes[NodeAt(model, b)].SequenceEqual(new[] { 2, 3 }),
+                  "each holds every direction its supports held");
+            Check(model.Remarks.Count == 2 && model.Remarks[0].StartsWith($"The node at {a} has") && model.Remarks[0].Contains("same directions"),
+                  $"the identical pair is a remark: {model.Remarks.FirstOrDefault()}");
+            Check(model.Remarks.Count == 2 && model.Remarks[1].StartsWith($"The node at {b} has") && model.Remarks[1].Contains("(Tx free  Ty fixed  Tz fixed"),
+                  $"so is the different pair, saying what the node is held in: {model.Remarks.ElementAtOrDefault(1)}");
+            Check(model.Warnings.Count == 0, "and nothing is a warning: stacked supports are no mistake");
+            Check(!supports[3].Ty, "the user's own support is left as it was drawn");
+
+            Check(Solve(model, "repeated-supports", out var log), "OpenSees takes it without a word about a node already constrained");
+            var reactions = model.Supports.Select(support => Reaction(model, support).Z).ToList();
+            Check(Near(reactions.Sum(), 10.0, 1e-6), $"Reaction Force's rows add up to the load, each node counted once ({reactions.Sum():G6})");
         }
     }
 
