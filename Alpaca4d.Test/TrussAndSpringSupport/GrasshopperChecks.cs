@@ -51,6 +51,7 @@ public static class GrasshopperCheck
             Bearing(compressionOnly: true);
             Bearing(compressionOnly: false);
             SpringHeldRigidly();
+            RepeatedSupport();
             LinearAlgorithm();
             ChosenEnergyTest();
         }
@@ -427,6 +428,35 @@ public static class GrasshopperCheck
         doc.Solve();
         var warnings = assemble.RuntimeMessages(GH_RuntimeMessageLevel.Warning).ToList();
         Check(warnings.Any(w => w.Contains("does nothing")), $"Assemble Model warns: {warnings.FirstOrDefault()}");
+    }
+
+    static void RepeatedSupport()
+    {
+        Section("A point given twice to Support");
+        var doc = new Doc("repeated");
+        var section = Section(doc, 0.1, 0.2);
+        var beam = doc.Add<Alpaca4d.Gh.BeamBase>("ForceBeamColumn (Alpaca4d)");
+        Set(beam, "Line", Line(0, 0, 0, 3, 0, 0));
+        Wire(section, "Section", beam, "Section");
+        // The base twice in one list, the way the end points of lines that meet there come.
+        var support = Support(doc, Pt(0, 0, 0), true, true, true, true, true, true);
+        Set(support, "Position", new GH_Plane(Plane.WorldXY), new GH_Plane(Plane.WorldXY));
+        var load = doc.Add<Alpaca4d.Gh.PointLoad>();
+        Set(load, "Point", Pt(3, 0, 0));
+        Set(load, "Force", new GH_Vector(new Vector3d(0, 0, -1)));
+        var (assemble, run, _) = Analyse(doc, new[] { beam }, new[] { support }, new[] { load });
+        var reactions = Reader<Alpaca4d.Gh.ReactionForce>(doc, run);
+        doc.Solve();
+
+        NoErrors(doc, "the definition");
+        var remarks = assemble.RuntimeMessages(GH_RuntimeMessageLevel.Remark).ToList();
+        Check(remarks.Any(r => r.Contains("more than one support")), $"Assemble Model remarks on it: {remarks.FirstOrDefault()}");
+        Check(!assemble.RuntimeMessages(GH_RuntimeMessageLevel.Warning).Any(), "and has nothing to warn about: the two hold the same");
+        var logged = run.RuntimeMessages(GH_RuntimeMessageLevel.Warning).Where(w => w.Contains("log")).ToList();
+        Check(logged.Count == 0, $"Run Analysis finds no warning in the log{(logged.Count == 0 ? "" : ": " + string.Join(" | ", logged))}");
+        var forces = Vectors(Out(reactions, "ReactionForce"));
+        Check(forces.Count == 1 && Near(forces[0].Z, 1.0, 1e-6),
+              $"Reaction Forces: one row, carrying the 1 kN ({string.Join("; ", forces.Select(f => f.Z.ToString("G6")))})");
     }
 
     static void ChosenEnergyTest()

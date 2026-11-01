@@ -113,6 +113,8 @@ namespace Alpaca4d.Gh
             WarnOfLoadsOnNothing(model);
             foreach (var warning in model.Warnings.Distinct())
                 this.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, warning);
+            foreach (var remark in model.Remarks.Distinct())
+                this.AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, remark);
 
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, model);

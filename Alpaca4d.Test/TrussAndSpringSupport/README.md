@@ -52,6 +52,9 @@ readers Beam Forces and Reaction Force use:
 * a compression-only bearing lifts off and its row in Reaction Force reads zero, the fix on the same
   node takes nothing vertical;
 * a spring along an axis a rigid support already holds is reported by Assemble Model;
+* ordinary supports that land on one node become one, holding what any of them held, with a remark that
+  says what the node is held in when they differed; no degree of freedom is fixed twice and the
+  reactions add up to the load, each node counted once;
 * the FEM-Design reader makes a truss a pinned bar and a spring support a support of stiffnesses,
   and says what it leaves behind (one-way behaviour, prestress, gaps).
 
