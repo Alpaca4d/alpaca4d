@@ -15,8 +15,10 @@ namespace Alpaca4d.Gh
     /// to the next, so they are overwritten rather than piling up. The paths are absolute, so reading
     /// them back no longer depends on the current directory.
     ///
-    /// The names do not say which component wrote them, so two Run Analysis components in one
-    /// document write the same files, and the one solved last overwrites the other's results.
+    /// The names say which component wrote them too, by the start of its InstanceGuid: with the run
+    /// alone, two Run Analysis components in one document - two designs compared, say - wrote the same
+    /// files, and the one solved last overwrote the other's results. A copy of a component is a
+    /// component of its own, with files of its own.
     /// </summary>
     internal sealed class AnalysisFiles
     {
@@ -38,12 +40,16 @@ namespace Alpaca4d.Gh
         /// <summary>Which of those runs this is, from 0: the branch, for a tree of one model per branch.</summary>
         public int Run { get; }
 
-        private AnalysisFiles(string folder, string userFolder, int runs, int run)
+        /// <summary>The component's own part of the names: the first 8 digits of its InstanceGuid.</summary>
+        public string Owner { get; }
+
+        private AnalysisFiles(string folder, string userFolder, int runs, int run, string owner)
         {
             Folder = folder;
             UserFolder = userFolder;
             Runs = runs;
             Run = run;
+            Owner = owner;
         }
 
         /// <summary>The files for the run <paramref name="DA"/> is on.</summary>
@@ -64,12 +70,16 @@ namespace Alpaca4d.Gh
             // Grasshopper runs an item-access component once per item of its longest input.
             int runs = Math.Max(1, component.Params.Input.Select(param => param.VolatileDataCount).DefaultIfEmpty(1).Max());
 
-            return new AnalysisFiles(folder, ghFolder ?? folder, runs, DA.Iteration);
+            return new AnalysisFiles(folder, ghFolder ?? folder, runs, DA.Iteration,
+                                     component.InstanceGuid.ToString("N").Substring(0, 8));
         }
 
-        /// <summary>One of this run's own files: Folder/stem_run.extension.</summary>
+        /// <summary>The name of one of this run's own files, without folder or extension: stem_owner_run.</summary>
+        public string OwnStem(string stem) => $"{stem}_{Owner}_{Run}";
+
+        /// <summary>One of this run's own files: Folder/stem_owner_run.extension.</summary>
         public string OwnFile(string stem, string extension) =>
-            Path.Combine(Folder, $"{stem}_{Run}{extension}");
+            Path.Combine(Folder, OwnStem(stem) + extension);
 
         /// <summary>
         /// A file the user named, as a full path: a relative name is taken from the .gh file's folder,

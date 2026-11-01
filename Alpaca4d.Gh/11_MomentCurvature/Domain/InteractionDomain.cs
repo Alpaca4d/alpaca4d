@@ -109,7 +109,7 @@ namespace Alpaca4d.Gh
             try
             {
                 domain = Alpaca4d.Section.InteractionDomain.Analyse(layout, settings, files.Folder,
-                                                                    $"domain_materials_{files.Run}", run, out deck, out log);
+                                                                    files.OwnStem("domain_materials"), run, out deck, out log);
             }
             catch (Exception ex)
             {
