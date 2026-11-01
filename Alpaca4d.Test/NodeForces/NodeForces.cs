@@ -40,10 +40,13 @@ class NodeForcesTest
 
     static void CloseVector(Vector3d got, Vector3d want, double tol, string what)
     {
-        bool ok = (got - want).Length <= tol * Math.Max(1.0, want.Length);
+        bool ok = Len(got - want) <= tol * Math.Max(1.0, Len(want));
         if (!ok) fails++;
         Console.WriteLine($"  [{(ok ? "PASS" : "FAIL")}] {what}: got ({got.X:G6}, {got.Y:G6}, {got.Z:G6}), want ({want.X:G6}, {want.Y:G6}, {want.Z:G6})");
     }
+
+    /// <summary>A vector's length that stays NaN when a component is: RhinoCommon's Length gives 0, and a NaN would pass.</summary>
+    static double Len(Vector3d v) => Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
 
     static int Main(string[] args)
     {
@@ -53,7 +56,8 @@ class NodeForcesTest
         Signs();
         if (!string.IsNullOrEmpty(openSees))
         {
-            Solved(openSees);
+            Solved(openSees, shear: true);
+            Solved(openSees, shear: false);
             Grillage(openSees);
         }
         else
@@ -65,8 +69,13 @@ class NodeForcesTest
 
     // ---------------------------------------------------------------- a model by hand
 
-    static ForceBeamColumn Beam(int id, int i, int j, Vector3d vecxz) =>
-        new ForceBeamColumn(null, null, new GeomTransf(GeomTransfType.Linear, null, vecxz)) { Id = id, INode = i, JNode = j };
+    static ForceBeamColumn Beam(int id, int i, int j, Vector3d vecxz, IIntegration integration = null)
+    {
+        var beam = new ForceBeamColumn(null, null, new GeomTransf(GeomTransfType.Linear, null, vecxz)) { Id = id, INode = i, JNode = j };
+        if (integration != null)
+            beam.BeamIntegration = integration;
+        return beam;
+    }
 
     static Model ModelOf(Dictionary<int, Point3d> nodes, List<IBeam> beams)
     {
@@ -328,12 +337,23 @@ wipe
             .Select(line => line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).Select(value => double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray())
             .ToArray();
 
-    static void Solved(string openSees)
+    /// <summary>
+    /// The joint, its beams on sections with shear - or, with <paramref name="shear"/> false, on
+    /// Elastic sections given no shear factors, which record P, Mz, My and T only. Their shears are
+    /// then worked out from the moments, and every check below holds them to OpenSees' own.
+    ///
+    /// Without shear, the point load on beam 4 becomes a uniform one. A point load puts a kink in
+    /// the moment that no curve through the sections follows, and Alpaca4d puts none on a beam: a
+    /// load along a beam is always -beamUniform.
+    /// </summary>
+    static void Solved(string openSees, bool shear)
     {
-        Console.WriteLine("\nA joint solved by OpenSees");
+        Console.WriteLine(shear ? "\nA joint solved by OpenSees" : "\nThe same joint on sections without shear");
 
         string folder = Directory.GetCurrentDirectory();
-        File.WriteAllText(Path.Combine(folder, "joint.tcl"), Deck);
+        var deck = shear ? Deck : Deck.Replace(" 5e-5 0.83 0.83\n", " 5e-5\n")
+                                      .Replace("-beamPoint 2 -1 0.4 1.5", "-beamUniform 2 -1 1.5");
+        File.WriteAllText(Path.Combine(folder, "joint.tcl"), deck);
         var run = Process.Start(new ProcessStartInfo(openSees, "joint.tcl")
         {
             WorkingDirectory = folder, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
@@ -349,8 +369,9 @@ wipe
         {
             Beam(1, 2, 1, new Vector3d(0, 0, 1)),
             Beam(2, 1, 3, new Vector3d(0, 0, 1)),
-            Beam(3, 1, 4, new Vector3d(1, 0, 0)),
-            Beam(4, 5, 1, new Vector3d(0, 0, 1)),
+            // The integrations of the deck: where the stations are is what a shear is worked out over.
+            Beam(3, 1, 4, new Vector3d(1, 0, 0), new Alpaca4d.BeamIntegration.NewtonContes(null, 3)),
+            Beam(4, 5, 1, new Vector3d(0, 0, 1), new Alpaca4d.BeamIntegration.HingeRadauIntegration(null, 0.1, null, 0.1, null)),
             new Truss(null, null, new Vector3d(0, 0, 1)) { Id = 5, INode = 1, JNode = 6 },
         };
         var model = ModelOf(JointNodes, beams);
@@ -359,6 +380,20 @@ wipe
 
         Check(Read.StepCount(model) == 2, "two steps recorded");
         Check(graph.Degree(1) == 5, "five members meet at the joint");
+
+        // Every station of every beam read, whatever its section records: five, three and six.
+        var stations = Read.ForceBeamColumn(model, 1);
+        Check(stations.n[0].Count == 5 && stations.n[2].Count == 3 && stations.n[3].Count == 6
+              && Enumerable.Range(0, 4).All(b => stations.vy[b].Concat(stations.vz[b]).Concat(stations.mz[b]).All(v => !double.IsNaN(v))),
+              $"Read.ForceBeamColumn gives the beams {stations.n[0].Count}, {stations.n[1].Count}, {stations.n[2].Count} and {stations.n[3].Count} stations, all with shears");
+        if (!shear)
+        {
+            // Beam 1 carries a uniform load, so its shear runs straight from end to end: the
+            // worked-out one at its middle station is the mean of those at its ends.
+            var vy = stations.vy[0];
+            Check(Math.Abs(vy[2] - 0.5 * (vy[0] + vy[4])) < 1e-9 && Math.Abs(vy[0] - vy[4]) > 1.0,
+                  $"beam 1's Vy, worked out, runs straight along it under its load: {string.Join(" ", vy.Select(v => v.ToString("G5")))}");
+        }
 
         for (int step = 0; step < 2; step++)
         {
@@ -380,7 +415,7 @@ wipe
                     int k = end.AtJ ? g.Length / 2 : 0;
                     var wantForce = -new Vector3d(g[k], g[k + 1], g[k + 2]);
                     var wantMoment = g.Length == 12 ? -new Vector3d(g[k + 3], g[k + 4], g[k + 5]) : Vector3d.Zero;
-                    worst = Math.Max(worst, Math.Max((end.Force - wantForce).Length, (end.Moment - wantMoment).Length));
+                    worst = Math.Max(worst, Math.Max(Len(end.Force - wantForce), Len(end.Moment - wantMoment)));
                 }
             }
             Check(worst < 1e-4, $"every member end matches OpenSees' globalForce, to {worst:G2} (text recorders print six figures)");
@@ -418,10 +453,10 @@ wipe
             // the displacement: small here, but a joint that only nearly balances.
             var undeformed = NodeForces.At(graph, 1, beams, forces, null, out _);
             var undeformedSum = undeformed.Aggregate(Vector3d.Zero, (sum, end) => sum + end.Force) + factor * NodalLoad;
-            Check(undeformedSum.Length > 1e-7, $"along the undeformed bar the joint misses by {undeformedSum.Length:G2}, so the displaced one is what balances it");
+            Check(Len(undeformedSum) > 1e-7, $"along the undeformed bar the joint misses by {Len(undeformedSum):G2}, so the displaced one is what balances it");
 
             var truss = atJoint.Single(end => end.Beam == 4);
-            Check(truss.Vy == 0 && truss.Mz == 0 && truss.Moment.Length == 0, "the truss brings an axial force and nothing else");
+            Check(truss.Vy == 0 && truss.Mz == 0 && Len(truss.Moment) == 0, "the truss brings an axial force and nothing else");
             var trussAxis = (JointNodes[6] + displacement[6]) - (JointNodes[1] + displacement[1]);
             trussAxis /= trussAxis.Length;
             CloseVector(truss.Force, truss.N * trussAxis, 1e-12, "its force on the joint is N along the displaced bar, towards its far end in tension");
@@ -437,7 +472,7 @@ wipe
                 var r = Rows($"react_{support}.out")[step];
                 var f = ends.Aggregate(Vector3d.Zero, (sum, end) => sum + end.Force) + new Vector3d(r[0], r[1], r[2]);
                 var m = ends.Aggregate(Vector3d.Zero, (sum, end) => sum + end.Moment) + new Vector3d(r[3], r[4], r[5]);
-                Check(f.Length < 1e-4 && m.Length < 1e-4, $"node {support}: the member and the reaction balance, to {Math.Max(f.Length, m.Length):G2}");
+                Check(Len(f) < 1e-4 && Len(m) < 1e-4, $"node {support}: the member and the reaction balance, to {Math.Max(Len(f), Len(m)):G2}");
             }
         }
 

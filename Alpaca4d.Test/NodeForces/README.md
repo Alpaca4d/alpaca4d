@@ -35,6 +35,10 @@ through `Read.ForceBeamColumn`, over two steps.
 Reading only the beams at a node gives them bit for bit and leaves the others empty, for beams and
 for a truss.
 
+**The same joint on sections without shear**, Elastic sections given no shear factors, its point load
+made uniform. Every beam reads all its sections, and the shears worked out from the moments meet the
+same table to the same figures.
+
 **A grillage solved twice into one file**, 840 beams numbered from 1 and then from 1001: the four
 beams at the middle, read row by row, are what reading every beam gives, and hold up the load. The
 second run would find none of its beams if the element tags kept from the first were used.
@@ -56,12 +60,15 @@ second run would find none of its beams if the element tags kept from the first 
   keeps the tags per file, and given `only` reads just those rows. One node then reads in 10 ms,
   every beam in 150 ms.
 * **An Elastic section without shear factors records four forces per section**, P, Mz, My and T,
-  not six. `Read.ForceBeamColumn` takes six, so Beam Forces, and Node Forces after it, misread
-  such a beam: a cantilever's five sections came back as three, with the wrong values. Alpaca4d
-  writes one only when AlphaY or AlphaZ is 0 or less.
-* **Spring Link puts its elements on the path {0;0}**, where the beam components use {0}. Wired
-  into Assemble Model beside beams without flattening, the model is assembled once per branch, and
-  the one holding only the link fails: "Support node ... is not part of the model!".
+  not six - an Elastic section with AlphaY or AlphaZ 0 or less, or one read back from such a deck.
+  `Read.ForceBeamColumn` took six, and read a cantilever's five sections as three, with the wrong
+  values in them. It now reads where each force sits off the group's META/COMPONENTS, and works
+  the missing shears out as the slopes of the moments: a quadratic through the sections, which a
+  force-based beam's moments under uniform load are. A point load would put a kink in them, but
+  Alpaca4d puts none on a beam.
+* **ASD Shell and Spring Link put their elements on the path {0;0}**, where the beam components use
+  {0}, so beams with either, wired into Assemble Model without flattening, made a model per branch.
+  Fixed, and checked in `../ElementPaths`.
 
 ## grasshopper.sh
 
@@ -75,10 +82,13 @@ Forces:
   vertical and one standing with z 60° round from x: at the fixed end Vy = -F·y, Vz = F·z,
   My = -L F·z, Mz = L F·y, at the tip the same shears and no moment, and in global axes the load
   and its moment;
+* a cantilever on an Elastic Section with AlphaY and AlphaZ 0, under a line load and a tip load:
+  Beam Forces reads its five sections, Vy is the load beyond each one, and Node Forces balances the
+  reaction;
 * a portal frame of beams with a line load and a push at a knee: the knees balance, the foot
   balances Reaction Forces, N to Mz match Beam Forces' end values to the bit, History gives
   `{step; tag}`;
-* the portal with a link brace, Assemble's Elements flattened: a remark names the knee the link
+* the portal with a link brace: a remark names the knee the link
   meets, and the other knee still balances;
 * a grillage of 60 x 60 bays, 7,320 beams, timed: Node Forces took 20 ms over one node and 180 ms
   over every node, Beam Forces 470 ms over every beam.
