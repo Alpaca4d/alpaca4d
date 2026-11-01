@@ -11,6 +11,12 @@ scripts, raw captures) in the scratchpad.
   `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/`, whether the user asked for
   it or not, so it can be shared. Overwrite them on the next round instead of adding versions.
 - Pictures for a docs page go beside that page too, with a copy in marketing.
+- **`Tools/Marketing/run.sh` makes the marketing pictures of the examples.** Its README lists the
+  scenes and how to add one, and its `Shots.cs` holds working code for everything below. For new
+  work on an example, add or extend a scene there rather than writing a script from nothing.
+- **Topology optimisation always gets a GIF and an MP4 of its run**, design by design along Step,
+  and a picture of the final design analysed in Von Mises stress. Use `Iterations` and `Analyse`
+  in `Shots.cs`.
 
 ## Definitions written by Tools/Examples/make.sh
 
