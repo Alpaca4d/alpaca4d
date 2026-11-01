@@ -2,60 +2,81 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Parameters;
+using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 using Alpaca4d.Element;
 using Alpaca4d.Result;
+using Alpaca4d.UIWidgets;
 
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// Principal stress lines through the inside of solids - SSP Bricks and tetrahedra - along all
-    /// three principal stresses. The field comes from <see cref="SolidPrincipalField"/>, the lines
-    /// from <see cref="SolidStressLineTracer"/>.
+    /// Principal Stress Lines' Solids unit: lines through the inside of SSP Bricks and tetrahedra,
+    /// along all three principal stresses. The field comes from <see cref="SolidPrincipalField"/>, the
+    /// lines from <see cref="SolidStressLineTracer"/>. The two outputs it shares with Shells carry
+    /// the largest and the middle principal stress; SL3, the smallest, is its own.
     /// </summary>
-    public class PrincipalStressLines3D : GH_Component
+    public partial class PrincipalStressLines
     {
-        public PrincipalStressLines3D()
-          : base("Principal Stress Lines 3D (Alpaca4d)", "Principal Stress Lines 3D",
-            "Principal stress lines through the inside of solid elements - SSP Bricks and tetrahedra - along the largest, " +
-            "middle and smallest principal stress. Each follows its principal direction from the seed both ways, " +
-            "until it leaves the solid or the stress no longer says which way to go.",
-            "Alpaca4d", "09_Visualisation")
-        {
-            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
-        }
+        /// <summary>The Solids unit's name, which files save.</summary>
+        private const string SolidsUnit = "PrincipalStressLines3D";
 
-        protected override void RegisterInputParams(GH_InputParamManager pManager)
+        /// <summary>The inputs a line through a solid needs, and an Advanced menu with the spacing of a field.</summary>
+        private static void RegisterSolids(EvaluationUnitManager mngr)
         {
-            pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "Alpaca4d model with analysed solid elements: SSP Bricks or tetrahedra.", GH_ParamAccess.item);
-            pManager.AddIntegerParameter("Step", "Step", "Analysis step index.", GH_ParamAccess.item, 0);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddPointParameter("Seed", "S", "Points inside the solid for the lines to go through. A seed outside it draws nothing.", GH_ParamAccess.list);
-            pManager.AddNumberParameter("Step Tolerance", "T",
-                "Length of one step along a line. 0 takes a third of the elements' mean edge length.", GH_ParamAccess.item, 0.0);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Single Line", "SL",
+            var unit = new EvaluationUnit(
+                SolidsUnit,
+                "Solids",
+                "Principal stress lines through solid elements, along all three principal stresses");
+
+            unit.Icon = Alpaca4d.Gh.Properties.Resources.Principal_Stress_Lines_3D__Alpaca4d_;
+            mngr.RegisterUnit(unit);
+
+            unit.RegisterInputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
+                "Alpaca4d model with analysed solid elements: SSP Bricks or tetrahedra.", GH_ParamAccess.item);
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = false;
+
+            unit.RegisterInputParam(new Param_Integer(), "Step", "Step", "Analysis step index.", GH_ParamAccess.item, new GH_Integer(0));
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            unit.RegisterInputParam(new Param_Point(), "Seed", "S",
+                "Points inside the solid for the lines to go through. A seed outside it draws nothing.", GH_ParamAccess.list);
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = false;
+
+            unit.RegisterInputParam(new Param_Number(), "Step Tolerance", "T",
+                "Length of one step along a line. 0 takes a third of the elements' mean edge length.", GH_ParamAccess.item, new GH_Number(0.0));
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            unit.RegisterInputParam(new Param_Boolean(), "Single Line", "SL",
                 "True draws one line of each family through each seed. False grows a field of lines from the seeds, " +
-                "Separation apart: through a whole solid that is many lines, which hide one another.", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Separation", "dSep",
+                "Separation apart: through a whole solid that is many lines, which hide one another.", GH_ParamAccess.item, new GH_Boolean(true));
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            // Advanced inputs (moved into the Advanced menu below)
+            unit.RegisterInputParam(new Param_Number(), "Separation", "dSep",
                 "Distance between neighbouring lines in a field (Single Line false). 0 takes three times the elements' mean edge length.",
-                GH_ParamAccess.item, 0.0);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("Test Dist.", "dTest",
+                GH_ParamAccess.item, new GH_Number(0.0));
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            unit.RegisterInputParam(new Param_Number(), "Test Dist.", "dTest",
                 "In a field, a line stops when it comes closer than this to a line already drawn. 0 lets lines run on.",
-                GH_ParamAccess.item, 0.0);
-            pManager[pManager.ParamCount - 1].Optional = true;
+                GH_ParamAccess.item, new GH_Number(0.0));
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            // The third family, which shells do not have.
+            unit.RegisterOutputParam(new Param_Curve { Access = GH_ParamAccess.list }, "Stress Lines Dir3", "SL3",
+                "Lines along the smallest principal stress: the most compressive.");
+
+            var menu = new GH_ExtendableMenu(0, "PrincipalStressLines3D_Advanced");
+            menu.Name = "Advanced";
+            menu.Header = "Advanced parameters (dSep, dTest)";
+            menu.RegisterInputPlug(unit.Inputs[5]);
+            menu.RegisterInputPlug(unit.Inputs[6]);
+            unit.AddMenu(menu);
         }
 
-        protected override void RegisterOutputParams(GH_OutputParamManager pManager)
-        {
-            pManager.AddCurveParameter("Stress Lines 1", "SL1", "Lines along the largest principal stress: the most tensile.", GH_ParamAccess.list);
-            pManager.AddCurveParameter("Stress Lines 2", "SL2", "Lines along the middle principal stress.", GH_ParamAccess.list);
-            pManager.AddCurveParameter("Stress Lines 3", "SL3", "Lines along the smallest principal stress: the most compressive.", GH_ParamAccess.list);
-        }
-
-        protected override void SolveInstance(IGH_DataAccess DA)
+        private void SolveSolids(IGH_DataAccess DA)
         {
             var model = new Alpaca4d.Model();
             if (!DA.GetData(0, ref model)) return;
@@ -81,7 +102,7 @@ namespace Alpaca4d.Gh
 
             if (model.Bricks == null || model.Bricks.Count == 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Model has no solid elements. Nothing to draw.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Model has no solid elements. Nothing to draw. For shells, pick Shells in the drop-down on the component.");
                 return;
             }
 
@@ -212,11 +233,5 @@ namespace Alpaca4d.Gh
             for (int k = 0; k < 3; k++)
                 DA.SetDataList(k, lines[k]);
         }
-
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
-
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Principal_Stress_Lines_3D__Alpaca4d_;
-
-        public override Guid ComponentGuid => new Guid("{193DED43-F74B-4C29-9617-B3486B36D01F}");
     }
 }

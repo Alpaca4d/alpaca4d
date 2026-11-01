@@ -5,7 +5,7 @@
     PARTS=3d ./run.sh                     # only the solids; PARTS=2d only the shells
 
 Checks `PrincipalField` and `StressLineTracer`, which Principal Stress Lines runs, `SolidPrincipalField`
-and `SolidStressLineTracer`, which Principal Stress Lines 3D runs, and the two components themselves. It needs RhinoCommon's meshes and a solved Grasshopper definition, so it runs inside a
+and `SolidStressLineTracer`, which it runs on Solids, and the component itself, in both its units. It needs RhinoCommon's meshes and a solved Grasshopper definition, so it runs inside a
 running Rhino 8, through `rhinocode`: start Rhino's script server first (`StartScriptServer`) and
 load Grasshopper. Each run copies the build to a fresh folder, because Rhino keeps a DLL it has
 loaded mapped. The checks run under the license in `Alpaca4d.Utils/data_august_28.bin` of the main
@@ -38,6 +38,7 @@ on itself.
 | the cantilever through OpenSees and the component | held against rigid-body motion only, the exact tractions at both ends |
 | the plate with one node lifted 5 cm | the four quads round it warped well past 0.01 |
 | a third of the plate's shells turned over, through the component | the Remark that says so |
+| Shells and Solids, one component | a new one opens on Shells; switching to Solids keeps SL1 and SL2 and adds SL3, and back; one saved on Solids reads back on Solids; and the example `Tools/Examples/StressLinesBenchmarks.gh`, saved before Solids, opens on Shells with its wires on SL1 and SL2 |
 
 What it caught on the way. The component was a port of LilyPad's code, and a benchmark against
 these solutions found the following in it:
@@ -63,7 +64,7 @@ these solutions found the following in it:
 
 ## Solids
 
-`SolidStressLinesCheck.cs` does the same for Principal Stress Lines 3D, against two closed forms of
+`SolidStressLinesCheck.cs` does the same for the Solids unit, against two closed forms of
 three dimensional elasticity, both checked to be in equilibrium first:
 
 | solution | what it is | meshes |

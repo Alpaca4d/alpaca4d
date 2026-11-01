@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
+using GH_IO.Serialization;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
@@ -56,6 +57,7 @@ public static class StressLinesCheck
             Robustness();
             FieldMode();
             Component();
+            Units();
         }
         catch (Exception e)
         {
@@ -573,6 +575,80 @@ public static class StressLinesCheck
             Check(ok, $"OpenSees solves the {name} model");
             return ok ? model : null;
         }
+    }
+
+    // ---------------------------------------------------------------- the two units and files
+
+    const string ShellsUnit = "PrincipalStressLines", SolidsUnit = "PrincipalStressLines3D";
+
+    static string Outputs(GH_Component c) => string.Join(", ", c.Params.Output.Select(p => p.NickName));
+
+    static void SwitchTo(Alpaca4d.Gh.PrincipalStressLines c, string unit) => c.SwitchUnit(unit, false, false);
+
+    static string ActiveUnit(Alpaca4d.Gh.PrincipalStressLines c) => c.ActiveUnit?.Name;
+
+    /// <summary>
+    /// Principal Stress Lines has two units, Shells and Solids, which share SL1 and SL2. A file from
+    /// before Solids - the example's, whose stress lines are wired on - opens on Shells with its
+    /// wires; one saved on Solids opens on Solids; switching keeps the shared outputs and their wires.
+    /// </summary>
+    static void Units()
+    {
+        Section("Shells and Solids, one component");
+
+        var c = new Alpaca4d.Gh.PrincipalStressLines();
+        c.CreateAttributes();
+        Check(ActiveUnit(c) == ShellsUnit && c.Params.Input.Count == 9 && Outputs(c) == "SL1, SL2",
+              $"a new component opens on Shells: {c.Params.Input.Count} inputs, outputs {Outputs(c)}");
+        var shared = c.Params.Output.Select(p => p.InstanceGuid).ToList();
+        SwitchTo(c, SolidsUnit);
+        bool kept = c.Params.Output.Take(2).Select(p => p.InstanceGuid).SequenceEqual(shared);
+        Check(ActiveUnit(c) == SolidsUnit && c.Params.Input.Count == 7 && Outputs(c) == "SL1, SL2, SL3" && kept,
+              $"on Solids: {c.Params.Input.Count} inputs, outputs {Outputs(c)}, SL1 and SL2 the same outputs as on Shells");
+        SwitchTo(c, ShellsUnit);
+        Check(Outputs(c) == "SL1, SL2" && c.Params.Input.Count == 9, $"back on Shells: outputs {Outputs(c)}");
+
+        // Saved on Solids, read into a new one.
+        SwitchTo(c, SolidsUnit);
+        var archive = new GH_Archive();
+        archive.AppendObject(c, "component");
+        var again = new Alpaca4d.Gh.PrincipalStressLines();
+        again.CreateAttributes();
+        bool read = archive.ExtractObject(again, "component");
+        Check(read && ActiveUnit(again) == SolidsUnit && Outputs(again) == "SL1, SL2, SL3",
+              $"saved on Solids, it reads back on Solids, outputs {Outputs(again)}");
+
+        // The example, saved before Solids: every Principal Stress Lines in it opens on Shells, and
+        // the outputs it reads in are the ones the file's wires come from.
+        string example = Path.Combine(folder, "StressLinesBenchmarks.gh");
+        if (!File.Exists(example)) { Check(false, "the example " + example + " is there"); return; }
+        var file = new GH_Archive();
+        file.ReadFromFile(example);
+        var objects = file.GetRootNode.FindChunk("Definition").FindChunk("DefinitionObjects");
+        var sources = new HashSet<Guid>();
+        void Sources(GH_Chunk chunk)
+        {
+            foreach (var item in chunk.Items)
+                if (item.Name == "Source") sources.Add(item._guid);
+            foreach (var child in chunk.Chunks) Sources((GH_Chunk)child);
+        }
+        Sources((GH_Chunk)objects);
+        int found = 0, fine = 0;
+        var guid = new Alpaca4d.Gh.PrincipalStressLines().ComponentGuid;
+        for (int i = 0; i < objects.GetInt32("ObjectCount"); i++)
+        {
+            var o = objects.FindChunk("Object", i);
+            if (o.GetGuid("GUID") != guid) continue;
+            found++;
+            var old = new Alpaca4d.Gh.PrincipalStressLines();
+            old.CreateAttributes();
+            bool ok = old.Read(o.FindChunk("Container"));
+            if (ok && ActiveUnit(old) == ShellsUnit && old.Params.Input.Count == 9 && Outputs(old) == "SL1, SL2" &&
+                old.Params.Output.All(p => sources.Contains(p.InstanceGuid)))
+                fine++;
+        }
+        Check(found > 0 && fine == found,
+              $"the example from before Solids: {fine} of its {found} Principal Stress Lines open on Shells with the wires on SL1 and SL2");
     }
 
     // ---------------------------------------------------------------- running the component

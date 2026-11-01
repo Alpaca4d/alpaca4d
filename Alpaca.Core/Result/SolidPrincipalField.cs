@@ -7,7 +7,7 @@ using Rhino.Geometry;
 namespace Alpaca4d.Result
 {
     /// <summary>
-    /// The principal stress directions inside a solid, which Principal Stress Lines 3D follows.
+    /// The principal stress directions inside a solid, which Principal Stress Lines follows on Solids.
     ///
     /// The stress comes element by element: one value for an element that integrates at a single
     /// point (SSP Brick, the four node tetrahedron), or one at each node for a ten node tetrahedron,

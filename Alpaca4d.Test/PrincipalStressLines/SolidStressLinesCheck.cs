@@ -2,7 +2,7 @@
 // dimensional elasticity: a round bar twisted and pulled, whose lines are helices round its axis and
 // rays out from it, and Boussinesq's point load on a half-space. The field and tracer are fed each
 // solution's exact stresses on bricks and on ten node tetrahedra, then the component itself draws
-// lines in a block OpenSees solved under Boussinesq's stresses. A line is measured by the angle
+// lines in a block OpenSees solved under Boussinesq's stresses, in its Solids unit. A line is measured by the angle
 // between each of its segments and the exact principal direction at the segment's middle, and by
 // its distance from the exact trajectory through the same seed. run.sh loads this beside the build
 // under test and calls Run by reflection.
@@ -964,8 +964,9 @@ public static class SolidStressLinesCheck
                                                                                   bool single = true, double separation = 0, double test = 0)
     {
         var doc = new GH_Document();
-        var c = new Alpaca4d.Gh.PrincipalStressLines3D();
+        var c = new Alpaca4d.Gh.PrincipalStressLines();
         c.CreateAttributes();
+        c.SwitchUnit("PrincipalStressLines3D", false, false);    // Principal Stress Lines' Solids unit
         doc.AddObject(c, false);
         var data = (GH_Structure<IGH_Goo>)In(c, "AlpacaModel").GetType().GetProperty("PersistentData").GetValue(In(c, "AlpacaModel"));
         data.Clear(); data.Append(new GH_ObjectWrapper(model));

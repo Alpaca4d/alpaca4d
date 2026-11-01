@@ -12,20 +12,32 @@ using Alpaca4d.UIWidgets;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// Creates principal stress lines (direction 1 and 2) on shell elements of an Alpaca model: the
-    /// field comes from <see cref="PrincipalField"/>, the lines from <see cref="StressLineTracer"/>.
-    /// The method follows LilyPad, by Matthew Church and Format Engineers.
+    /// Principal stress lines of an Alpaca model, in one of two units picked on the component:
+    /// Shells, lines over shell elements along their two principal directions (the field from
+    /// <see cref="PrincipalField"/>, the lines from <see cref="StressLineTracer"/>, after LilyPad, by
+    /// Matthew Church and Format Engineers); and Solids, lines through solid elements along their
+    /// three (see PrincipalStressLinesSolids.cs). The two share SL1 and SL2; Solids adds SL3.
     /// </summary>
-    public class PrincipalStressLines : GH_SwitcherComponent
+    public partial class PrincipalStressLines : GH_SwitcherComponent
     {
         public PrincipalStressLines()
           : base("Principal Stress Lines (Alpaca4d)", "Principal Stress Lines",
-            "Plot principal stress lines on shell elements using nodal displacements/rotations.\n" +
+            "Plot principal stress lines: over shell elements (Shells), or through solid elements - SSP Bricks and " +
+            "tetrahedra - along all three principal stresses (Solids). Pick which on the component.\n" +
             "The method follows the open-source LilyPad principal stress line generator by Matthew Church/Format Engineers.",
             "Alpaca4d", "09_Visualisation")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
         }
+
+        /// <summary>The Shells unit's name, which files save: the component's only unit before Solids.</summary>
+        private const string ShellsUnit = "PrincipalStressLines";
+
+        public override string UnitMenuName => "Elements";
+
+        public override string UnitMenuHeader => "Shells or solids";
+
+        protected override string DefaultEvaluationUnit => ShellsUnit;
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
@@ -34,20 +46,23 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
-            pManager.AddCurveParameter("Stress Lines Dir1", "SL1", "Principal stress lines for direction 1", GH_ParamAccess.list);
-            pManager.AddCurveParameter("Stress Lines Dir2", "SL2", "Principal stress lines for direction 2", GH_ParamAccess.list);
+            // Shared by both units, so that files from before Solids keep their wires.
+            pManager.AddCurveParameter("Stress Lines Dir1", "SL1",
+                "Lines along the largest principal stress: the larger of the two in a shell's plane, the largest in a solid.", GH_ParamAccess.list);
+            pManager.AddCurveParameter("Stress Lines Dir2", "SL2",
+                "Lines along the second principal stress: the smaller of the two in a shell's plane, the middle one in a solid.", GH_ParamAccess.list);
         }
 
         /// <summary>
-        /// Register a single evaluation unit and attach an 'Advanced' menu that
-        /// hosts the four advanced plugs (v, BSL, dSep, dTest).
+        /// The two units: Shells, with an 'Advanced' menu that hosts its four advanced plugs (v, BSL,
+        /// dSep, dTest), and Solids (see PrincipalStressLinesSolids.cs).
         /// </summary>
         protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
         {
             var unit = new EvaluationUnit(
-                "PrincipalStressLines",
-                "PrincipalStressLines",
-                "Plot principal stress lines on shell elements using nodal displacements/rotations");
+                ShellsUnit,
+                "Shells",
+                "Principal stress lines over shell elements, from the nodal displacements or rotations");
 
             unit.Icon = Alpaca4d.Gh.Properties.Resources.PrincipalStressLines__Alpaca4D_;
             mngr.RegisterUnit(unit);
@@ -136,12 +151,20 @@ namespace Alpaca4d.Gh
 
 
             unit.AddMenu(menu);
+
+            RegisterSolids(mngr);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)
         {
             if (unit == null)
                 return;
+
+            if (unit.Name == SolidsUnit)
+            {
+                SolveSolids(DA);
+                return;
+            }
 
             var model = new Alpaca4d.Model();
             if (!DA.GetData(0, ref model)) return;
@@ -175,7 +198,7 @@ namespace Alpaca4d.Gh
 
             if (model.Shells == null || model.Shells.Count == 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Model has no shell elements. Nothing to draw.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Model has no shell elements. Nothing to draw. For solids, pick Solids in the drop-down on the component.");
                 return;
             }
 
