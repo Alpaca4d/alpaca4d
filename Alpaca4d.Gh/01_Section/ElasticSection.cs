@@ -30,9 +30,9 @@ namespace Alpaca4d.Gh
             pManager.AddNumberParameter("Izz", "Izz", $"Second moment of area about the section's local z axis, which resists bending Mz [{Units.Length}⁴]", GH_ParamAccess.item);
             pManager.AddNumberParameter("Iyy", "Iyy", $"Second moment of area about the section's local y axis, which resists bending My [{Units.Length}⁴]", GH_ParamAccess.item);
             pManager.AddNumberParameter("J", "J", $"Torsion constant [{Units.Length}⁴]. St Venant torsion, not the polar moment of area - the two only agree for a circle.", GH_ParamAccess.item);
-            pManager.AddNumberParameter("AlphaY", "AlphaY", "Shear area factor along the local y axis: the fraction of the area that carries shear. 5/6 for a rectangle, 1 to ignore shear deformation.", GH_ParamAccess.item, 5.0 / 6.0);
+            pManager.AddNumberParameter("AlphaY", "AlphaY", "Shear area factor along the local y axis: the fraction of the area that carries shear. 5/6 for a rectangle. 0 makes the section rigid in shear, which ignores shear deformation.", GH_ParamAccess.item, 5.0 / 6.0);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddNumberParameter("AlphaZ", "AlphaZ", "Shear area factor along the local z axis: the fraction of the area that carries shear. 5/6 for a rectangle, 1 to ignore shear deformation.", GH_ParamAccess.item, 5.0 / 6.0);
+            pManager.AddNumberParameter("AlphaZ", "AlphaZ", "Shear area factor along the local z axis: the fraction of the area that carries shear. 5/6 for a rectangle. 0 makes the section rigid in shear, which ignores shear deformation.", GH_ParamAccess.item, 5.0 / 6.0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Material", "Material", "Material the section is made of. Connect an elastic uniaxial material.", GH_ParamAccess.item);
             pManager.AddParameter(ColourInput.Make(ColourInput.SectionDescription));

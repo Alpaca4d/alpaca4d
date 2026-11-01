@@ -282,7 +282,6 @@ namespace Alpaca4d.Result
             const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force";
             const string TRUSS_BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/axialForce";
             const string BEAM_CLASS = "ForceBeamColumn";
-            const int SECTIONFORCES = 6;
 
             var nNested  = new List<List<double>>();
             var mzNested = new List<List<double>>();
@@ -307,8 +306,9 @@ namespace Alpaca4d.Result
                 throw new Exception(
                     "The recorder file holds no truss forces. Switch \"axialForce\" on in the MPCO Recorder component.");
 
-            // Map: element ID -> row data (all columns for that element)
-            var rowById = new Dictionary<int, double[]>();
+            // Map: element ID -> row data (all columns for that element), and where each section
+            // force sits in it
+            var rowById = new Dictionary<int, (double[] Row, int[][] Columns)>();
 
             // The element tags of the beams asked for; null keeps every row.
             var wanted = only == null ? null : new HashSet<int>(only.Select(b => alpacaModel.Beams[b].Id.Value));
@@ -354,6 +354,7 @@ namespace Alpaca4d.Result
                 long cols = (long)dataDataset.Space.Dimensions[1];
 
                 int[] ids = ElementIds(recorderPath, BASE, group);
+                int[][] columns = SectionColumns(recorderPath, BASE, group, (int)cols);
 
                 // A few rows asked for are read one by one, which skips reading the rest of the
                 // file; past an eighth of the group one read of the whole of it is quicker.
@@ -363,7 +364,7 @@ namespace Alpaca4d.Result
                     if (picked.Count * 8 < rows)
                     {
                         foreach (int r in picked)
-                            rowById[ids[r]] = dataDataset.Read<double>(new PureHDF.HyperslabSelection(2, new[] { (ulong)r, 0UL }, new[] { 1UL, (ulong)cols }));
+                            rowById[ids[r]] = (dataDataset.Read<double>(new PureHDF.HyperslabSelection(2, new[] { (ulong)r, 0UL }, new[] { 1UL, (ulong)cols })), columns);
                         continue;
                     }
                 }
@@ -378,9 +379,12 @@ namespace Alpaca4d.Result
                     var rowData = new double[cols];
                     for (int c = 0; c < cols; c++)
                         rowData[c] = data[r, c];
-                    rowById[elemId] = rowData;
+                    rowById[elemId] = (rowData, columns);
                 }
             }
+
+            // Node positions by tag, for the length of a beam whose shears have to be worked out.
+            Dictionary<int, Point3d> positions = null;
 
             try
             {
@@ -404,18 +408,38 @@ namespace Alpaca4d.Result
                         vz.AddRange(new[] { 0.0, 0.0 });
                         t.AddRange(new[] { 0.0, 0.0 });
                     }
-                    else if (rowById.TryGetValue(beam.Id.Value, out double[] row))
+                    else if (rowById.TryGetValue(beam.Id.Value, out var entry))
                     {
-                        // Derive the number of integration points from the column count
-                        int numIP = row.Length / SECTIONFORCES;
-                        for (int j = 0; j < SECTIONFORCES * numIP; j += SECTIONFORCES)
+                        Func<int, double> at = column => column < 0 ? double.NaN : entry.Row[column];
+                        foreach (var station in entry.Columns)
                         {
-                            n.Add(row[j + 0]);
-                            mz.Add(row[j + 1]);
-                            vy.Add(row[j + 2]);
-                            my.Add(row[j + 3]);
-                            vz.Add(row[j + 4]);
-                            t.Add(row[j + 5]);
+                            n.Add(at(station[0]));
+                            mz.Add(at(station[1]));
+                            vy.Add(at(station[2]));
+                            my.Add(at(station[3]));
+                            vz.Add(at(station[4]));
+                            t.Add(at(station[5]));
+                        }
+
+                        // A section without shear - an Elastic section given no shear factors - records
+                        // P, Mz, My and T only. Its shears are the slopes of its moments, Vy = dMz/dx and
+                        // Vz = dMy/dx as OpenSees has them, and exactly so: a force-based beam's moments
+                        // follow from equilibrium, and under the uniform loads that are the only ones
+                        // Alpaca4d puts on a beam they are at most quadratic along it.
+                        if (vy.Any(double.IsNaN) || vz.Any(double.IsNaN))
+                        {
+                            positions ??= alpacaModel.Nodes.Where(node => node.Id.HasValue)
+                                                           .GroupBy(node => node.Id.Value)
+                                                           .ToDictionary(group => group.Key, group => group.First().Pos);
+                            double length = positions.TryGetValue(beam.INode ?? 0, out var i) && positions.TryGetValue(beam.JNode ?? 0, out var j)
+                                ? i.DistanceTo(j)
+                                : beam.Curve != null ? beam.Curve.PointAtStart.DistanceTo(beam.Curve.PointAtEnd) : 0.0;
+                            var xi = beam.BeamIntegration?.SectionLocations(length);
+                            if (length > 0.0 && xi != null && xi.Count == n.Count)
+                            {
+                                Slopes(xi, mz, vy, length);
+                                Slopes(xi, my, vz, length);
+                            }
                         }
                     }
 
@@ -437,38 +461,131 @@ namespace Alpaca4d.Result
             return (nNested, mzNested, vyNested, myNested, vzNested, tNested);
         }
 
-        /// <summary>The recorder file <see cref="_elementIds"/> holds the tags of, as path, size and time written.</summary>
-        private static string _elementIdsFile;
+        /// <summary>The recorder file <see cref="_groupInfo"/> holds what it holds of, as path, size and time written.</summary>
+        private static string _groupInfoFile;
 
-        /// <summary>The element tags of each result group of that file, its rows in order, by the group's path.</summary>
-        private static readonly Dictionary<string, int[]> _elementIds = new Dictionary<string, int[]>();
+        /// <summary>What is the same at every step of a result group of that file, by the group's path and what it is.</summary>
+        private static readonly Dictionary<string, object> _groupInfo = new Dictionary<string, object>();
 
         /// <summary>
-        /// The element tag of each row of a result group, from its ID dataset.
-        ///
-        /// Read once per file and kept: they are the same for every step, and PureHDF takes as long
-        /// over a group's tags as over a step's whole data - 80 ms for the 45,300 tags of a grillage,
-        /// against 85 ms for its 1.4 million forces - so reading a few beams, or every step of a
-        /// history, would otherwise spend most of its time reading the same tags again. A file
+        /// What <paramref name="read"/> reads of a result group, read once per file and kept: the
+        /// element tags of its rows and where its columns sit are the same at every step. A file
         /// written again, by another run of the analysis, has another size or time and starts afresh.
         /// </summary>
-        private static int[] ElementIds(string recorderPath, string basePath, PureHDF.IH5Group group)
+        private static T GroupInfo<T>(string recorderPath, string key, Func<T> read)
         {
             var file = new System.IO.FileInfo(recorderPath);
             string stamp = $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
-            string key = basePath + "/" + group.Name;
 
-            lock (_elementIds)
+            lock (_groupInfo)
             {
-                if (_elementIdsFile != stamp)
+                if (_groupInfoFile != stamp)
                 {
-                    _elementIds.Clear();
-                    _elementIdsFile = stamp;
+                    _groupInfo.Clear();
+                    _groupInfoFile = stamp;
                 }
 
-                if (!_elementIds.TryGetValue(key, out var ids))
-                    _elementIds[key] = ids = group.Dataset("ID").Read<int>();
-                return ids;
+                if (!_groupInfo.TryGetValue(key, out var info))
+                    _groupInfo[key] = info = read();
+                return (T)info;
+            }
+        }
+
+        /// <summary>
+        /// The element tag of each row of a result group, from its ID dataset. Kept per file, as
+        /// PureHDF takes as long over a group's tags as over a step's whole data - 80 ms for the
+        /// 45,300 tags of a grillage, against 85 ms for its 1.4 million forces - so reading a few
+        /// beams, or every step of a history, would otherwise spend most of its time reading the same
+        /// tags again.
+        /// </summary>
+        private static int[] ElementIds(string recorderPath, string basePath, PureHDF.IH5Group group) =>
+            GroupInfo(recorderPath, basePath + "/" + group.Name + "#ID", () => group.Dataset("ID").Read<int>());
+
+        /// <summary>The names OpenSees gives a beam section's forces, in the order Read.ForceBeamColumn returns them.</summary>
+        private static readonly string[] SectionForceNames = { "P", "Mz", "Vy", "My", "Vz", "T" };
+
+        /// <summary>
+        /// Where each section force sits in a row of a section.force group, station by station: the
+        /// column of P, Mz, Vy, My, Vz and T, or -1 for one the section does not record.
+        ///
+        /// Read off the group's META/COMPONENTS, which names the columns of every station - for
+        /// instance "0.1.2.P,Mz,My,T" - rather than assumed. A section with shear records six forces
+        /// a station, an Elastic section given no shear factors four, and taking six from a row of
+        /// fours read a cantilever's five stations as three, with the wrong forces in them. A file
+        /// without the names is read six to a station, as it always was.
+        /// </summary>
+        private static int[][] SectionColumns(string recorderPath, string basePath, PureHDF.IH5Group group, int rowLength) =>
+            GroupInfo(recorderPath, basePath + "/" + group.Name + "#COMPONENTS", () =>
+            {
+                if (!group.LinkExists("META/COMPONENTS"))
+                {
+                    return Enumerable.Range(0, rowLength / SectionForceNames.Length)
+                                     .Select(s => Enumerable.Range(s * SectionForceNames.Length, SectionForceNames.Length).ToArray())
+                                     .ToArray();
+                }
+
+                var stations = string.Concat(group.Dataset("META/COMPONENTS").ReadString())
+                                     .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                var columns = new int[stations.Length][];
+                int offset = 0;
+                for (int s = 0; s < stations.Length; s++)
+                {
+                    var names = stations[s].Substring(stations[s].LastIndexOf('.') + 1).Split(',');
+                    columns[s] = SectionForceNames.Select(name => Array.IndexOf(names, name)).Select(k => k < 0 ? -1 : offset + k).ToArray();
+                    offset += names.Length;
+                }
+                return columns;
+            });
+
+        /// <summary>
+        /// Fills the gaps in <paramref name="shear"/> with the slope of <paramref name="moment"/>
+        /// along the beam: a quadratic in the stations' abscissae <paramref name="xi"/>, fitted by
+        /// least squares, differentiated and divided by <paramref name="length"/>. A quadratic holds
+        /// the moments of a beam under uniform load exactly; two stations give a straight line.
+        /// </summary>
+        private static void Slopes(IReadOnlyList<double> xi, List<double> moment, List<double> shear, double length)
+        {
+            int degree = Math.Min(2, xi.Count - 1);
+            if (degree < 1)
+                return;
+
+            // The normal equations of the fit, (degree + 1) square.
+            int size = degree + 1;
+            var a = new double[size, size + 1];
+            for (int k = 0; k < xi.Count; k++)
+            {
+                for (int r = 0; r < size; r++)
+                {
+                    for (int c = 0; c < size; c++)
+                        a[r, c] += Math.Pow(xi[k], r + c);
+                    a[r, size] += Math.Pow(xi[k], r) * moment[k];
+                }
+            }
+
+            // Gaussian elimination with partial pivoting.
+            for (int p = 0; p < size; p++)
+            {
+                int best = p;
+                for (int r = p + 1; r < size; r++)
+                    if (Math.Abs(a[r, p]) > Math.Abs(a[best, p])) best = r;
+                for (int c = 0; c <= size; c++)
+                    (a[p, c], a[best, c]) = (a[best, c], a[p, c]);
+                for (int r = 0; r < size; r++)
+                {
+                    if (r == p || a[p, p] == 0.0) continue;
+                    double factor = a[r, p] / a[p, p];
+                    for (int c = p; c <= size; c++)
+                        a[r, c] -= factor * a[p, c];
+                }
+            }
+            var coefficient = Enumerable.Range(0, size).Select(r => a[r, r] == 0.0 ? 0.0 : a[r, size] / a[r, r]).ToArray();
+
+            for (int k = 0; k < xi.Count; k++)
+            {
+                if (!double.IsNaN(shear[k]))
+                    continue;
+                double slope = coefficient[1] + (degree == 2 ? 2.0 * coefficient[2] * xi[k] : 0.0);
+                shear[k] = slope / length;
             }
         }
 

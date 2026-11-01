@@ -50,6 +50,7 @@ public static class GrasshopperCheck
 
             Girder();
             RotatedAxes();
+            NoShearSection();
             Portal();
             PortalWithLink();
             Grillage(60);
@@ -381,6 +382,77 @@ public static class GrasshopperCheck
     }
 
     /// <summary>
+    /// A cantilever on an Elastic Section with AlphaY and AlphaZ 0, which OpenSees builds without
+    /// shear and whose sections record P, Mz, My and T only, under a uniform load and a tip load.
+    /// Beam Forces read its five sections as three, with the wrong forces in them; now they are five,
+    /// the shears worked out from the moments, and Node Forces balances the reaction with them.
+    /// </summary>
+    static void NoShearSection()
+    {
+        Section("A cantilever on an Elastic Section without shear factors, through Beam Forces and Node Forces");
+        var doc = new Doc("no-shear");
+        var material = doc.Add<Alpaca4d.Gh.Uniaxial>("UniaxialElastic (Alpaca4d)");
+        var section = doc.Add<Alpaca4d.Gh.ElasticSection>();
+        Set(section, "Area", new GH_Number(0.01));
+        Set(section, "Izz", new GH_Number(2e-4));
+        Set(section, "Iyy", new GH_Number(1e-4));
+        Set(section, "J", new GH_Number(5e-5));
+        Set(section, "AlphaY", new GH_Number(0.0));
+        Set(section, "AlphaZ", new GH_Number(0.0));
+        Wire(material, "Material", section, "Material");
+
+        const double L = 4.0, P = 10.0, w = 3.0;
+        var root = new Point3d(0, 0, 0); var tip = new Point3d(L, 0, 0);
+        var beam = doc.Add<Alpaca4d.Gh.BeamBase>("ForceBeamColumn (Alpaca4d)");
+        Set(beam, "Line", Line(root, tip));
+        Wire(section, "Section", beam, "Section");
+        var supports = new[] { Support(doc, new[] { root }, true, true, true, true, true, true) };
+        var tipLoad = PointLoad(doc, new[] { tip }, new Vector3d(0, 0, -P));
+        var lineLoad = doc.Add<Alpaca4d.Gh.LinearLoad>();
+        In(lineLoad, lineLoad.Params.Input[0].Name).AddSource(Out(beam, "Element"));
+        Set(lineLoad, "Force", new GH_Vector(new Vector3d(0, 0, -w)));
+        var run = Analyse(doc, new[] { beam }, supports, new[] { tipLoad, lineLoad });
+        var beamForces = Reader<Alpaca4d.Gh.BeamForce>(doc, run);
+        var nodeForces = Reader<Alpaca4d.Gh.NodeForce>(doc, run);
+        Set(nodeForces, "Point", new GH_Point(root));
+        var reactions = Reader<Alpaca4d.Gh.ReactionForce>(doc, run);
+        doc.Solve();
+        NoErrors(doc, "the definition");
+
+        var path = Out(beamForces, "My").VolatileData.Paths.Single();
+        var my = Numbers(Out(beamForces, "My"), path);
+        var vz = Numbers(Out(beamForces, "Vz"), path);
+        Check(my.Count == 5 && vz.Count == 5, $"Beam Forces reads all five sections ({my.Count})");
+
+        // Local z of a beam along x left without a ZAxis is horizontal and local y up, so the load down
+        // -Z is along -y: the shear Vy and the moment Mz carry it, Vz and My are zero.
+        var vy = Numbers(Out(beamForces, "Vy"), path);
+        var mz = Numbers(Out(beamForces, "Mz"), path);
+        var local = Members(Out(nodeForces, "Element"), Out(nodeForces, "Element").VolatileData.Paths.Single()).Single();
+        var y = local.GeomTransf.LocalY;
+        Check(Math.Abs(y.Z) > 0.99, $"the beam's local y is vertical ({y})");
+        double s = Math.Sign(y.Z);
+        bool shears = Enumerable.Range(0, 5).All(k =>
+        {
+            double x = L * k / 4.0;
+            double want = s * (P + w * (L - x));               // Vy = dMz/dx: a load towards -y reads positive
+            return Math.Abs(vy[k] - want) < 1e-6 * Math.Max(1.0, Math.Abs(want));
+        });
+        Check(shears, $"Vy, worked out from the moments, is the load beyond each section: {string.Join(" ", vy.Select(v => v.ToString("G6")))}");
+        Check(Math.Abs(mz[0] - s * -(P * L + w * L * L / 2)) < 1e-6 * (P * L + w * L * L / 2),
+              $"Mz at the root is the cantilever's moment, {P * L + w * L * L / 2:G6} kN m ({mz[0]:G6})");
+        Check(vz.All(v => Math.Abs(v) < 1e-9) && my.All(v => Math.Abs(v) < 1e-9), "Vz and My are zero");
+
+        var nodePath = Out(nodeForces, "Force").VolatileData.Paths.Single();
+        var force = Vectors(Out(nodeForces, "Force"), nodePath).Single();
+        var moment = Vectors(Out(nodeForces, "Moment"), nodePath).Single();
+        var reaction = Out(reactions, "ReactionForce").VolatileData.AllData(true).Select(g => ((GH_Vector)g).Value).Single();
+        var reactionMoment = Out(reactions, "ReactionMoment").VolatileData.AllData(true).Select(g => ((GH_Vector)g).Value).Single();
+        Check((force + reaction).Length < 1e-6 && (moment + reactionMoment).Length < 1e-6 && Math.Abs(force.Z + P + w * L) < 1e-6,
+              $"Node Forces at the root: the beam puts the {P + w * L:G4} kN of load on the support, which Reaction Forces holds back ({force}, {reaction})");
+    }
+
+    /// <summary>
     /// A portal frame of beams, fixed at its feet, 10 kN/m down its 6 m beam and 5 kN along x at
     /// its left knee. The knees and a foot against Beam Forces, Reaction Forces and statics.
     /// </summary>
@@ -496,11 +568,6 @@ public static class GrasshopperCheck
         var supports = new[] { Support(doc, new[] { footA, footB }, true, true, true, true, true, true) };
         var push = PointLoad(doc, new[] { kneeA }, new Vector3d(50, 0, 0));
         var run = Analyse(doc, new GH_Component[] { frame, link }, supports, new[] { push });
-
-        // Spring Link puts its elements on {0;0} where the beam component puts them on {0}, and on two
-        // branches Assemble Model runs twice, once on the link alone. Flattened, as on the canvas.
-        var assemble = (GH_Component)In(run, "AlpacaModel").Sources[0].Attributes.GetTopLevel.DocObject;
-        In(assemble, "Elements").DataMapping = GH_DataMapping.Flatten;
 
         var nodeForces = Reader<Alpaca4d.Gh.NodeForce>(doc, run);
         Set(nodeForces, "Point", new GH_Point(kneeA), new GH_Point(kneeB));

@@ -46,6 +46,13 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("Element", "Element", "Element");
         }
 
+        /// <summary>The shells on the branch their mesh came from, as beams are: see <see cref="ElementOutput"/>.</summary>
+        protected override void AfterSolveInstance()
+        {
+            base.AfterSolveInstance();
+            ElementOutput.OntoInputBranches(this, 0);
+        }
+
         /// <summary>
         /// This is the method that actually does the work.
         /// </summary>
