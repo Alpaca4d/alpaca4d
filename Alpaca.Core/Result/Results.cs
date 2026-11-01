@@ -260,9 +260,12 @@ namespace Alpaca4d.Result
         /// <param name="alpacaModel"></param>
         /// <param name="step"></param>
         /// <param name="resultType"></param>
+        /// <param name="only">The places in Model.Beams to read, or null for every beam. The others
+        /// come back as empty lists, so the lists still run in the order of Model.Beams. A handful of
+        /// beams out of a large model are read row by row, which skips most of the file.</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public static (List<List<double>> n, List<List<double>> mz, List<List<double>> vy, List<List<double>> my, List<List<double>> vz, List<List<double>> t) ForceBeamColumn(Model alpacaModel, int step, string resultType = null)
+        public static (List<List<double>> n, List<List<double>> mz, List<List<double>> vy, List<List<double>> my, List<List<double>> vz, List<List<double>> t) ForceBeamColumn(Model alpacaModel, int step, string resultType = null, ICollection<int> only = null)
         {
             // MPCORecorder names every element result group
             //     <classTag>-<className>[<integrationRule>:<customRuleIndex>:<headerIndex>]
@@ -307,6 +310,9 @@ namespace Alpaca4d.Result
             // Map: element ID -> row data (all columns for that element)
             var rowById = new Dictionary<int, double[]>();
 
+            // The element tags of the beams asked for; null keeps every row.
+            var wanted = only == null ? null : new HashSet<int>(only.Select(b => alpacaModel.Beams[b].Id.Value));
+
             var beamGroups = !h5File.LinkExists(BASE) ? new List<PureHDF.IH5Group>() :
                              h5File.Group(BASE)
                                    .Children()
@@ -324,15 +330,15 @@ namespace Alpaca4d.Result
                     if (!stepGroup.LinkExists($"STEP_{step}"))
                         throw new Exception($"STEP_{step} not defined!");
 
-                    var idDataset = group.Dataset("ID");
                     var dataDataset = stepGroup.Dataset($"STEP_{step}");
                     long rows = (long)dataDataset.Space.Dimensions[0];
                     long cols = (long)dataDataset.Space.Dimensions[1];
                     double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
-                    int[,] ids = idDataset.Read<int>().ToArray2D((long)idDataset.Space.Dimensions[0], 1L);
+                    int[] ids = ElementIds(recorderPath, TRUSS_BASE, group);
 
                     for (int r = 0; r < rows; r++)
-                        axialById[ids[r, 0]] = data[r, 0];
+                        if (wanted == null || wanted.Contains(ids[r]))
+                            axialById[ids[r]] = data[r, 0];
                 }
             }
 
@@ -342,19 +348,33 @@ namespace Alpaca4d.Result
                 if (!stepGroup.LinkExists($"STEP_{step}"))
                     throw new Exception($"STEP_{step} not defined!");
 
-                var idDataset   = group.Dataset("ID");
                 var dataDataset = stepGroup.Dataset($"STEP_{step}");
 
                 long rows = (long)dataDataset.Space.Dimensions[0];
                 long cols = (long)dataDataset.Space.Dimensions[1];
-                long idRows = (long)idDataset.Space.Dimensions[0];
+
+                int[] ids = ElementIds(recorderPath, BASE, group);
+
+                // A few rows asked for are read one by one, which skips reading the rest of the
+                // file; past an eighth of the group one read of the whole of it is quicker.
+                if (wanted != null)
+                {
+                    var picked = Enumerable.Range(0, (int)rows).Where(r => wanted.Contains(ids[r])).ToList();
+                    if (picked.Count * 8 < rows)
+                    {
+                        foreach (int r in picked)
+                            rowById[ids[r]] = dataDataset.Read<double>(new PureHDF.HyperslabSelection(2, new[] { (ulong)r, 0UL }, new[] { 1UL, (ulong)cols }));
+                        continue;
+                    }
+                }
 
                 double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
-                int[,]    ids  = idDataset.Read<int>().ToArray2D(idRows, 1L);
 
                 for (int r = 0; r < rows; r++)
                 {
-                    int elemId = ids[r, 0];
+                    int elemId = ids[r];
+                    if (wanted != null && !wanted.Contains(elemId))
+                        continue;
                     var rowData = new double[cols];
                     for (int c = 0; c < cols; c++)
                         rowData[c] = data[r, c];
@@ -415,6 +435,41 @@ namespace Alpaca4d.Result
             }
 
             return (nNested, mzNested, vyNested, myNested, vzNested, tNested);
+        }
+
+        /// <summary>The recorder file <see cref="_elementIds"/> holds the tags of, as path, size and time written.</summary>
+        private static string _elementIdsFile;
+
+        /// <summary>The element tags of each result group of that file, its rows in order, by the group's path.</summary>
+        private static readonly Dictionary<string, int[]> _elementIds = new Dictionary<string, int[]>();
+
+        /// <summary>
+        /// The element tag of each row of a result group, from its ID dataset.
+        ///
+        /// Read once per file and kept: they are the same for every step, and PureHDF takes as long
+        /// over a group's tags as over a step's whole data - 80 ms for the 45,300 tags of a grillage,
+        /// against 85 ms for its 1.4 million forces - so reading a few beams, or every step of a
+        /// history, would otherwise spend most of its time reading the same tags again. A file
+        /// written again, by another run of the analysis, has another size or time and starts afresh.
+        /// </summary>
+        private static int[] ElementIds(string recorderPath, string basePath, PureHDF.IH5Group group)
+        {
+            var file = new System.IO.FileInfo(recorderPath);
+            string stamp = $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
+            string key = basePath + "/" + group.Name;
+
+            lock (_elementIds)
+            {
+                if (_elementIdsFile != stamp)
+                {
+                    _elementIds.Clear();
+                    _elementIdsFile = stamp;
+                }
+
+                if (!_elementIds.TryGetValue(key, out var ids))
+                    _elementIds[key] = ids = group.Dataset("ID").Read<int>();
+                return ids;
+            }
         }
 
         public static (List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>) ASDQ4Forces(Model alpacaModel, int step, string resultType = null)

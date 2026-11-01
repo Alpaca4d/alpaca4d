@@ -369,6 +369,9 @@
     <EmbeddedResource Include="Resources\Nodal Displacements (Alpaca4d).png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Node Forces (Alpaca4d).png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Resources\Non Linear Icons\3D Domain (Alpaca4d).png" />
     <EmbeddedResource Include="Resources\Non Linear Icons\Domain M1 M2 (Alpaca4d).png" />
     <EmbeddedResource Include="Resources\Non Linear Icons\M-N Model (Alpaca4d).png" />
