@@ -163,7 +163,7 @@ namespace Alpaca4d.Gh
                 var layout = Alpaca4d.Section.SectionLayout.Of(fiberSection);
                 result = Alpaca4d.Section.MomentCurvatureAnalysis.Run(
                     fiberSection, layout, axial, angle, numIncr, maxPhi, limits, stop,
-                    folder, files.Folder, $"mc_materials_{files.Run}", run);
+                    folder, files.Folder, files.OwnStem("mc_materials"), run);
             }
             catch (Exception ex)
             {

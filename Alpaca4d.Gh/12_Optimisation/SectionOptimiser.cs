@@ -431,10 +431,10 @@ namespace Alpaca4d.Gh
         /// </summary>
         private Model Analyse(Model assembled, Settings settings, AnalysisFiles files, out string log)
         {
-            // Named after this optimiser as well as the run: the results file is read again by whatever
-            // the AlpacaModel output feeds, after the solution, and a second optimiser in the document
-            // - one per element and one uniform, say - must not overwrite it meanwhile.
-            string stem = "SectionOptimiser_" + this.InstanceGuid.ToString("N").Substring(0, 8);
+            // The results file is read again by whatever the AlpacaModel output feeds, after the
+            // solution; OwnFile names it after this optimiser as well as the run, so that a second
+            // optimiser in the document - one per element and one uniform, say - leaves it alone.
+            string stem = "SectionOptimiser";
 
             var run = assembled.ShallowCopy();
             run.Tcl = new List<string>(assembled.Tcl);
