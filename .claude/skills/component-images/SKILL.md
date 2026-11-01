@@ -31,7 +31,9 @@ for the Visual Basic runtime, node, the network for fonts).
    - The end of run.sh's output lists components with no page. A new component there needs a
      page, as `.claude/rules/docs.md` says.
 
-4. **Look at the changed pictures** with Read, to see that they show the change.
+4. **Look at the changed pictures** with Read, to see that they show the change. Copy the pictures
+   of the components that changed (not the whole redrawn set) to
+   `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/`, so they can be shared.
 
 5. Leave the docs uncommitted. When asked, commit them in the docs repository, for example
    `🍱 Redraw the Support picture with its new icon`.

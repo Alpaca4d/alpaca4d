@@ -7,10 +7,10 @@ description: Make pictures of Grasshopper definitions or single Alpaca4d compone
 
 Run the capture scripts as the run-in-rhino skill says. Keep the working files (definitions,
 scripts, raw captures) in the scratchpad.
-- Finished pictures the user asked for go to
-  `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/`. Overwrite them on the next
-  round instead of adding versions.
-- Pictures for a docs page go beside that page.
+- Every finished picture goes to
+  `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/`, whether the user asked for
+  it or not, so it can be shared. Overwrite them on the next round instead of adding versions.
+- Pictures for a docs page go beside that page too, with a copy in marketing.
 
 ## Definitions written by Tools/Examples/make.sh
 
