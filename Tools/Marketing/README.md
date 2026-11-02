@@ -33,6 +33,7 @@ MP4.
 | `benchmarks` | TopologyBenchmarks: top3d's cantilever and simply supported beam | `topology-optimisation/benchmarks` |
 | `lines2d` | StressLinesBenchmarks: the shells | `principal-stress-lines/shells` |
 | `bridgelines` | TopologyBridge's solid domain, its stress lines over the design | `principal-stress-lines/solids`, `topology-optimisation/bridge` |
+| `twospan` | TwoSpanBeamOptimiser, a load on each span: the HEA element by element with the loads, the deformed shape extruded, the bending moment and the shear, each on its own; the beam deflecting as GIF and MP4; one HEA for the whole beam | `section-optimiser/two-span-beam` |
 
 All of them take about 10 minutes on an M2 Pro, a third of it in `benchmarks`, which runs top3d's
 two problems for 200 iterations each.

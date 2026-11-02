@@ -18,7 +18,7 @@ cd "$(dirname "$0")"
 here=$(pwd)
 repo=$(cd ../.. && pwd)
 
-ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines"
+ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan"
 SCENES=${*:-$ALL}
 OUT=${OUT:-$here/out}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}

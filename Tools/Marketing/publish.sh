@@ -15,7 +15,7 @@ M=${MARKETING:-../../../alpaca4d.github.io/marketing}
 export PYTHONDONTWRITEBYTECODE=1
 P="python3 post.py"
 
-trim() { $P trim "$OUT/$1.png" "$2" 40 ${3:-0}; }
+trim() { $P trim "$OUT/$1.png" "$2" 40 ${3:-0} ${4:-0}; }
 canvas() { cp "$OUT/$1.png" "$2"; echo "canvas $1 -> $2"; }
 pair() { $P pair "$1" "$2" "$3" 1300; }
 
@@ -166,7 +166,23 @@ mixed() {
   pair "$d/mixed-model-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/mixed-model.png"
 }
 
-ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines"
+# ---------------------------------------------------------------- section optimiser
+
+# The load arrow is a thin line: trim grows what is drawn for its box, or it would be cut off.
+twospan() {
+  local d=$M/section-optimiser/two-span-beam f
+  mkdir -p "$d"
+  for f in sections sections-front deflection deflection-front moment shear uniform-front; do
+    trim twospan/two-span-beam-$f "$d/two-span-beam-$f.png" 0 12
+  done
+  $P stack "$d/two-span-beam-moment-and-shear.png" "$d/two-span-beam-moment.png" "$d/two-span-beam-shear.png"
+  canvas twospan/two-span-beam-canvas "$d/grasshopper-definition.png"
+  pair "$d/two-span-beam-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/two-span-beam-sections.png"
+  # Deflecting and back to rest: a loop, with no frames to skip or hold.
+  $P anim "$OUT/twospan/two-span-beam-deflecting-frames" "$d/two-span-beam-deflecting" 40 900 15 0
+}
+
+ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done

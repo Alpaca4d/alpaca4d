@@ -96,6 +96,7 @@ public static class Shots
                     case "mixed": list = Mixed(); break;
                     case "tower": list = Tower(); break;
                     case "bridgelines": list = BridgeLines(); break;
+                    case "twospan": list = TwoSpan(); break;
                     default: throw new Exception("no scene " + scene);
                 }
                 string folder = Path.Combine(output, scene);
@@ -1222,6 +1223,146 @@ public static class Shots
         }),
         Do("close", Close),
     };
+
+    // ------------------------------------------------------------------ section optimiser
+
+    // TwoSpanBeamOptimiser: a curved beam 30 m long over two spans, a load on each, sized by the Section
+    // Optimiser from a list of HEAs element by element. A picture of each thing the definition draws, on
+    // its own: the sections with the loads, the deformed shape extruded, the bending moment and the
+    // shear; the beam deflecting, as frames; then one section for the whole beam.
+    static List<(string, Func<bool>)> TwoSpan()
+    {
+        IGH_Component sections = null, tags = null, deformed = null, legend = null, moment = null, shear = null, supports = null;
+        var eye = new Vector3d(0.45, -1.6, 0.4);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open("TwoSpanBeamOptimiser.gh")),
+            Do("sections", () =>
+            {
+                Sized();
+                sections = Components(ModelViewId).First();
+                tags = Find<IGH_Component>("HEA");
+                deformed = Find<IGH_Component>("Deformed shape");
+                legend = Components(LegendId).First();
+                moment = Find<IGH_Component>("Bending moment");
+                shear = Find<IGH_Component>("Shear");
+                Canvas("two-span-beam-canvas");
+                ShowOnly(sections, tags);
+                var box = Drawn();
+                Shoot(Aim(Grown(box, 0.05), eye, Vector3d.ZAxis), "two-span-beam-sections");
+                Shoot(Front(box), "two-span-beam-sections-front");
+            }),
+            Do("deflection", () =>
+            {
+                // The supports alone, from a Model View that draws no elements.
+                supports = Symbols(Out(Find<IGH_Component>("Whole beam"), "AlpacaModel"), Beside(deformed), 0, 1);
+                doc.NewSolution(false);
+                foreach (var c in new[] { deformed, moment, shear }) Messages(c);
+                Log("  " + Info(deformed));
+                ShowOnly(deformed, legend, supports);
+                var box = Drawn();
+                Shoot(Aim(Grown(box, 0.05), eye, Vector3d.ZAxis), "two-span-beam-deflection");
+                Shoot(Front(box), "two-span-beam-deflection-front");
+            }),
+            Do("moment and shear", () =>
+            {
+                // The diagrams' own colours, Alpaca4d.Gh's Palette: one for each sign of the force.
+                var diagrams = new[]
+                {
+                    (moment, "two-span-beam-moment", "Bending moment", Color.FromArgb(175, 201, 48), Color.FromArgb(158, 53, 218)),
+                    (shear, "two-span-beam-shear", "Shear", Color.FromArgb(66, 136, 247), Color.FromArgb(235, 108, 63)),
+                };
+                foreach (var (results, name, title, negative, positive) in diagrams)
+                {
+                    Log("  " + Info(results));
+                    var key = DiagramLegend(results, title, negative, positive);
+                    doc.NewSolution(false);
+                    ShowOnly(results, supports, key);
+                    Shoot(Front(Drawn()), name);
+                }
+            }),
+            Do("deflecting", () =>
+            {
+                ShowOnly(deformed, legend, supports);
+                var scale = Field(deformed, "_slDeformScale");
+                var value = scale.GetType().GetProperty("Value");
+                double full = Convert.ToDouble(value.GetValue(scale));
+                // Framed at full deflection, so that the beam stays in the picture throughout.
+                var view = Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis);
+                string folder = "two-span-beam-deflecting-frames";
+                Directory.CreateDirectory(Path.Combine(outDir, folder));
+                int frames = 40;
+                for (int k = 0; k < frames; k++)
+                {
+                    value.SetValue(scale, full * 0.5 * (1 - Math.Cos(2 * Math.PI * k / frames)));
+                    deformed.ExpireSolution(false);
+                    doc.NewSolution(false);
+                    Shoot(view, Path.Combine(folder, k.ToString("D3")));
+                }
+                value.SetValue(scale, full);
+                deformed.ExpireSolution(false);
+                doc.NewSolution(false);
+                Log($"  {frames} frames, deformation from 0 to {full} times and back");
+            }),
+            Do("uniform", () =>
+            {
+                var uniform = Find<GH_BooleanToggle>("Uniform");
+                uniform.Value = true;
+                uniform.ExpireSolution(false);
+                doc.NewSolution(false);
+                Sized();
+                ShowOnly(sections, tags);
+                Shoot(Front(Drawn()), "two-span-beam-uniform-front");
+            }),
+            Do("close", Close),
+        };
+    }
+
+    static RhinoView Front(BoundingBox box)
+    {
+        var view = View("Front");
+        view.ActiveViewport.ZoomBoundingBox(Grown(box, 0.02));
+        return view;
+    }
+
+    /// <summary>What View Results says it draws: the result, its unit and its range.</summary>
+    static string Info(IGH_Component results) => Values<GH_String>(Out(results, "Info")).Select(v => v.Value).FirstOrDefault() ?? "";
+
+    /// <summary>
+    /// A Legend for a beam force diagram, titled with the force and its unit from View Results' Info:
+    /// the colour of each sign beside the end of the range it reaches.
+    /// </summary>
+    static IGH_Component DiagramLegend(IGH_Component results, string title, Color negative, Color positive)
+    {
+        // "Beam forces - Mz [kN·m], step 0, min -523.5, max 324.2"
+        var parts = Info(results).Split(new[] { ", " }, StringSplitOptions.None);
+        string quantity = parts[0].Substring(parts[0].IndexOf(" - ") + 3);
+        double min = double.Parse(parts[2].Substring(4), Inv), max = double.Parse(parts[3].Substring(4), Inv);
+        var legend = Place((IGH_Component)Instances.ComponentServer.EmitObject(LegendId), Beside(results, 120, 0));
+        ((GH_PersistentParam<GH_String>)In(legend, "Title")).PersistentData.Append(new GH_String(title + " " + quantity));
+        var values = (GH_PersistentParam<GH_Number>)In(legend, "Values");
+        values.PersistentData.Append(new GH_Number(min));
+        values.PersistentData.Append(new GH_Number(max));
+        var colours = (GH_PersistentParam<GH_Colour>)In(legend, "Colors");
+        colours.PersistentData.Append(new GH_Colour(negative));
+        colours.PersistentData.Append(new GH_Colour(positive));
+        legend.ExpireSolution(false);
+        return legend;
+    }
+
+    /// <summary>Logs the sections the Section Optimiser gave the beam, start to end, and its messages.</summary>
+    static void Sized()
+    {
+        var optimiser = Find<IGH_Component>("Whole beam");
+        Messages(optimiser);
+        foreach (var view in Components(ModelViewId).Concat(Components(ViewResultsId))) Messages(view);
+        var runs = new List<(string name, int count)>();
+        foreach (var section in Values<IGH_Goo>(Out(optimiser, "Section")).Select(g => (g as GH_ObjectWrapper)?.Value?.ToString() ?? g.ToString()))
+            if (runs.Count > 0 && runs[runs.Count - 1].name == section) runs[runs.Count - 1] = (section, runs[runs.Count - 1].count + 1);
+            else runs.Add((section, 1));
+        var utilisation = Values<GH_Number>(Out(optimiser, "Utilisation")).Select(n => n.Value).DefaultIfEmpty(0).Max();
+        Log($"  {string.Join(", ", runs.Select(r => $"{r.name} x{r.count}"))}; largest utilisation {utilisation:F3}");
+    }
 
     // ------------------------------------------------------------------ stress lines on shells
 
