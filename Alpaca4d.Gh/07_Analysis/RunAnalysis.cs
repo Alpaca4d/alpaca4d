@@ -136,6 +136,7 @@ namespace Alpaca4d.Gh
 
             var analysisModel = model.ShallowCopy();
             analysisModel.Tcl = new List<string>(analysisModel.Tcl);
+            analysisModel.BeforeAnalysis = model;
 
 
             bool fileExist = OnPingDocument().IsFilePathDefined;
