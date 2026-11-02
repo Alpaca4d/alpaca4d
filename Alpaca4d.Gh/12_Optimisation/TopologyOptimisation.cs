@@ -391,7 +391,8 @@ namespace Alpaca4d.Gh
         private TopologyRun Start(IGH_DataAccess DA, Alpaca4d.Model model, HashSet<IBrick> kept, TopologySettings settings, SystemEquation system,
                                   string key, TopologyResult previous)
         {
-            if (!LicenseGate.Allows(this, "Topology Optimisation"))
+            // Free up to License.FreeTopologyElementLimit elements. Past it, no license means no run.
+            if (!LicenseGate.AllowsModel(this, model, Alpaca4d.License.License.FreeTopologyElementLimit, "Topology Optimisation takes"))
                 return null;
 
             string openSees = Alpaca4d.Application.OpenSees;

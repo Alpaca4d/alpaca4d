@@ -8,8 +8,9 @@ namespace Alpaca4d.Gh
     /// <summary>
     /// What a component says and does when a missing license stops it.
     ///
-    /// Two rules, both in <see cref="Alpaca4d.License.License"/>: an analysis is free up to
-    /// <see cref="Alpaca4d.License.License.FreeElementLimit"/> elements, and a few components
+    /// Three rules, all in <see cref="Alpaca4d.License.License"/>: an analysis is free up to
+    /// <see cref="Alpaca4d.License.License.FreeElementLimit"/> elements, Topology Optimisation up to
+    /// <see cref="Alpaca4d.License.License.FreeTopologyElementLimit"/>, and a few components
     /// need a license whatever the model. This keeps the wording of the refusal in one place, and
     /// remembers who was refused so that a license added from the License window runs them again
     /// straight away, instead of leaving them red until something upstream changes.
@@ -49,12 +50,19 @@ namespace Alpaca4d.Gh
 
         /// <summary>For an analysis, which is free up to the element limit.</summary>
         public static bool AllowsModel(GH_Component component, Alpaca4d.Model model)
+            => AllowsModel(component, model, Alpaca4d.License.License.FreeElementLimit, "Alpaca4d analyses");
+
+        /// <summary>
+        /// For something free up to <paramref name="limit"/> elements. <paramref name="what"/> starts
+        /// the refusal's sentence: "Alpaca4d analyses", "Topology Optimisation takes".
+        /// </summary>
+        public static bool AllowsModel(GH_Component component, Alpaca4d.Model model, int limit, string what)
         {
-            if (Alpaca4d.License.License.ValidateLicense(model, false, Alpaca4d.UI.LicenseManagementForm.ShowForm))
+            if (Alpaca4d.License.License.ValidateLicense(model, false, Alpaca4d.UI.LicenseManagementForm.ShowForm, limit))
                 return true;
 
             component.AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                $"Without a license Alpaca4d analyses models of up to {Alpaca4d.License.License.FreeElementLimit} " +
+                $"Without a license {what} models of up to {limit} " +
                 $"elements, and this one has {model.Elements.Count}. {HowToLicense}");
             Remember(component);
             return false;
