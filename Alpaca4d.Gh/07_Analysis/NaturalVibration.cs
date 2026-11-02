@@ -32,8 +32,9 @@ namespace Alpaca4d.Gh
             "Solves the eigenvalue problem of the model and returns its modes, eigenvalues, periods " +
             "and frequencies.\n" +
             "It needs no Analysis Settings - an eigenvalue problem has nothing to converge. Connect " +
-            "the assembled model rather than an analysed one, then feed the solved model to Nodal " +
-            "Displacements to read a mode shape.\n" +
+            "the assembled model, or an analysed one for the modes of the model it was analysed from - " +
+            "Section Optimiser's last design, say. Feed the solved model to Nodal Displacements to read " +
+            "a mode shape.\n" +
             "The modal report - masses, centre of mass, participation factors and mass ratios - is in " +
             "the Modal Report menu below the component.",
             "Alpaca4d", "07_Analysis")
@@ -82,7 +83,9 @@ namespace Alpaca4d.Gh
             mngr.RegisterUnit(unit);
 
             unit.RegisterInputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
-                "The assembled model, from Assemble Model. Not from Run Analysis - that clears the OpenSees domain when it finishes, leaving nothing to solve.",
+                "The model, from Assemble Model, or an analysed one, from Run Analysis, Section Optimiser or Linear Buckling. An analysed " +
+                "model is solved as it was before it was analysed - from Section Optimiser, its last design - and unloaded: what the " +
+                "analysis found does not change the modes.",
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_Integer(), "Vibration Modes", "Vibration Modes",
@@ -136,15 +139,14 @@ namespace Alpaca4d.Gh
             // An analysed model is not a model any more: Run Analysis ends the script it
             // hands on with "wipe", which clears the OpenSees domain. Appending the eigen
             // block to that would call eigen on an empty domain - ArpackSolver fails with
-            // "N must be positive" and no eigenvalue is ever set. Modal analysis belongs
-            // on its own branch, straight off the assembled model.
-            if (model.IsAnalysed)
+            // "N must be positive" and no eigenvalue is ever set. The model it was analysed
+            // from is solved instead.
+            model = model.Unanalysed();
+            if (model == null)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                    "This AlpacaModel has already been analysed. Connect the Natural Vibration Analysis " +
-                    "to the AlpacaModel output of the Assemble component, not to the output of Run Analysis: " +
-                    "Run Analysis clears the OpenSees domain when it finishes, so the eigen analysis would " +
-                    "find nothing to solve.");
+                    "This AlpacaModel has been analysed, and does not carry the model it was analysed from. " +
+                    "Connect the Natural Vibration Analysis to the AlpacaModel output of Assemble Model.");
                 return;
             }
 
@@ -155,6 +157,7 @@ namespace Alpaca4d.Gh
             // create a shallow copy
             var analysisModel = model.ShallowCopy();
             analysisModel.Tcl = new List<string>(analysisModel.Tcl);
+            analysisModel.BeforeAnalysis = model;
 
             bool fileExist = OnPingDocument().IsFilePathDefined;
             if (!fileExist)

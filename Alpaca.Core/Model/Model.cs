@@ -187,6 +187,32 @@ namespace Alpaca4d
         /// <summary>The load factors of the buckling modes, lowest first, when <see cref="IsBuckling"/>.</summary>
         public List<double> BucklingFactors { get; set; } = new List<double>();
 
+        /// <summary>
+        /// The model an analysis was given, kept by the model it hands on: Run Analysis, Natural
+        /// Vibration, Linear Buckling and Section Optimiser set it. Null on a model no analysis has run.
+        /// See <see cref="Unanalysed"/>.
+        /// </summary>
+        public Model BeforeAnalysis { get; set; }
+
+        /// <summary>
+        /// The model as it was before it was analysed, for an analysis of another kind on it: its
+        /// modes, or its buckling, after a static analysis or a Section Optimiser. An analysed model is
+        /// no longer a model to solve - its deck ends in "wipe", and Linear Buckling's has split beams -
+        /// but the one it was analysed from still is, with whatever sections the analysis gave it.
+        /// Itself when it has not been analysed; null when it was analysed by something that did not
+        /// keep the model it started from.
+        /// </summary>
+        public Model Unanalysed()
+        {
+            if (!this.IsAnalysed)
+                return this;
+
+            var model = this.BeforeAnalysis;
+            while (model != null && model.IsAnalysed)
+                model = model.BeforeAnalysis;
+            return model;
+        }
+
         public List<string> Tcl { get; set; } = new List<string> { };
 
         /// <summary>

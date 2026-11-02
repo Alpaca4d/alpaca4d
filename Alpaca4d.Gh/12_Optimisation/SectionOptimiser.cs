@@ -167,7 +167,8 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
-                "The last design, analysed: feed it to Utilisation, Beam Forces or Model View. Empty when the first analysis failed.");
+                "The last design, analysed: feed it to Utilisation, Beam Forces or Model View, or to Natural Vibration or Linear Buckling " +
+                "for the modes or the buckling of the last design. Empty when the first analysis failed.");
             unit.RegisterOutputParam(new Param_GenericObject(), "Section", "Section",
                 "Each beam's section in the last design, in the order of the Element output.");
             unit.RegisterOutputParam(new Param_Number(), "Utilisation", "Utilisation",
@@ -438,6 +439,7 @@ namespace Alpaca4d.Gh
 
             var run = assembled.ShallowCopy();
             run.Tcl = new List<string>(assembled.Tcl);
+            run.BeforeAnalysis = assembled;
             run.FileName = files.OwnFile(stem, ".tcl");
             run.Settings = settings;
 

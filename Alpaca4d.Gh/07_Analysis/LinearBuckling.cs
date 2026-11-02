@@ -27,7 +27,8 @@ namespace Alpaca4d.Gh
             "The analysis is linear: elastic, about the undeformed shape, with the axial forces of a first-order analysis.\n" +
             "For it every beam gets a PDelta transformation. Beam elements buckle in bending only: lateral-torsional " +
             "and torsional buckling need warping, which they do not have.\n" +
-            "Connect the assembled model, then feed the buckled model to Nodal Displacements or View Results: its " +
+            "Connect the assembled model, or an analysed one for the buckling of the model it was analysed from - " +
+            "Section Optimiser's last design, say. Feed the buckled model to Nodal Displacements or View Results: its " +
             "steps are the buckling modes, step 0 the first.",
             "Alpaca4d", "07_Analysis")
         {
@@ -40,7 +41,9 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel",
-                "The assembled model, from Assemble Model, with the loads to buckle it under. Not from Run Analysis.",
+                "The model, from Assemble Model, with the loads to buckle it under, or an analysed one, from Run Analysis, Section " +
+                "Optimiser or Natural Vibration. An analysed model is buckled as it was before it was analysed - from Section " +
+                "Optimiser, its last design - under the loads it was assembled with: the forces the analysis found are not used.",
                 GH_ParamAccess.item);
             pManager.AddIntegerParameter("Buckling Modes", "Buckling Modes",
                 "How many of the lowest buckling modes to find.",
@@ -95,12 +98,14 @@ namespace Alpaca4d.Gh
                 divisions = 1;
             }
 
-            // An analysed model's deck ends in "wipe", and what it holds is no longer the model.
-            if (model.IsAnalysed || model.IsBuckling)
+            // An analysed model's deck ends in "wipe", and what it holds is no longer the model; the
+            // model it was analysed from is buckled instead.
+            model = model.Unanalysed();
+            if (model == null)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                    "This AlpacaModel has already been analysed. Connect the Linear Buckling Analysis to the AlpacaModel " +
-                    "output of Assemble Model.");
+                    "This AlpacaModel has been analysed, and does not carry the model it was analysed from. " +
+                    "Connect the Linear Buckling Analysis to the AlpacaModel output of Assemble Model.");
                 return;
             }
 
@@ -223,6 +228,7 @@ namespace Alpaca4d.Gh
             var deck = outcome.Deck;
             int modelNodes = model.Nodes.Count;
             var buckled = model.ShallowCopy();
+            buckled.BeforeAnalysis = model;
 
             buckled.Nodes = new List<Alpaca4d.Element.Node>(model.Nodes);
             foreach (var node in deck.SplitNodes)
