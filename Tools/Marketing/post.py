@@ -1,6 +1,6 @@
 """Trims run.sh's captures and makes them into pictures and animations with ffmpeg, for publish.sh.
 
-    python3 post.py trim in.png out.png [margin] [max_width]       # cut to what is drawn, on white
+    python3 post.py trim in.png out.png [margin] [max_width] [grow] # cut to what is drawn, on white
     python3 post.py anim frames_dir out_base [margin] [width] [fps] [hold]
                                                                     # out_base.gif + out_base.mp4
     python3 post.py pair out.png left.png right.png [height]        # side by side, both as tall
@@ -22,14 +22,17 @@ def size(path):
     return int(re.search(r"pixelWidth: (\d+)", out).group(1)), int(re.search(r"pixelHeight: (\d+)", out).group(1))
 
 
-def box(inputs):
-    """The box of what is drawn, over every input: x0, y0, x1, y1."""
+def box(inputs, grow=0):
+    """The box of what is drawn, over every input: x0, y0, x1, y1. cropdetect keeps a row or a column
+    only when its average is at least 1, so a thin line across a wide picture - a load arrow - is
+    lost; grow thickens what is drawn by 2 px a pass first, for the box only."""
     args = []
     if len(inputs) == 1:
         args = ["-i", inputs[0]]
     else:
         args = ["-framerate", "10", "-i", inputs]
-    r = run(args + ["-vf", WHITE + ",negate,cropdetect=limit=0:round=1:reset=0:skip=0", "-f", "null", "-"])
+    thicken = ",dilation" * grow
+    r = run(args + ["-vf", WHITE + ",negate" + thicken + ",cropdetect=limit=0:round=1:reset=0:skip=0", "-f", "null", "-"])
     found = re.findall(r"x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+)", r.stderr)
     if not found:
         raise SystemExit("no box: " + r.stderr[-800:])
@@ -47,9 +50,9 @@ def crop_filter(b, w, h, margin):
     return "crop=%d:%d:%d:%d" % (cw, ch, x0, y0), cw, ch
 
 
-def trim(src, dst, margin=40, max_width=0):
+def trim(src, dst, margin=40, max_width=0, grow=0):
     w, h = size(src)
-    f, cw, ch = crop_filter(box([src]), w, h, margin)
+    f, cw, ch = crop_filter(box([src], grow), w, h, margin)
     vf = WHITE + "," + f
     if max_width and cw > max_width:
         vf += ",scale=%d:-2:flags=lanczos" % max_width
@@ -100,7 +103,7 @@ def pair(dst, left, right, height=1400, gap=60):
 if __name__ == "__main__":
     cmd, a = sys.argv[1], sys.argv[2:]
     if cmd == "trim":
-        trim(a[0], a[1], int(a[2]) if len(a) > 2 else 40, int(a[3]) if len(a) > 3 else 0)
+        trim(a[0], a[1], int(a[2]) if len(a) > 2 else 40, int(a[3]) if len(a) > 3 else 0, int(a[4]) if len(a) > 4 else 0)
     elif cmd == "anim":
         anim(a[0], a[1], int(a[2]) if len(a) > 2 else 40, int(a[3]) if len(a) > 3 else 900, int(a[4]) if len(a) > 4 else 12,
              int(a[5]) if len(a) > 5 else 2)
