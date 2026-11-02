@@ -57,12 +57,12 @@ namespace Alpaca4d.Gh
             // Wired before the swap: the swap takes the old component out of the document, and with
             // it whatever is still connected to it.
             for (int i = 0; i < old.Params.Input.Count && i < upgraded.Params.Input.Count; i++)
-                CarryOver(old.Params.Input[i], upgraded.Params.Input[i]);
+                UpgradeByName.CarryOver(old.Params.Input[i], upgraded.Params.Input[i]);
 
             var length = old.Params.Input.FirstOrDefault(p => p.Name == "Length");
             var lengthZ = upgraded.Params.Input.FirstOrDefault(p => p.Name == "LengthZ");
             if (length != null && lengthZ != null)
-                CarryOver(length, lengthZ);
+                UpgradeByName.CarryOver(length, lengthZ);
 
             foreach (var output in old.Params.Output)
             {
@@ -72,33 +72,6 @@ namespace Alpaca4d.Gh
             }
 
             return GH_UpgradeUtil.SwapComponents(old, upgraded, false) ? upgraded : null;
-        }
-
-        /// <summary>One input's wires, values and data settings, onto another of the same type.</summary>
-        private static void CarryOver(IGH_Param from, IGH_Param to)
-        {
-            foreach (var source in from.Sources)
-                to.AddSource(source);
-
-            to.DataMapping = from.DataMapping;
-            to.Reverse = from.Reverse;
-            to.Simplify = from.Simplify;
-
-            Values<GH_Number>(from, to);
-            Values<GH_Integer>(from, to);
-            Values<GH_String>(from, to);
-            Values<GH_Boolean>(from, to);
-            Values<IGH_Goo>(from, to);
-        }
-
-        private static void Values<T>(IGH_Param from, IGH_Param to) where T : class, IGH_Goo
-        {
-            if (!(from is GH_PersistentParam<T> source) || !(to is GH_PersistentParam<T> target))
-                return;
-
-            target.PersistentData.Clear();
-            foreach (var path in source.PersistentData.Paths)
-                target.PersistentData.AppendRange(source.PersistentData[path].Select(x => x?.Duplicate() as T), path);
         }
     }
 }
