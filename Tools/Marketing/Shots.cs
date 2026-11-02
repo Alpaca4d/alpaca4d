@@ -186,7 +186,8 @@ public static class Shots
     static void Quit(object sender, EventArgs e)
     {
         RhinoApp.Idle -= Quit;
-        RhinoApp.Exit();
+        // Not Exit(): a question about saving, which nobody is there to answer, cancels that.
+        RhinoApp.Exit(false);
     }
 
     static void Log(string line) => File.AppendAllText(logPath, line + Environment.NewLine);
