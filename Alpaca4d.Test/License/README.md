@@ -7,6 +7,7 @@ What a license allows, and what its absence stops.
 | without a license | with one |
 | --- | --- |
 | Run Analysis and Natural Vibration Analysis run models of up to **50 elements**, and refuse larger ones with an error | any size |
+| **Topology Optimisation** runs on models of up to **500 elements**, and refuses larger ones | any size |
 | **View Results**, **Model View** and **Moment Curvature** refuse to run, whatever the model | they run |
 | **Explorer Inputs** refuses to run or fly, **Explorer Record** to write a study, and **Non-Linear Optimisation** to start | they run |
 | every other component runs | every component runs |
@@ -22,6 +23,7 @@ it, the way `CreateLicense` writes them, then checks:
 | check | why |
 | --- | --- |
 | no file, 50 and 51 elements | the limit sits exactly at 50, and 51 is refused on every run, not once every five minutes |
+| no file, 500 and 501 elements for Topology Optimisation | its limit sits exactly at 500 |
 | the window, twice in a row | a refusal opens it once; the next one within five minutes does not, unless forced |
 | a `FreeVersion` license, in date and expired | in date it lifts both rules; expired it lifts neither |
 | a license for this machine and for another | only a matching MAC address counts |
