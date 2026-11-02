@@ -57,10 +57,10 @@ namespace Alpaca4d.Menu
         {
             // Add Documentation
             menuItem.DropDown.Items.Add("Documentation", Alpaca4d.Gh.Properties.Resources.External_Link__Alpaca4d_, 
-                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.github.io/docs/"));
+                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.gitbook.io/docs"));
 
             menuItem.DropDown.Items.Add("Examples", Alpaca4d.Gh.Properties.Resources.External_Link__Alpaca4d_, 
-                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.github.io/docs/examples/multi-storey-building/multi-storey-building.html"));
+                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.gitbook.io/docs/examples"));
 
             menuItem.DropDown.Items.Add(new ToolStripSeparator());
             //----------------------
@@ -83,7 +83,7 @@ namespace Alpaca4d.Menu
             ToolStripMenuItem subMenuLicense = new ToolStripMenuItem("License");
             subMenuLicense.DropDown.Items.Add("Activate License", null, ShowLicenseManagement);
             subMenuLicense.DropDown.Items.Add("License Terms", null,
-                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.github.io/docs/references/license.html"));
+                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.gitbook.io/docs/references/license"));
 
             menuItem.DropDown.Items.Add(subMenuLicense);
 
