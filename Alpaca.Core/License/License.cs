@@ -30,6 +30,12 @@ namespace Alpaca4d.License
         public const int FreeElementLimit = 50;
 
         /// <summary>
+        /// The most elements a model may have for Topology Optimisation to run on it without a
+        /// license. Past it, Topology Optimisation refuses to start.
+        /// </summary>
+        public const int FreeTopologyElementLimit = 500;
+
+        /// <summary>
         /// How often a refusal opens the License window. The refusal itself happens on every
         /// solve; the window would reopen on every solve too, and a blocked component re-solves
         /// whenever anything upstream changes.
