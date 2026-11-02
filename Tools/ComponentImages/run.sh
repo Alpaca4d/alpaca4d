@@ -15,6 +15,8 @@ GHA=${GHA:-../../Alpaca4d.Gh/bin/Release/net48/Alpaca4d.Gh.gha}
 DOCS=${DOCS:-../../../alpaca4d.github.io/doc}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}
 RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.dll 2>/dev/null | head -1)}
+# The plugin uses Eto, which Rhino brings, so the build has no copy of it; RhinoCommon's package has the one it was built against.
+ETO=${ETO:-$(dirname "$RHINO")/Eto.dll}
 # Grasshopper needs the Visual Basic runtime, which Homebrew's mono does not ship; Rhino 7 for Mac does.
 VB=${VB:-$(ls "/Applications/Rhino 7.app/Contents/Frameworks/RhCore.framework/Versions/A/Frameworks/Mono64Rhino.framework/Versions/"*/Resources/lib/mono/gac/Microsoft.VisualBasic/10.0.0.0__b03f5f7f11d50a3a/Microsoft.VisualBasic.dll 2>/dev/null | head -1)}
 
@@ -22,10 +24,11 @@ VB=${VB:-$(ls "/Applications/Rhino 7.app/Contents/Frameworks/RhCore.framework/Ve
 [ -d "$DOCS" ]  || { echo "set DOCS=/path/to/alpaca4d.github.io/doc"; exit 1; }
 [ -d "$GH" ]    || { echo "set GH=/path/to/Grasshopper 7 lib/net48"; exit 1; }
 [ -f "$RHINO" ] || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }
+[ -f "$ETO" ]   || { echo "set ETO=/path/to/net48/Eto.dll"; exit 1; }
 [ -f "$VB" ]    || { echo "set VB=/path/to/Microsoft.VisualBasic.dll (10.0.0.0, a runtime one, not a reference assembly)"; exit 1; }
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp "$(dirname "$GHA")"/*.dll "$GHA" "$GH"/*.dll "$RHINO" "$VB" "$work/"
+cp "$(dirname "$GHA")"/*.dll "$GHA" "$GH"/*.dll "$RHINO" "$ETO" "$VB" "$work/"
 cp Export.cs "$work/"
 export DYLD_FALLBACK_LIBRARY_PATH=${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib:/usr/local/lib}
 # docs.py imports nodepen.py; no __pycache__ left next to them.

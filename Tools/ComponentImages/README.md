@@ -11,7 +11,8 @@ images show what the plugin really has. Run it again whenever components change.
 
 * A Release build of `Alpaca4d.Gh`.
 * mono with libgdiplus (`brew install mono`), to load the plugin outside Rhino.
-* Grasshopper and RhinoCommon 7.18 from the NuGet cache, which the build has already restored.
+* Grasshopper and RhinoCommon 7.18 from the NuGet cache, which the build has already restored,
+  and the Eto beside RhinoCommon there: Rhino brings its own, so the build has no copy.
 * The Visual Basic runtime Grasshopper needs and Homebrew's mono lacks. Rhino 7 for Mac ships it,
   and `run.sh` finds it there.
 * python3, node and npm.
@@ -19,8 +20,8 @@ images show what the plugin really has. Run it again whenever components change.
   from Google Fonts on every run.
 
 `run.sh` writes into `../../../alpaca4d.github.io/doc`, the website repository next to this one.
-Point it elsewhere with `DOCS=/path/to/doc`, and at other builds with `GHA`, `GH`, `RHINO` and
-`VB`; the script names each one it cannot find.
+Point it elsewhere with `DOCS=/path/to/doc`, and at other builds with `GHA`, `GH`, `RHINO`, `ETO`
+and `VB`; the script names each one it cannot find.
 
 ## What it does
 
