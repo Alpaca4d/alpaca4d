@@ -1,5 +1,5 @@
 // #! csharp
-// Runs GrasshopperCheck.Run inside a running Rhino 8, which must have Grasshopper loaded. grasshopper.sh
+// Runs GrasshopperCheck.Run inside a running Rhino 8. grasshopper.sh
 // fills in __WORK__ and starts this with rhinocode; it writes what the checks printed to result.txt.
 using System;
 using System.IO;
@@ -11,6 +11,9 @@ var outPath = Path.Combine(work, "result.txt");
 
 try
 {
+    // Loads Grasshopper, in case nobody has opened it in this Rhino yet.
+    Rhino.RhinoApp.GetPlugInObject("Grasshopper");
+
     // This build of the plugin and everything of ours it needs go into one load context, beside the
     // installed Alpaca4d Grasshopper may already have loaded. Grasshopper, RhinoCommon, Eto and the
     // framework come from Rhino. See RhinoRun.cs for why it is one context made through reflection.

@@ -4,12 +4,12 @@
     ./rhino.sh        # in a running Rhino 8 with its script server started (StartScriptServer)
     ./grasshopper.sh  # the same Rhino, with Grasshopper loaded: the components themselves
 
-Two new components and what they write:
+Two new element types and what they write:
 
 | | OpenSees | what it is |
 |---|---|---|
-| **Truss** | `corotTruss` | a bar, axial force only: both ways, tension only (`Elastic E 0 0`) or compression only (`ENT`), with an optional prestress (`InitStressMaterial`) |
-| **Spring Support** | `zeroLength` from a fixed node of its own | Elastic springs along and about a plane's axes, or Compression Only along its Z (`ENT`, or `ElasticPPGap` with a gap) |
+| **Truss**, a type of the beam switcher | `corotTruss` | a bar, axial force only: both ways, tension only (`Elastic E 0 0`) or compression only (`ENT`), with an optional prestress (`InitStressMaterial`) |
+| **Support**, Elastic and Compression Only | `zeroLength` from a fixed node of its own | Elastic springs along and about a plane's axes, or Compression Only along its Z (`ENT`, or `ElasticPPGap` with a gap) |
 
 ## What runs where
 
@@ -62,12 +62,13 @@ readers Beam Forces and Reaction Force use:
 
 **grasshopper.sh** goes through the components themselves. `GrasshopperChecks.cs` builds Grasshopper
 documents in code out of the real components - Uniaxial, RectangleCS, the beam switcher on its Truss
-and ForceBeamColumn types, Support, Spring Support, Point Load, Linear Load, Linear Time Series, Load
-Pattern, Assemble Model, Analysis Settings, Run Analysis - solves them the way the canvas does, and
+and ForceBeamColumn types, Support on its Rigid, Elastic and Compression Only types, Point Load, Linear
+Load, Linear Time Series, Load Pattern, Assemble Model, Analysis Settings, Run Analysis - solves them the way the canvas does, and
 checks what Beam Forces, Reaction Forces and Nodal Displacements put out, against closed form, and every
 component's runtime messages: the X-braced panel, the prestressed cable, a line load on a truss, the
-two-span beam on a compression-only and on a stiff Elastic Spring Support, a spring along an axis a
-Support holds, the Linear algorithm, and an energy test picked on purpose. It loads this build of the
+two-span beam on a Compression Only and on a stiff Elastic Support, a spring along an axis a Rigid
+Support holds, the Linear algorithm, an energy test picked on purpose, and the old plain Support put
+through Upgrade Components onto the Rigid type, its wires and a Tx turned off by hand kept. It loads this build of the
 plugin into a load context of its own, beside the installed one, so Rhino need not be restarted. View
 Results and Model View are left out: they need a license, and the test folder has none.
 

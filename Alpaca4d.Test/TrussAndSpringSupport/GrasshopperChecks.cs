@@ -1,11 +1,11 @@
 // Truss and Spring Support through the Grasshopper components themselves, in a running Rhino 8.
 //
 // Each model is a Grasshopper document built in code out of the real components - Uniaxial,
-// RectangleCS, the beam switcher on its Truss or ForceBeamColumn type, Support, Spring Support,
-// Point Load, Linear Load, Linear Time Series, Load Pattern, Assemble Model, Analysis Settings, Run
+// RectangleCS, the beam switcher on its Truss or ForceBeamColumn type, Support on its Rigid, Elastic
+// and Compression Only types, Point Load, Linear Load, Linear Time Series, Load Pattern, Assemble Model, Analysis Settings, Run
 // Analysis - solved the way the canvas solves it, and read back through Beam Forces, Reaction Forces
 // and Nodal Displacements. Every number is checked against closed form, and every component's
-// runtime messages are looked at. grasshopper.sh loads this build of the plugin beside the
+// runtime messages are looked at. The old plain Support is put through Upgrade Components too. grasshopper.sh loads this build of the plugin beside the
 // installed one and calls Run by reflection.
 using System;
 using System.Collections.Generic;
@@ -15,6 +15,7 @@ using System.Text;
 
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
+using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
@@ -54,6 +55,7 @@ public static class GrasshopperCheck
             RepeatedSupport();
             LinearAlgorithm();
             ChosenEnergyTest();
+            UpgradeOldSupport();
         }
         catch (Exception e)
         {
@@ -343,8 +345,8 @@ public static class GrasshopperCheck
     static void Bearing(bool compressionOnly)
     {
         Section(compressionOnly
-            ? "A two-span beam, the end of its unloaded span on a compression-only Spring Support"
-            : "The same beam on a very stiff Elastic Spring Support");
+            ? "A two-span beam, the end of its unloaded span on a Compression Only Support"
+            : "The same beam on a very stiff Elastic Support");
         var doc = new Doc(compressionOnly ? "bearing-one-way" : "bearing-elastic");
         var section = Section(doc, 0.05, 0.1);
 
@@ -356,7 +358,7 @@ public static class GrasshopperCheck
         Set(span2, "Line", Line(4, 0, 0, 8, 0, 0));
         Wire(section, "Section", span2, "Section");
 
-        var spring = doc.Add<Alpaca4d.Gh.SpringSupport>(compressionOnly ? "Spring Support Compression Only (Alpaca4d)" : "Spring Support Elastic (Alpaca4d)");
+        var spring = doc.Add<Alpaca4d.Gh.Support>(compressionOnly ? "Spring Support Compression Only (Alpaca4d)" : "Spring Support Elastic (Alpaca4d)");
         Set(spring, "Position", new GH_Plane(new Plane(new Point3d(8, 0, 0), Vector3d.XAxis, Vector3d.YAxis)));
         if (!compressionOnly)
             Set(spring, "Kz", new GH_Number(1e12));
@@ -377,7 +379,7 @@ public static class GrasshopperCheck
         var displacements = Reader<Alpaca4d.Gh.NodalDisplacement>(doc, run);
         doc.Solve();
         NoErrors(doc, "the definition");
-        Check(spring.Message.StartsWith(compressionOnly ? "Compression Only" : "Elastic"), $"Spring Support shows its type: {spring.Message.Replace("\n", " ")}");
+        Check(spring.Message.StartsWith(compressionOnly ? "Compression Only" : "Elastic"), $"the Support shows its type: {spring.Message.Replace("\n", " ")}");
         Check(!assemble.RuntimeMessages(GH_RuntimeMessageLevel.Warning).Any(), "Assemble Model has nothing to warn about: the fix beside the spring holds other directions");
 
         var origins = Origins(Out(reactions, "SupportPosition"));
@@ -412,7 +414,7 @@ public static class GrasshopperCheck
         var beam = doc.Add<Alpaca4d.Gh.BeamBase>("ForceBeamColumn (Alpaca4d)");
         Set(beam, "Line", Line(0, 0, 0, 3, 0, 0));
         Wire(section, "Section", beam, "Section");
-        var spring = doc.Add<Alpaca4d.Gh.SpringSupport>("Spring Support Elastic (Alpaca4d)");
+        var spring = doc.Add<Alpaca4d.Gh.Support>("Spring Support Elastic (Alpaca4d)");
         Set(spring, "Position", new GH_Plane(new Plane(new Point3d(3, 0, 0), Vector3d.XAxis, Vector3d.YAxis)));
         Set(spring, "Kz", new GH_Number(1000.0));
         var supports = new[]
@@ -461,13 +463,13 @@ public static class GrasshopperCheck
 
     static void ChosenEnergyTest()
     {
-        Section("A compression-only Spring Support with an energy test picked on purpose");
+        Section("A Compression Only Support with an energy test picked on purpose");
         var doc = new Doc("energy");
         var section = Section(doc, 0.05, 0.1);
         var beam = doc.Add<Alpaca4d.Gh.BeamBase>("ForceBeamColumn (Alpaca4d)");
         Set(beam, "Line", Line(0, 0, 0, 3, 0, 0));
         Wire(section, "Section", beam, "Section");
-        var spring = doc.Add<Alpaca4d.Gh.SpringSupport>("Spring Support Compression Only (Alpaca4d)");
+        var spring = doc.Add<Alpaca4d.Gh.Support>("Spring Support Compression Only (Alpaca4d)");
         Set(spring, "Position", new GH_Plane(new Plane(new Point3d(3, 0, 0), Vector3d.XAxis, Vector3d.YAxis)));
         var supports = new[] { Support(doc, Pt(0, 0, 0), true, true, true, true, true, true), spring };
         var load = doc.Add<Alpaca4d.Gh.PointLoad>();
@@ -479,6 +481,39 @@ public static class GrasshopperCheck
         doc.Solve();
         var warnings = run.RuntimeMessages(GH_RuntimeMessageLevel.Warning).ToList();
         Check(warnings.Any(w => w.Contains("convergence test")), $"Run Analysis leaves the choice alone and warns: {warnings.FirstOrDefault()}");
+    }
+
+    static void UpgradeOldSupport()
+    {
+        Section("The old plain Support, Tx turned off by hand, through Upgrade Components");
+        var doc = new Doc("upgrade");
+        var point = new Param_Point();
+        point.CreateAttributes();
+        point.PersistentData.Append(Pt(2, 0, 0));
+        doc.Document.AddObject(point, false);
+
+#pragma warning disable 612
+        var old = doc.Add<Alpaca4d.Gh.Support_obsolete>();
+#pragma warning restore 612
+        Check(old.Obsolete && old.Exposure == GH_Exposure.hidden, "the old Support is obsolete and off the toolbar");
+        In(old, "Position").AddSource(point);
+        Set(old, "Tx", new GH_Boolean(false));
+        var assemble = doc.Add<Alpaca4d.Gh.AssembleModel>();
+        Wire(old, "Support", assemble, "Supports");
+
+        var upgraded = new Alpaca4d.Gh.SupportUpgrader().Upgrade(old, doc.Document) as Alpaca4d.Gh.Support;
+        Check(upgraded != null, "it upgrades to Support");
+        if (upgraded == null)
+            return;
+        Check(!doc.Document.Objects.Contains(old) && doc.Document.Objects.Contains(upgraded), "in place of the old one");
+        Check(upgraded.ActiveUnit?.Name == "Support Rigid (Alpaca4d)" && upgraded.Message.StartsWith("Rigid"), $"on its Rigid type: {upgraded.Message.Replace("\n", " ")}");
+        Check(In(upgraded, "Position").Sources.SequenceEqual(new IGH_Param[] { point }), "Position keeps its wire");
+        Check(In(assemble, "Supports").Sources.Contains(Out(upgraded, "Support")), "Assemble Model is wired to the new Support");
+
+        doc.Solve();
+        var support = Out(upgraded, "Support").VolatileData.AllData(true).Select(g => g.ScriptVariable()).OfType<Alpaca4d.Element.Support>().SingleOrDefault();
+        Check(support != null && support.Pos.DistanceTo(new Point3d(2, 0, 0)) < 1e-9, "it makes the support at the point");
+        Check(support != null && !support.Tx && support.Ty && support.Tz && support.Rx && support.Ry && support.Rz, "Tx is still off, the rest still on");
     }
 
     static void LinearAlgorithm()
