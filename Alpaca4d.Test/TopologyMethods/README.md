@@ -9,6 +9,7 @@
     ./run.sh bench grasshopper                 # what ../TopologyOptimisation/GrasshopperChecks.cs expects of the new components
     ./run.sh bench node truss 20               # a space-truss node in a 1 m cube of 20 bricks a side, by all three methods
     ./run.sh bench node joint 20               # a beam-column joint, the same way
+    ./example.sh                               # Tools/Examples/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or
 `OPENSEES=`). `reference.py` needs a Python with numpy and scipy (`PYTHON=`). The checks of the components
