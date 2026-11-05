@@ -491,7 +491,7 @@ class ColourByTest
 
         var archive = new GH_Archive();
         archive.ReadFromFile(example);
-        var old = Open<Alpaca4d.Gh.ModelView>(Stored(archive, ModelViewId), archive, out var messages);
+        var old = Open<Alpaca4d.Gh.ModelView_obsolete>(Stored(archive, ModelViewId), archive, out var messages);
         Check(ColourByOf(old) == 0, "one from a file saved before Colour by colours by element");
         Check(messages.Count == 0, "with nothing for Grasshopper to complain about" + Said(messages));
 
@@ -507,15 +507,15 @@ class ColourByTest
         Check(CheckBox(back, "_ckShowLoadValues").Active, "Show Values is kept");
     }
 
-    static Alpaca4d.UIWidgets.MenuCheckBox CheckBox(Alpaca4d.Gh.ModelView view, string field) =>
-        (Alpaca4d.UIWidgets.MenuCheckBox)typeof(Alpaca4d.Gh.ModelView)
+    static Alpaca4d.UIWidgets.MenuCheckBox CheckBox(GH_Component view, string field) =>
+        (Alpaca4d.UIWidgets.MenuCheckBox)view.GetType()
             .GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(view);
 
-    static Alpaca4d.UIWidgets.MenuDropDown DropDown(Alpaca4d.Gh.ModelView view) =>
-        (Alpaca4d.UIWidgets.MenuDropDown)typeof(Alpaca4d.Gh.ModelView)
+    static Alpaca4d.UIWidgets.MenuDropDown DropDown(GH_Component view) =>
+        (Alpaca4d.UIWidgets.MenuDropDown)view.GetType()
             .GetField("_ddColourBy", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(view);
 
-    static int ColourByOf(Alpaca4d.Gh.ModelView view) => DropDown(view).Value;
+    static int ColourByOf(GH_Component view) => DropDown(view).Value;
 
     static string Said(List<string> messages) => messages.Count == 0 ? "" : ": " + string.Join(" | ", messages);
 }
