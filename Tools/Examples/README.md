@@ -12,6 +12,8 @@
     ./make.sh TopologyBenchmarks.py             # Topology Optimisation's two benchmarks, against top3d
     ./make.sh MultiMaterialBridge.py            # the Multi-Material Topology example
     ./make.sh BesoBridge.py                     # the BESO Topology example
+    NODE_CASE=truss ./make.sh TopologyNodes.py TopologyTrussNode.gh          # a space-truss node, three ways
+    NODE_CASE=joint ./make.sh TopologyNodes.py TopologyBeamColumnJoint.gh    # a beam-column joint, three ways
     ./make.sh SpotTheCow.py                     # tetrahedra: a concrete cow under its own weight
     ./make.sh Femur.py                          # tetrahedra: a femur under the force of the hip
     ./make.sh InigoTheDragon.py                 # tetrahedra: a concrete dragon's modes
@@ -37,6 +39,7 @@ Rhino 7 use `_RunPythonScript`.
 | `TopologyBenchmarks.py` | Topology Optimisation's two benchmarks in top3d's units and settings, each with its own Run toggle: top3d's 60 x 4 x 20 cantilever and a 120 x 4 x 20 simply supported beam, with panels giving the compliance the test bench and top3d reach after 200 iterations. `Alpaca4d.Test/TopologyOptimisation/example.sh` builds and runs it in Rhino. |
 | `MultiMaterialBridge.py` | The Multi-Material Topology example: TopologyBridge's block in steel (E = 210 GPa) and concrete (E = 33 GPa), at most 5% and 15% of the block below the deck. The concrete goes into two legs from the supports to the deck, the steel into an arch slung under it: 265 iterations, under a minute at 3 bricks per metre. `Alpaca4d.Test/TopologyMethods/example.sh` builds and runs it in Rhino. |
 | `BesoBridge.py` | The BESO Topology example: TopologyBridge's block carved down to a fifth of its volume below the deck, every brick solid or void, Step going through every volume on the way: two raking legs into the deck with a column near each end, 105 iterations, under 20 s. Built and run by the same `example.sh`. |
+| `TopologyNodes.py` | A node where members meet, in space, found by all three topology optimisations side by side: a 1 m cube of bricks with member stubs kept solid, loaded or held at their ends. `NODE_CASE=truss` writes `TopologyTrussNode.gh`, nine members of a space truss (chords pulled and pushed, a post loaded, four diagonals held); `NODE_CASE=joint` writes `TopologyBeamColumnJoint.gh`, a column and four beams with their shears and unbalanced hogging moments. `Alpaca4d.Test/TopologyMethods/nodes.sh` builds and runs both in Rhino. |
 | `SpotTheCow.py` | A tetrahedron example: Spot the cow, a solid concrete cow 2.4 m long standing on its hooves under its own weight, in 5 030 tetrahedra, with the vertical stress drawn over it. |
 | `Femur.py` | A tetrahedron example on a bone: the Standardised Femur, held at the knee with the force of the hip on its head, in 3 813 tetrahedra, drawn deformed. |
 | `InigoTheDragon.py` | The natural vibration example on tetrahedra: Inigo the dragon, 5.5 m of concrete on its two feet, in 10 903 tetrahedra. A slider picks which of its first 12 modes View Results draws; it opens on both wings flapping together. |
