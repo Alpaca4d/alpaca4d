@@ -4,7 +4,9 @@
 // bottom of its free end, the column under the load kept solid - drawn as eight vertex meshes and put
 // through SSP Brick, Elastic Isotropic, Support, Point Load, Assemble Model and Topology Optimisation. Its
 // first compliance has to be the one the hand-written deck gives, and its run the same. Then a model
-// with its own weight, for the warning, and a block of Ten Node Tetrahedra.
+// with its own weight, for the warning, and a block of Ten Node Tetrahedra. Then BESO Topology and
+// Multi-Material Topology on the same cantilever, against what ../TopologyMethods/TopologyMethods.cs's
+// grasshopper bench gives on the hand-written deck.
 //
 // Run points Application.UserFolder at the test folder, so the solver path it sets lands there and not
 // in the user's settings, and reads the license from LICENSE (the user's own, read only): Topology
@@ -34,6 +36,12 @@ public static class GrasshopperCheck
     const double FirstCompliance = 19163.152951324864, LastCompliance = 3387.5529089455385;
     const int Iterations = 57;
 
+    // What TopologyMethods.cs's grasshopper bench gives on the same deck.
+    const double BesoFirst = 536.10486633294988, BesoLast = 1202.9766776854867;
+    const int BesoIterations = 55;
+    const double MultiFirst = 3931.9466727974673, MultiThirtieth = 1987.188933909717, MultiLast = 609.9054598127201;
+    const int MultiSoft = 57, MultiStiff = 59, MultiIterations = 260;
+
     static void Check(bool ok, string what)
     {
         if (!ok) fails++;
@@ -61,6 +69,8 @@ public static class GrasshopperCheck
             SmallCantilever();
             SelfWeight();
             MixedModel();
+            Beso();
+            MultiMaterial();
             if (!string.IsNullOrEmpty(openSeesTet10))
             {
                 oldOpenSees = openSees == openSeesTet10 ? null : openSees;
@@ -373,6 +383,129 @@ public static class GrasshopperCheck
         Check(All<double>(Out(topology, "Compliance")).Count < Iterations, "a model assembled again starts a new run");
         Check(Finish(doc, topology, TimeSpan.FromMinutes(5)) && All<double>(Out(topology, "Compliance")).Count == Iterations,
             "which comes to the same design");
+    }
+
+    /// <summary>The small cantilever of SmallCantilever, up to Assemble Model: 24 x 8 x 2 SSP Bricks, the column under the load named UnderLoad.</summary>
+    static GH_Component SmallModel(Doc doc)
+    {
+        var meshes = new List<Mesh>();
+        var ids = new List<string>();
+        for (int k = 0; k < 8; k++)
+            for (int j = 0; j < 2; j++)
+                for (int i = 0; i < 24; i++)
+                {
+                    meshes.Add(Box(i, j, k));
+                    ids.Add(i == 23 && k <= 1 ? "UnderLoad" : "Domain");
+                }
+        var bricks = doc.Add<Alpaca4d.Gh.SSPbrick>();
+        Set(bricks, "Mesh", meshes.Select(m => new GH_Mesh(m)).ToArray());
+        Set(bricks, "ElementId", ids.Select(id => new GH_String(id)).ToArray());
+        Wire(Material(doc), "Material", bricks, "Material");
+        var fixedEnd = new List<Point3d>();
+        for (int k = 0; k <= 8; k++)
+            for (int j = 0; j <= 2; j++)
+                fixedEnd.Add(new Point3d(0, j, k));
+        return Assemble(doc, bricks, Supports(doc, fixedEnd), Enumerable.Range(0, 3).Select(j => new Point3d(24, j, 0)));
+    }
+
+    static void Beso()
+    {
+        Section("BESO Topology: the small cantilever to half its volume");
+
+        var doc = new Doc("beso");
+        var assemble = SmallModel(doc);
+        var beso = doc.Add<Alpaca4d.Gh.BesoTopology>("BesoTopology");
+        Wire(assemble, "AlpacaModel", beso, "AlpacaModel");
+        Set(beso, "Keep", new GH_String("UnderLoad"));
+        Set(beso, "VolumeFraction", new GH_Number(0.5));
+        Set(beso, "FilterRadius", new GH_Number(3.0));
+        Set(beso, "Run", new GH_Boolean(true));
+        doc.Solve();
+        NoErrors(doc, "every component, as the run starts");
+        Check(Finish(doc, beso, TimeSpan.FromMinutes(5)), "the run finishes");
+        NoErrors(doc, "every component, once it has");
+
+        var compliance = All<double>(Out(beso, "Compliance"));
+        Check(compliance.Count > 0 && Math.Abs(compliance[0] / BesoFirst - 1.0) < 1e-9,
+              $"the whole block's compliance is the hand-written deck's ({(compliance.Count > 0 ? compliance[0] : double.NaN):R} vs {BesoFirst:R})");
+        Check(compliance.Count == BesoIterations && Math.Abs(compliance.Last() / BesoLast - 1.0) < 1e-6,
+              $"and so is the run: {compliance.Count} iterations to {(compliance.Count > 0 ? compliance.Last() : double.NaN):R} ({BesoIterations} to {BesoLast:R})");
+        Check(All<bool>(Out(beso, "Converged")).SingleOrDefault(), "Converged is true");
+
+        var density = All<double>(Out(beso, "Density"));
+        Check(density.Count == 384 && density.All(d => d == 1.0 || Math.Abs(d - 1e-3) < 1e-12), "every brick is solid or void");
+        var volume = All<double>(Out(beso, "Volume"));
+        Check(volume.First() == 1.0 && Math.Abs(volume.Last() - 0.5) <= 2.0 / 380, $"the volume comes down from 1 to a half ({volume.Last():0.0000})");
+
+        var solid = All<object>(Out(beso, "Solid")).Count;
+        var design = All<Alpaca4d.Model>(Out(beso, "AlpacaModel")).SingleOrDefault();
+        Check(design != null && design.Bricks.Count == solid, $"AlpacaModel is the design assembled ({design?.Bricks.Count} of {solid} bricks)");
+        var surface = All<Mesh>(Out(beso, "Surface")).SingleOrDefault();
+        Check(surface != null && surface.Faces.Count > 0 && surface.IsClosed, $"the surface is one closed mesh ({surface?.Faces.Count} faces)");
+
+        Change(beso, "Step", new GH_Integer(0));
+        doc.Solve(everything: false);
+        Check(All<int>(Out(beso, "Step")).SingleOrDefault() == 0 && All<double>(Out(beso, "Density")).All(d => d == 1.0),
+              "Step 0 shows the whole block the run started from");
+        Change(beso, "Step", new GH_Integer(20));
+        doc.Solve(everything: false);
+        double solidAt20 = All<double>(Out(beso, "Density")).Count(d => d == 1.0);
+        Check(Math.Abs((solidAt20 - 4) / 380 - volume[20]) < 1e-9, $"and Step 20 the design of iteration 20's volume ({volume[20]:0.0000})");
+    }
+
+    static void MultiMaterial()
+    {
+        Section("Multi-Material Topology: the small cantilever, of E = 1 and E = 5");
+
+        var doc = new Doc("multimaterial");
+        var assemble = SmallModel(doc);
+        var soft = Material(doc);
+        var stiff = Material(doc);
+        Set(stiff, "E", new GH_Number(5.0));
+        Set(stiff, "G", new GH_Number(5.0 / 2.6));
+        var mm = doc.Add<Alpaca4d.Gh.MultiMaterialTopology>("MultiMaterialTopology");
+        Wire(assemble, "AlpacaModel", mm, "AlpacaModel");
+        In(mm, "Materials").AddSource(Out(soft, "Material"));
+        In(mm, "Materials").AddSource(Out(stiff, "Material"));
+        Set(mm, "Keep", new GH_String("UnderLoad"));
+        Set(mm, "VolumeFractions", new GH_Number(0.15));
+        Set(mm, "Iterations", new GH_Integer(300));
+        Set(mm, "FilterRadius", new GH_Number(1.5));
+        Set(mm, "Run", new GH_Boolean(true));
+        doc.Solve();
+        NoErrors(doc, "every component, as the run starts");
+        Check(Finish(doc, mm, TimeSpan.FromMinutes(5)), "the run finishes");
+        NoErrors(doc, "every component, once it has");
+
+        var compliance = All<double>(Out(mm, "Compliance"));
+        Check(compliance.Count > 0 && Math.Abs(compliance[0] / MultiFirst - 1.0) < 1e-9,
+              $"the first compliance is the hand-written deck's ({(compliance.Count > 0 ? compliance[0] : double.NaN):R} vs {MultiFirst:R})");
+        int done = compliance.Count;
+        Check(done >= 30 && Math.Abs(compliance[29] / MultiThirtieth - 1.0) < 1e-6,
+              $"and so is the 30th ({(done >= 30 ? $"{compliance[29]:R}" : done + " iterations")} vs {MultiThirtieth:R})");
+        // Past it the two part slowly: Assemble Model's deck and the hand-written one differ in the 13th digit, and the
+        // projection, ever sharper, makes more of it each iteration.
+        Check(All<bool>(Out(mm, "Converged")).SingleOrDefault() && Math.Abs(done - MultiIterations) <= 30 && Math.Abs(compliance.Last() / MultiLast - 1.0) < 0.03,
+              $"it converges as the Core run does, give or take: after {done} iterations at {(done > 0 ? compliance.Last() : double.NaN):0.00} ({MultiIterations} at {MultiLast:0.00})");
+
+        var volume = All<double>(Out(mm, "Volume"));
+        Check(volume.Count == 2 * done && volume[done - 1] < 0.151 && volume[2 * done - 1] < 0.151 && volume[done - 1] > 0.14 && volume[2 * done - 1] > 0.14,
+              $"a branch of volumes per material, each at most about its 0.15 ({(volume.Count == 2 * done ? $"{volume[done - 1]:0.0000} and {volume[2 * done - 1]:0.0000}" : volume.Count + " values")})");
+        Check(All<double>(Out(mm, "Density")).Count == 2 * 384, "a branch of densities per material");
+        var surfaces = All<Mesh>(Out(mm, "Surface"));
+        Check(surfaces.Count == 2 && surfaces.All(m => m.Faces.Count > 0), $"a surface per material ({surfaces.Count})");
+        Check(All<System.Drawing.Color>(Out(mm, "Colour")).Count == 2, "and a colour for each");
+
+        var choice = All<int>(Out(mm, "Material"));
+        // The kept column counts as the soft material, its own modulus; a piece left out or a step joined moves a few.
+        int softCount = choice.Count(c => c == 0) - 4;
+        Check(choice.Count == 384 && choice.All(c => c >= -1 && c <= 1) && Math.Abs(softCount - MultiSoft) <= 3 && Math.Abs(choice.Count(c => c == 1) - MultiStiff) <= 3,
+              $"each brick's material: -1, 0 or 1, as the Core run's ({softCount} soft and {choice.Count(c => c == 1)} stiff for {MultiSoft} and {MultiStiff}, the kept column apart)");
+        var design = All<Alpaca4d.Model>(Out(mm, "AlpacaModel")).SingleOrDefault();
+        var moduli = design?.Bricks.Select(b => ((Alpaca4d.Material.ElasticIsotropicMaterial)b.Material).E).ToList();
+        int stiffCount = choice.Count(c => c == 1);
+        Check(design != null && moduli.Count(e => e == 5.0) == stiffCount && moduli.All(e => e == 1.0 || e == 5.0),
+              $"AlpacaModel gives each brick its material: {moduli?.Count(e => e == 5.0)} stiff bricks for {stiffCount}");
     }
 
     static void SelfWeight()
