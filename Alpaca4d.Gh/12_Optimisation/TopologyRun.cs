@@ -12,8 +12,21 @@ using Alpaca4d.Optimisation;
 
 namespace Alpaca4d.Gh
 {
+    /// <summary>A component that shows a <see cref="TopologyRun"/>: the run asks it to solve again only while it is its run.</summary>
+    internal interface ITopologyRunner
+    {
+        TopologyRun Run { get; }
+    }
+
     /// <summary>
-    /// One run of Topology Optimisation, on a thread of its own.
+    /// Runs one method of topology optimisation on cells, from the beginning or from a previous run, as
+    /// <see cref="TopologyOptimiser.Run"/> does.
+    /// </summary>
+    internal delegate TopologyResult TopologyMethod(CellEnergies analyse, Func<bool> stop, Action<TopologyIteration, double[]> progress,
+                                                    TopologyResult previous, DensityHistory frames);
+
+    /// <summary>
+    /// One run of a topology optimisation component, on a thread of its own.
     ///
     /// A run takes minutes, so it does not hold the solution up: the component starts it and goes on,
     /// and the run solves itself again about once a second with the design it has reached, so the
@@ -36,7 +49,7 @@ namespace Alpaca4d.Gh
 
         public Alpaca4d.Model Model { get; }
         public IReadOnlyList<SolidCell> Cells { get; }
-        public TopologySettings Settings { get; }
+        public ITopologyLimits Settings { get; }
 
         /// <summary>The design after every iteration, frame 0 the one the first run started from.</summary>
         public DensityHistory Frames { get; }
@@ -46,22 +59,22 @@ namespace Alpaca4d.Gh
         public string Failure { get; private set; }
         public string Log { get; private set; } = "";
 
-        private TopologyRun(GH_Component owner, string key, Alpaca4d.Model model, IReadOnlyList<SolidCell> cells, TopologySettings settings,
-                            TopologyResult previous)
+        private TopologyRun(GH_Component owner, string key, Alpaca4d.Model model, IReadOnlyList<SolidCell> cells, ITopologyLimits settings,
+                            double[] start, TopologyResult previous)
         {
             _owner = owner;
             Key = key;
             Model = model;
             Cells = cells;
             Settings = settings;
-            _densities = previous?.Densities ?? cells.Select(cell => cell.Passive ? 1.0 : settings.VolumeFraction).ToArray();
+            _densities = previous?.Densities ?? start;
             if (previous != null)
                 _history.AddRange(previous.History);
             Frames = previous?.Frames?.Copy() ?? new DensityHistory();
         }
 
         /// <summary>
-        /// Starts a run of the deck <paramref name="tcl"/> with OpenSees, writing its files as <paramref name="stem"/> in
+        /// Starts a SIMP run of the deck <paramref name="tcl"/> with OpenSees, writing its files as <paramref name="stem"/> in
         /// <paramref name="folder"/>: from the beginning, or from where <paramref name="previous"/>, a run of the same model and
         /// settings, stopped.
         /// </summary>
@@ -69,7 +82,20 @@ namespace Alpaca4d.Gh
                                         TopologySettings settings, SystemEquation system, string openSees, string folder, string stem,
                                         TopologyResult previous = null)
         {
-            var run = new TopologyRun(owner, key, model, cells, settings, previous);
+            return Start(owner, key, model, tcl, cells, settings, cells.Select(cell => cell.Passive ? 1.0 : settings.VolumeFraction).ToArray(),
+                (analyse, stop, progress, before, frames) => TopologyOptimiser.Run(cells, settings, analyse, stop, progress, before, frames),
+                system, openSees, folder, stem, previous);
+        }
+
+        /// <summary>
+        /// Starts a run of <paramref name="method"/> as <see cref="Start(GH_Component, string, Alpaca4d.Model, List{string}, List{SolidCell}, TopologySettings, SystemEquation, string, string, string, TopologyResult)"/>
+        /// does, with <paramref name="start"/> the densities shown until the first iteration ends.
+        /// </summary>
+        public static TopologyRun Start(GH_Component owner, string key, Alpaca4d.Model model, List<string> tcl, List<SolidCell> cells,
+                                        ITopologyLimits settings, double[] start, TopologyMethod method, SystemEquation system,
+                                        string openSees, string folder, string stem, TopologyResult previous = null)
+        {
+            var run = new TopologyRun(owner, key, model, cells, settings, start, previous);
             int solidNodes = model.UniquePointsThreeNDF.Count;
             TimeSpan? timeout = Alpaca4d.Application.OpenSeesTimeout;
 
@@ -79,7 +105,7 @@ namespace Alpaca4d.Gh
                 try
                 {
                     analysis = new TopologyAnalysis(openSees, folder, stem, tcl, cells, solidNodes, system, timeout);
-                    var result = TopologyOptimiser.Run(cells, settings, analysis.Energies, () => run._stop, run.Reached, previous, run.Frames);
+                    var result = method(analysis.Energies, () => run._stop, run.Reached, previous, run.Frames);
                     run.Log = analysis.Log;
                     run.Result = result;
                     lock (run._gate)
@@ -150,7 +176,7 @@ namespace Alpaca4d.Gh
             {
                 Interlocked.Exchange(ref _showPending, 0);
                 var document = _owner.OnPingDocument();
-                if (document == null || !(_owner is TopologyOptimisation component) || component.Run != this)
+                if (document == null || !(_owner is ITopologyRunner runner) || runner.Run != this)
                     return;
                 document.ScheduleSolution(5, d => _owner.ExpireSolution(false));
             })));

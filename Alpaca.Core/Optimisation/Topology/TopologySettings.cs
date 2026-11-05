@@ -1,10 +1,23 @@
 namespace Alpaca4d.Optimisation
 {
     /// <summary>
+    /// When a topology optimisation stops, whatever its method: read again every iteration, so that both
+    /// may be changed while a run goes on.
+    /// </summary>
+    public interface ITopologyLimits
+    {
+        /// <summary>How many iterations at most, counted from the first: those of a run gone on from count too.</summary>
+        int MaxIterations { get; set; }
+
+        /// <summary>What the method's test of convergence compares with.</summary>
+        double Tolerance { get; set; }
+    }
+
+    /// <summary>
     /// How a topology optimisation runs. The defaults are those of top3d (Liu and Tovar 2014), which
     /// are those of the 88 line code (Andreassen et al. 2011) in three dimensions.
     /// </summary>
-    public sealed class TopologySettings
+    public sealed class TopologySettings : ITopologyLimits
     {
         /// <summary>The share of the design elements' volume the result keeps, 0 to 1.</summary>
         public double VolumeFraction { get; set; } = 0.3;

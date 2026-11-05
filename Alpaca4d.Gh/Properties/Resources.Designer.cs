@@ -1359,6 +1359,26 @@ namespace Alpaca4d.Gh.Properties {
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Multi_Material_Topology__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Multi_Material_Topology__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap BESO_Topology__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("BESO_Topology__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
 
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.

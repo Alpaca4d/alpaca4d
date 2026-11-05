@@ -24,6 +24,15 @@ namespace Alpaca4d.Optimisation
         public static SolidPieces Pieces(Model model, IReadOnlyList<SolidCell> cells, IReadOnlyList<double> densities, double threshold)
         {
             var solid = Enumerable.Range(0, cells.Count).Select(i => cells[i].Passive || densities[i] >= threshold).ToArray();
+            return Pieces(model, cells, solid, densities);
+        }
+
+        /// <summary>
+        /// The structure among the cells <paramref name="solid"/> says are solid: see <see cref="SolidPieces"/>, which
+        /// joins steps through the densest of the elements that could join them.
+        /// </summary>
+        public static SolidPieces Pieces(Model model, IReadOnlyList<SolidCell> cells, IReadOnlyList<bool> solid, IReadOnlyList<double> densities)
+        {
             return SolidPieces.Find(cells, solid, tag => model.Nodes[tag - 1].Pos, Restraints(model), Attached(model, cells), densities);
         }
 
@@ -98,7 +107,9 @@ namespace Alpaca4d.Optimisation
         /// </summary>
         /// <param name="supportsLeftOut">Supports that stood on solids left out, the void the design opens.</param>
         /// <param name="loadsLeftOut">Point loads and masses that did.</param>
-        public static Model Build(Model model, IReadOnlyList<SolidCell> cells, IReadOnlyList<bool> kept, out int supportsLeftOut, out int loadsLeftOut)
+        /// <param name="materials">The material of each solid kept, by its index; null, or null for one, keeps the solid's own.</param>
+        public static Model Build(Model model, IReadOnlyList<SolidCell> cells, IReadOnlyList<bool> kept, out int supportsLeftOut, out int loadsLeftOut,
+                                  Func<int, IMultiDimensionMaterial> materials = null)
         {
             var bricks = model.Bricks;
             if (cells.Count != bricks.Count || kept.Count != bricks.Count)
@@ -116,13 +127,16 @@ namespace Alpaca4d.Optimisation
                 return tag > 0 && (ndf == 6 || !solidNodes.Contains(tag) || keptNodes.Contains(tag));
             }
 
+            var index = new Dictionary<IBrick, int>();
+            for (int i = 0; i < bricks.Count; i++)
+                index[bricks[i]] = i;
             var elements = new List<IElement>();
             foreach (var element in model.Elements)
             {
                 if (!(element is IBrick brick))
                     elements.Add(element);
                 else if (keptBricks.Contains(brick))
-                    elements.Add(Copy(brick));
+                    elements.Add(Copy(brick, materials?.Invoke(index[brick])));
             }
 
             supportsLeftOut = 0;
@@ -190,17 +204,20 @@ namespace Alpaca4d.Optimisation
             return design;
         }
 
-        /// <summary>A solid like <paramref name="brick"/>, on the same mesh and material, not yet in any model.</summary>
-        public static IBrick Copy(IBrick brick)
+        /// <summary>
+        /// A solid like <paramref name="brick"/>, on the same mesh, of <paramref name="material"/> or, when that is null,
+        /// of its own, not yet in any model.
+        /// </summary>
+        public static IBrick Copy(IBrick brick, IMultiDimensionMaterial material = null)
         {
             switch (brick)
             {
                 case SSPbrick b:
-                    return new SSPbrick(b.Mesh, b.Material) { ElementId = b.ElementId, BodyForce = b.BodyForce, Color = b.Color };
+                    return new SSPbrick(b.Mesh, material ?? b.Material) { ElementId = b.ElementId, BodyForce = b.BodyForce, Color = b.Color };
                 case Tetrahedron t:
-                    return new Tetrahedron(t.Mesh, t.Material) { ElementId = t.ElementId, BodyForce = t.BodyForce, Color = t.Color };
+                    return new Tetrahedron(t.Mesh, material ?? t.Material) { ElementId = t.ElementId, BodyForce = t.BodyForce, Color = t.Color };
                 case TenNodeTetrahedron t:
-                    return new TenNodeTetrahedron(t.Mesh, t.Material) { ElementId = t.ElementId, BodyForce = t.BodyForce, Color = t.Color };
+                    return new TenNodeTetrahedron(t.Mesh, material ?? t.Material) { ElementId = t.ElementId, BodyForce = t.BodyForce, Color = t.Color };
                 default:
                     throw new NotSupportedException($"A {brick.GetType().Name} cannot be copied.");
             }

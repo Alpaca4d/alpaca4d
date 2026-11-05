@@ -29,9 +29,23 @@ namespace Alpaca4d.Optimisation
         public double AnalysisSeconds { get; set; }
         public double UpdateSeconds { get; set; }
 
-        public override string ToString() => string.Format(CultureInfo.InvariantCulture,
-            "It. {0}: compliance {1:G6}, volume {2:0.000}, change {3:0.000}, analysis {4:0.00} s, update {5:0.00} s",
-            Iteration, Compliance, Volume, Change, AnalysisSeconds, UpdateSeconds);
+        /// <summary>Of a multi-material run: each material's share of the design elements' volume. Null otherwise.</summary>
+        public double[] MaterialVolumes { get; set; }
+
+        /// <summary>Of a run that projects its densities: how sharp the projection was. Null otherwise.</summary>
+        public double? Sharpness { get; set; }
+
+        public override string ToString()
+        {
+            var text = string.Format(CultureInfo.InvariantCulture,
+                "It. {0}: compliance {1:G6}, volume {2:0.000}, change {3:0.000}, analysis {4:0.00} s, update {5:0.00} s",
+                Iteration, Compliance, Volume, Change, AnalysisSeconds, UpdateSeconds);
+            if (MaterialVolumes != null)
+                text += ", materials " + string.Join(" ", MaterialVolumes.Select(v => v.ToString("0.000", CultureInfo.InvariantCulture)));
+            if (Sharpness.HasValue)
+                text += string.Format(CultureInfo.InvariantCulture, ", sharpness {0:G3}", Sharpness.Value);
+            return text;
+        }
     }
 
     public sealed class TopologyResult
@@ -59,6 +73,21 @@ namespace Alpaca4d.Optimisation
 
         /// <summary>The filter radius used, in model units.</summary>
         public double FilterRadius { get; set; }
+
+        /// <summary>
+        /// How many materials each element has a density of. Above 1, <see cref="Densities"/> and every frame
+        /// hold them material by material: the first material's density of every element, then the second's.
+        /// </summary>
+        public int Materials { get; set; } = 1;
+
+        /// <summary>
+        /// Of a BESO run that settled on a design broken apart: the iteration whose update cut a member through. The
+        /// design after the iteration before it is the last whole one. Null otherwise.
+        /// </summary>
+        public int? BrokeAfter { get; set; }
+
+        /// <summary>What else the method needs to go on from this run - the history of its update. Null for SIMP.</summary>
+        public object State { get; set; }
     }
 
     /// <summary>
