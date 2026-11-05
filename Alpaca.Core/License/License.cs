@@ -58,22 +58,10 @@ namespace Alpaca4d.License
             {
                 // if the file does not exist, it raise exception
                 var users = License.DeserializeBinary(filePath);
-                var addresses = GetMacAddress();
 
-                foreach (var user in users)
-                {
-                    if (user.user_name == "FreeVersion")
-                    {
-                        if (DateTime.Now < user.expiring_date)
-                            return true;
-                    }
-
-                    foreach (var macAdress in addresses)
-                    {
-                        if ((macAdress == user.mac_address) && (DateTime.Now < user.expiring_date))
-                            return true;
-                    }
-                }
+                // Against the addresses found last time first, and only when that fails, against
+                // the ones there are now, in case an adapter has come since.
+                return Licenses(users, KnownMacAddresses()) || Licenses(users, macAddresses = GetMacAddress());
             }
             catch (Exception)
             {
@@ -81,8 +69,36 @@ namespace Alpaca4d.License
                 // all of them mean the same thing here, so there is nothing to inspect.
                 return false;
             }
+        }
+
+        private static bool Licenses(List<User> users, List<string> addresses)
+        {
+            foreach (var user in users)
+            {
+                if (user.user_name == "FreeVersion")
+                {
+                    if (DateTime.Now < user.expiring_date)
+                        return true;
+                }
+
+                foreach (var macAdress in addresses)
+                {
+                    if ((macAdress == user.mac_address) && (DateTime.Now < user.expiring_date))
+                        return true;
+                }
+            }
             return false;
         }
+
+        /// <summary>
+        /// This computer's network addresses, as <see cref="GetMacAddress"/> found them the last
+        /// time it was asked. Kept because asking takes some 16 ms on a Mac, and the license is
+        /// checked on every solve of every component that needs one - Model View's twenty a second
+        /// while it animates.
+        /// </summary>
+        private static List<string> macAddresses;
+
+        private static List<string> KnownMacAddresses() => macAddresses ?? (macAddresses = GetMacAddress());
 
         /// <summary>
         /// Brings over the license an earlier version kept beside itself, when there is none at
