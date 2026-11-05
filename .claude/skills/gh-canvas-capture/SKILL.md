@@ -1,6 +1,6 @@
 ---
 name: gh-canvas-capture
-description: Make pictures of Grasshopper definitions or single Alpaca4d components from the canvas, and white-background Rhino viewport captures of Alpaca4d models and results, from a script in a live Rhino 8. Use it for docs, example and marketing pictures.
+description: Make pictures of Grasshopper definitions or single Alpaca4d components from the canvas, and light-grey-background Rhino viewport captures of Alpaca4d models and results, from a script in a live Rhino 8. Use it for docs, example and marketing pictures.
 ---
 
 # Capture the Grasshopper canvas and the Rhino viewport
@@ -8,8 +8,10 @@ description: Make pictures of Grasshopper definitions or single Alpaca4d compone
 Run the capture scripts as the run-in-rhino skill says. Keep the working files (definitions,
 scripts, raw captures) in the scratchpad.
 - Every finished picture goes to
-  `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/`, whether the user asked for
-  it or not, so it can be shared. Overwrite them on the next round instead of adding versions.
+  `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/<case>/`, whether the user asked
+  for it or not, so it can be shared: a subfolder for each case a topic shows, such as
+  `principal-stress-lines/deep-beam`, holding its stills, animations and `grasshopper-definition.png`.
+  Overwrite them on the next round instead of adding versions.
 - Pictures for a docs page go beside that page too, with a copy in marketing.
 - **`Tools/Marketing/run.sh` makes the marketing pictures of the examples.** Its README lists the
   scenes and how to add one, and its `Shots.cs` holds working code for everything below. For new
@@ -45,8 +47,9 @@ scripts, raw captures) in the scratchpad.
 
 ## The viewport
 
-- **White background:**
-  - `DisplayModeDescription.CopyDisplayMode` of Shaded, `FillMode = SolidColor`, `SetFill(White)`,
+- **Background: a light grey, 251, not white** (the user's choice for marketing pictures; `post.py`
+  keeps it when it trims):
+  - `DisplayModeDescription.CopyDisplayMode` of Shaded, `FillMode = SolidColor`, `SetFill(251 grey)`,
     `UpdateDisplayMode`;
   - capture with `view.CaptureToBitmap(size, mode)`, because ViewCapture lags the display mode;
   - `DeleteDisplayMode` afterwards.
