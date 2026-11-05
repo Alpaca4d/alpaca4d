@@ -7,7 +7,7 @@ namespace Alpaca4d.Gh
     /// is a force or a moment depending on which one, so this goes with the component as well as
     /// the family - see <see cref="ResultField.QuantityOf"/>.
     ///
-    /// View Results keeps one Unit dropdown per entry and saves each by its position, so an entry
+    /// Model View keeps one Unit dropdown per entry and saves each by its position, so an entry
     /// is only ever added at the end.
     /// </summary>
     internal enum Quantity
@@ -41,7 +41,7 @@ namespace Alpaca4d.Gh
     }
 
     /// <summary>
-    /// The units View Results can show a result in, and the factor that takes a result there from
+    /// The units Model View can show a result in, and the factor that takes a result there from
     /// the unit it comes out of the solver in.
     ///
     /// The solver works in kN and m, so a displacement comes out in metres and a shell stress in
@@ -124,7 +124,7 @@ namespace Alpaca4d.Gh
         }
 
         /// <summary>
-        /// The unit a newly placed View Results starts in: the one an engineer reads the quantity
+        /// The unit a newly placed Model View starts in: the one an engineer reads the quantity
         /// in, rather than the one the solver happens to work in - a deflection in mm and a stress
         /// in MPa.
         /// </summary>

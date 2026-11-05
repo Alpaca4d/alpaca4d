@@ -17,7 +17,7 @@ namespace Alpaca4d.Gh
     /// the next - the value running straight across it, as it does between the corners of a
     /// smooth plot - and each piece is drawn in its band's colour alone.
     ///
-    /// Apart from View Results, and with nothing in it that needs Rhino running bar the mesh
+    /// Apart from Model View, and with nothing in it that needs Rhino running bar the mesh
     /// built at the end, so the cutting can be checked outside Rhino.
     /// </summary>
     internal static class IsoBands

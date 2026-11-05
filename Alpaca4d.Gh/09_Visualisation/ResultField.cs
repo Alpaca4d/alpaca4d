@@ -10,11 +10,11 @@ using Alpaca4d.Result;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// The kinds of result View Results can draw.
+    /// The kinds of result Model View can draw.
     ///
-    /// Files saved before the menu had an order of its own hold the choice as a position in this
-    /// list, so a family is only ever added at the end: one slipped in beside its neighbours would
-    /// reopen those files one family along. The order the menu shows is
+    /// View Results_WIP files saved before its menu had an order of its own hold the choice as a
+    /// position in this list, so a family is only ever added at the end: one slipped in beside its
+    /// neighbours would reopen those files one family along. The order the menu shows is
     /// <see cref="ResultField.MenuOrder"/>.
     /// </summary>
     internal enum ResultFamily
@@ -31,7 +31,7 @@ namespace Alpaca4d.Gh
     /// <summary>
     /// One result, read out of a model and reduced to numbers the viewport can be coloured by.
     ///
-    /// This is the half of View Results that knows about recorder files, and it exists so that the
+    /// This is the half of Model View that knows about recorder files, and it exists so that the
     /// component itself does not. Every family is read to the same shape - a value per node, or a
     /// list of values per element tag - so the drawing code has one case to handle rather than six,
     /// and adding a seventh family means adding a branch here and a name to a list.
@@ -60,7 +60,7 @@ namespace Alpaca4d.Gh
         private static readonly string[] BrickStressNames = { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
         // The outputs of Beam Stresses, in the same order, with σx - N, My and Mz at each fibre -
-        // after its three parts. Files saved before σx are moved one along on load (ViewResults).
+        // after its three parts. View Results_WIP files saved before σx are moved one along on load.
         private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σx", "σmax", "σmin", "τV", "τT", "VonMises" };
 
         /// <summary>Where σx sits in <see cref="BeamStressNames"/>: a saved Component at or past it predates it.</summary>
@@ -330,34 +330,50 @@ namespace Alpaca4d.Gh
 
         private static ResultField BeamForce(Alpaca4d.Model model, int component, int step)
         {
-            var field = new ResultField
+            return BeamForces(model, new[] { component }, step)[component];
+        }
+
+        /// <summary>
+        /// Several beam forces from one read of the recorder file, which hands back all six whichever
+        /// are asked for: a field per component, by its place in the Component list.
+        /// </summary>
+        public static Dictionary<int, ResultField> BeamForces(Alpaca4d.Model model, IEnumerable<int> components, int step)
+        {
+            var fields = components.Distinct().ToDictionary(c => c, c => new ResultField
             {
                 ByElement = new Dictionary<int, List<double>>(),
-                Label = BeamForceNames[component]
-            };
+                Component = c,
+                Label = BeamForceNames[c]
+            });
 
-            if (model.Beams.Count == 0)
-                return field;
+            if (model.Beams.Count == 0 || fields.Count == 0)
+                return fields;
 
             var read = Alpaca4d.Result.Read.ForceBeamColumn(model, step);
 
             // Read.ForceBeamColumn hands them back in the order of Model.Beams, and in the order
             // n, mz, vy, my, vz, t - which is not the order they are offered in.
-            List<List<double>> chosen;
-            switch (component)
+            foreach (var entry in fields)
             {
-                case 1: chosen = read.vy; break;
-                case 2: chosen = read.vz; break;
-                case 3: chosen = read.t; break;
-                case 4: chosen = read.my; break;
-                case 5: chosen = read.mz; break;
-                default: chosen = read.n; break;
+                List<List<double>> chosen;
+                switch (entry.Key)
+                {
+                    case 1: chosen = read.vy; break;
+                    case 2: chosen = read.vz; break;
+                    case 3: chosen = read.t; break;
+                    case 4: chosen = read.my; break;
+                    case 5: chosen = read.mz; break;
+                    default: chosen = read.n; break;
+                }
+
+                Fill(entry.Value.ByElement, model.Beams, chosen);
             }
 
-            Fill(field.ByElement, model.Beams, chosen);
-
-            return field;
+            return fields;
         }
+
+        /// <summary>The beam forces as the row of checkboxes under Beam forces names them, torsion short enough to fit.</summary>
+        public static readonly string[] BeamForceShortNames = { "N", "Vy", "Vz", "T", "My", "Mz" };
 
         private static ResultField BeamStress(Alpaca4d.Model model, int component, int step)
         {
@@ -385,7 +401,7 @@ namespace Alpaca4d.Gh
                 if (!shape.HasShape && component != 0)
                     continue;
 
-                // In the solver's kN/m², as every other family is: View Results turns them into the
+                // In the solver's kN/m², as every other family is: Model View turns them into the
                 // unit picked, which starts at MPa - the unit Beam Stresses gives them in.
                 int tag = model.Beams[i].Id.Value;
                 field.ByElement[tag] = forces.Select(f => Of(shape.At(f[0], f[1], f[2], f[3], f[4], f[5]), component)).ToList();

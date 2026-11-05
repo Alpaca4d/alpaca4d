@@ -549,7 +549,7 @@ namespace Alpaca4d.Gh
             }
         }
 
-        /// <summary>How far the largest value stands off the cut: the share of the model's size View Results' diagrams use.</summary>
+        /// <summary>How far the largest value stands off the cut: the share of the model's size Model View's diagrams use.</summary>
         private double Reach()
         {
             var box = _model.UniquePoints != null && _model.UniquePoints.Count > 0
