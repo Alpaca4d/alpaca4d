@@ -10,6 +10,7 @@
     ./run.sh bench node truss 20               # a space-truss node in a 1 m cube of 20 bricks a side, by all three methods
     ./run.sh bench node joint 20               # a beam-column joint, the same way
     ./example.sh                               # Tools/Examples/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
+    ./nodes.sh                                 # Tools/Examples/TopologyNodes.py's two definitions, against the node benches
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or
 `OPENSEES=`). `reference.py` needs a Python with numpy and scipy (`PYTHON=`). The checks of the components
@@ -72,3 +73,22 @@ pad to the structure: left out, the Grasshopper checks' small cantilever loses t
 load. It also draws material towards a kept deck in bending, and a filter much wider than two elements then
 starves a member far from it until it is cut through: at 3 elements, 1 m, the bridge broke apart, which is
 why the default is 2.
+
+**Nodes in space**, Tools/Examples/TopologyNodes.py's two definitions at 20 bricks per metre (`bench node`, and
+`nodes.sh` in Rhino, 2026-11-05):
+
+| | Truss node, deck / Grasshopper | Beam-column joint, deck / Grasshopper |
+| --- | --- | --- |
+| Bricks, kept | 8 576, 576 | 9 024, 1 024 |
+| Topology Optimisation, 12% / 20% | 200 its, 0.13365 / 200, 0.13365 | 160, 0.35793 / 160, 0.35793 |
+| BESO Topology | 121, 0.090849 / 115, 0.090609 | 92, 0.27886 / 94, 0.27999 |
+| Multi-Material Topology | 260, 0.15844 / 260, 0.15845 | 264, 0.67624 / 265, 0.67544 |
+
+The definitions' first compliances are the decks' to 2e-7, not to round-off: Rhino keeps a mesh's vertices in
+single precision, so Mesh Plane puts the nodes at 0.4000000059604645 where the deck has 0.4. The runs then
+part by a few iterations; Topology Optimisation on the truss node runs to its 200 without meeting top3d's
+test. The truss node's chords pull and push unequally (450 and 250 kN, 300 and 150): with equal forces a
+chord pair needs only a bar between them, joined to nothing, which Solid and AlpacaModel then leave out as
+a piece the supports do not hold. The truss node uses steel and aluminium (4% and 8%), the joint steel and
+concrete (6% and 14%); each method puts 20 to 30% more material on the joint's +x side, where the beam's
+moment is 150 kNm against 80, and the joint comes out symmetric along y, where the beams balance.
