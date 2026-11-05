@@ -45,10 +45,9 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 GRAVITY = "4B6FA7FD-9388-4699-B374-B94F94583A53"            # Gravity Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 RED = Color.FromArgb(50, 254, 0, 0)
@@ -61,6 +60,9 @@ GREY = Color.FromArgb(40, 42, 45, 49)
 SIDE, DEPTH = 8.0, 6.0        # the block: 8 x 8 m in plan, 6 m deep
 COLUMNS_AT = (2.0, 6.0)       # the four columns stand at these x and y, on the mesh for any n
 COLUMN_LOAD = -5000.0         # kN each
+# Model View's results, from 1: Displacement is the first, and Magnitude the first
+# of the displacements.
+DISPLACEMENT, MAGNITUDE = 1, 0
 
 
 # ---------------------------------------------------------------- building blocks
@@ -321,6 +323,25 @@ def group(doc, name, objects, colour):
     return g
 
 
+def menu_setting(c, field, prop, value):
+    """Sets a widget of a component's fold-out menus, found by its field, as a click on it would:
+    the component saves it with the file."""
+    c = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    setattr(c.GetType().GetField(field, flags).GetValue(c), prop, value)
+
+
+def show_result(c, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
+    c = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    c.GetType().GetMethod("ShowResult", flags).Invoke(c, System.Array[System.Object]([show, component]))
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+
+
 # ---------------------------------------------------------------- the block
 
 # Columns, in the order the data flows...
@@ -426,8 +447,11 @@ def build(doc):
     run = component(m, RUN_ANALYSIS, "Run Analysis", None, MODEL, ANALYSED)
     wire(inp(run, 0), out(assemble))
     wire(inp(run, 1), out(settings))
-    results = component(m, VIEW_RESULTS, "View Results", None, VIEW, ANALYSED)
+    results = component(m, MODEL_VIEW, "Model View", None, VIEW, ANALYSED)
     wire(inp(results, 0), out(run))
+    menu_setting(results, "_ckExtruded", "Active", False)
+    menu_setting(results, "_ckReleases", "Active", False)
+    show_result(results, DISPLACEMENT, MAGNITUDE)
     log = readout(m, "OpenSees log", out(run, 1), COUNTS, ANALYSED, width=300.0, height=160.0)
     run.Locked = True
     results.Locked = True
@@ -444,7 +468,7 @@ def build(doc):
     group(doc, "6 - Solve: pick the System, right-click Analysis Settings for the cores, then Enable Run Analysis",
           [system, settings, run, results, log], GREY)
 
-    # Only Model View and View Results draw the block; the construction geometry stays out of the viewport.
+    # Only the two Model Views draw the block; the construction geometry stays out of the viewport.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
         if hasattr(obj, "Hidden") and obj.InstanceGuid != view.InstanceGuid and obj.InstanceGuid != results.InstanceGuid:
@@ -461,8 +485,8 @@ def build(doc):
          "  4   24 576     78 408   29 s, 4 GB       fails     1.6 s, 2 GB\n"
          "  5   48 000    151 290   over 6 GB        fails     4.2 s, 5 GB\n\n"
          "1. Display > Canvas Widgets > Profiler: each component shows how long it took.\n"
-         "2. Run Analysis and View Results are disabled, so that dragging the slider never starts OpenSees. "
-         "Right-click > Enable both to solve.\n"
+         "2. Run Analysis and the Model View it feeds are disabled, so that dragging the slider never starts "
+         "OpenSees. Right-click > Enable both to solve.\n"
          "3. System: Auto and Mumps solve with Mumps on every core (right-click Analysis Settings > Cores for "
          "Mumps to use fewer); BandSPD and UmfPack on one. Auto needs an OpenSees with Mumps - Alpaca4d > "
          "Settings > Set OpenSees Executable - and says in the log when it has to use BandSPD instead.\n"
@@ -476,7 +500,7 @@ def main():
     build(doc)
     doc.NewSolution(False)
     Grasshopper.Instances.ActiveCanvas.Refresh()
-    print("Brick solver speed test built. Enable Run Analysis and View Results to solve.")
+    print("Brick solver speed test built. Enable Run Analysis and the Model View it feeds to solve.")
 
 
 if __name__ == "__main__":

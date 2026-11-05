@@ -46,8 +46,7 @@ GRAVITY = "4B6FA7FD-9388-4699-B374-B94F94583A53"            # Gravity Load
 POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 OPTIMISER = "56302D3A-734F-4B03-899E-F6C273CF1B9F"          # Section Optimiser
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
@@ -56,8 +55,10 @@ B_LINE, B_SECTION, B_ELEMENT_ID = 0, 1, 5
 # Section Optimiser's inputs and outputs, by place.
 O_MODEL, O_MAX_UTILISATION, O_ITERATIONS = 0, 3, 4
 O_MODEL_OUT, O_MASS, O_CONVERGED, O_HISTORY = 0, 4, 5, 8
-# View Results' outputs and Legend's inputs, by place.
-R_VALUES, R_COLORS = 1, 2
+# Model View's outputs and Legend's inputs, by place. Model View's results, from 1:
+# Displacement is the first, and Magnitude the first of the displacements.
+R_VALUES, R_COLORS = 3, 4
+DISPLACEMENT, MAGNITUDE = 1, 0
 L_TITLE, L_VALUES, L_COLORS, L_POSITION = 0, 1, 2, 3
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
@@ -338,6 +339,25 @@ def open_menus(c):
             menu.Expand()
 
 
+def menu_setting(c, field, prop, value):
+    """Sets a widget of a component's fold-out menus, found by its field, as a click on it would:
+    the component saves it with the file."""
+    c = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    setattr(c.GetType().GetField(field, flags).GetValue(c), prop, value)
+
+
+def show_result(c, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
+    c = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    c.GetType().GetMethod("ShowResult", flags).Invoke(c, System.Array[System.Object]([show, component]))
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+
+
 # ---------------------------------------------------------------- the grid
 
 # Columns in the order the data flows...
@@ -449,8 +469,9 @@ def build(doc):
 
     # 6 - The optimiser: no design group, so every element goes to the first section of its family -
     # the HEAs, for an HEA300 - that holds it, smallest area first. Model View draws the sections it
-    # chose; View Results, hidden, how far the grid moves, with a Legend on the right of the view,
-    # hidden with it. Switch Model View off and View Results and Legend on to see them.
+    # chose; a second Model View, named Displacement and hidden, how far the grid moves, with a Legend
+    # on the right of the view, hidden with it. Switch Model View off and Displacement and Legend on to
+    # see them.
     assemble = component(grid, ASSEMBLE, "Assemble Model", None, MODEL, ALONG_X)
     wire(inp(assemble, 0), out(beam))
     wire(inp(assemble, 1), out(support))
@@ -468,8 +489,11 @@ def build(doc):
     history = panel(grid, "History", out(optimiser, O_HISTORY), 460, 110, RESULTS, ALONG_X, gap=10)
     view = component(grid, MODEL_VIEW, "Model View", None, RESULTS, ALONG_Y)
     wire(inp(view, 0), out(optimiser, O_MODEL_OUT))
-    results = component(grid, VIEW_RESULTS, "View Results", None, RESULTS, ALONG_Y, gap=10)
+    results = component(grid, MODEL_VIEW, "Model View", "Displacement", RESULTS, ALONG_Y, gap=10)
     wire(inp(results, 0), out(optimiser, O_MODEL_OUT))
+    menu_setting(results, "_ckExtruded", "Active", False)
+    menu_setting(results, "_ckReleases", "Active", False)
+    show_result(results, DISPLACEMENT, MAGNITUDE)
     legend = component(grid, LEGEND, "Legend", None, KEY, ALONG_Y)
     words(inp(legend, L_TITLE), "Displacement [mm]")
     wire(inp(legend, L_VALUES), out(results, R_VALUES))
@@ -503,8 +527,8 @@ def build(doc):
          "material gathers over the supports and the edges go light.\n\n"
          "The Section Optimiser has no design group, so every element is sized on its own, within the "
          "family of the section it starts with - the HEAs, for an HEA300 - smallest area first. Model "
-         "View draws the sections it chose; switch it off, and View Results and Legend on, for how far "
-         "the grid moves.\n\n"
+         "View draws the sections it chose; switch it off, and the Model View named Displacement and "
+         "Legend on, for how far the grid moves.\n\n"
          "The sections are only a start: choose your own, or give lines of beams a Design Group each "
          "so that every line ends up with one section.",
          0, -380, 620, 320)
