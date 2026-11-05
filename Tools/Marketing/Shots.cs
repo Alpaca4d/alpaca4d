@@ -100,7 +100,15 @@ public static class Shots
                     case "tower": list = Tower(); break;
                     case "bridgelines": list = BridgeLines(); break;
                     case "twospan": list = TwoSpan(); break;
-                    default: throw new Exception("no scene " + scene);
+                    case "plates": list = Plates(); break;
+                    case "kangaroo": list = Kangaroo(); break;
+                    case "nerviflatslab": list = NerviFlatSlab(); break;
+                    case "nerviumbrella": list = NerviUmbrella(); break;
+                    case "musmeci": list = MusmeciBridge(); break;
+                    default:
+                        if (!Studies.TryGetValue(scene, out var study)) throw new Exception("no scene " + scene);
+                        list = StudyScene(study);
+                        break;
                 }
                 string folder = Path.Combine(output, scene);
                 steps.Enqueue((scene, "=== " + scene, () =>
@@ -1398,6 +1406,908 @@ public static class Shots
         }),
         Do("close", Close),
     };
+
+    // ------------------------------------------------------------------ stress lines: plates and a form-found shell
+
+    static readonly Guid MeshPlaneId = new Guid("8ADBF481-7589-4A40-B490-006531EA001D");
+    static readonly Guid Rectangle3PtId = new Guid("9BC98A1D-2ECC-407E-948A-09A09ED3E69D");
+    static readonly Guid AssembleId = new Guid("B6978C42-7B88-4F1A-A5DF-85EF89F154F9");
+
+    /// <summary>The groups whose names start with <paramref name="key"/> and a digit, and what they hold.</summary>
+    static HashSet<Guid> Members(char key)
+    {
+        var ids = new HashSet<Guid>();
+        foreach (var g in doc.Objects.OfType<GH_Group>().Where(g => g.NickName.Length > 1 && g.NickName[0] == key && char.IsDigit(g.NickName[1])))
+        {
+            ids.Add(g.InstanceGuid);
+            foreach (var id in g.ObjectIDs) ids.Add(id);
+        }
+        return ids;
+    }
+
+    static IGH_Component Member(HashSet<Guid> ids, Guid type) =>
+        doc.Objects.OfType<IGH_Component>().First(c => c.ComponentGuid == type && ids.Contains(c.InstanceGuid));
+
+    /// <summary>What a plate or the shell draws in the pictures: its two families of lines, its surface and Model View's symbols.</summary>
+    class Drawn2d
+    {
+        public IGH_Component Lines, Sl1, Sl2, Surface, Outline, Symbols;
+        public IGH_Component[] Clean => new[] { Sl1, Sl2, Surface, Outline }.Where(c => c != null).ToArray();
+        public IGH_Component[] All => Clean.Concat(new[] { Symbols }).Where(c => c != null).ToArray();
+    }
+
+    /// <summary>
+    /// Previews of the stress lines <paramref name="lines"/> traced: SL1 orange, SL2 blue, over
+    /// <paramref name="surface"/> in <paramref name="tint"/> and its <paramref name="outline"/>, if
+    /// any, in DarkTech. Model View's symbols come later, with <see cref="AddSymbols"/>: after the
+    /// canvas pictures, which they would otherwise be in.
+    /// </summary>
+    static Drawn2d Previews(IGH_Component lines, IGH_Param surface, Color tint, IGH_Param outline, bool matte = false)
+    {
+        ((IGH_PreviewObject)lines).Hidden = true;
+        var at = Beside(lines, 120, 0);
+        return new Drawn2d
+        {
+            Lines = lines,
+            Sl1 = Preview(Out(lines, "SL1"), Purple, at),
+            Sl2 = Preview(Out(lines, "SL2"), LightBlue, new PointF(at.X, at.Y + 90)),
+            Surface = matte ? Matte(surface, tint, new PointF(at.X, at.Y + 180)) : Preview(surface, tint, new PointF(at.X, at.Y + 180)),
+            Outline = outline == null ? null : Preview(outline, DarkTech, new PointF(at.X, at.Y + 270)),
+        };
+    }
+
+    /// <summary>
+    /// <see cref="ShowOnly"/>, and what it shows solved again: a preview added and hidden before
+    /// Rhino ever drew it stays blank when shown, until it is solved again.
+    /// </summary>
+    static void Reveal(params IGH_DocumentObject[] shown)
+    {
+        ShowOnly(shown);
+        foreach (var o in shown.OfType<IGH_ActiveObject>()) o.ExpireSolution(false);
+        doc.NewSolution(false);
+    }
+
+    /// <summary>Model View's supports and loads of <paramref name="model"/>, beside the previews of <paramref name="d"/>.</summary>
+    static void AddSymbols(Drawn2d d, IGH_Param model, double loadScale, double supportScale)
+    {
+        var b = d.Sl1.Attributes.Bounds;
+        d.Symbols = Symbols(model, new PointF(b.Right + 80, b.Top), loadScale, supportScale);
+        if (loadScale > 0) LoadScale(d.Symbols, loadScale);
+    }
+
+    /// <summary>
+    /// Model View's load scale, in metres of arrow per kN: below the slider's own 0.1 too, which a
+    /// 500 kN load needs to be drawn a couple of metres long.
+    /// </summary>
+    static void LoadScale(IGH_Component view, double scale)
+    {
+        var slider = Field(view, "_slLoadScale");
+        slider.GetType().GetProperty("MinValue").SetValue(slider, Math.Min(0.001, scale));
+        slider.GetType().GetProperty("Value").SetValue(slider, scale);
+        view.ExpireSolution(false);
+    }
+
+    /// <summary>What is drawn, grown by <paramref name="f"/> of its diagonal, logged.</summary>
+    static BoundingBox Framed(double f)
+    {
+        var box = Grown(Drawn(), f);
+        Log($"  drawn {box.Min} to {box.Max}");
+        return box;
+    }
+
+    /// <summary>
+    /// The plate of StressLinesPlates.gh whose groups start with <paramref name="key"/>, drawn: a
+    /// flat one see-through grey with its outline, the curved one, built by Construct Mesh, shaded.
+    /// </summary>
+    static Drawn2d PlatePreviews(char key)
+    {
+        var ids = Members(key);
+        var curved = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.ComponentGuid == ConstructMeshId && ids.Contains(c.InstanceGuid));
+        if (curved != null)
+            return Previews(Member(ids, StressLinesId), curved.Params.Output[0], Concrete, null);
+        return Previews(Member(ids, StressLinesId), Member(ids, MeshPlaneId).Params.Output[0], Color.FromArgb(26, DarkTech),
+                        Member(ids, Rectangle3PtId).Params.Output[0]);
+    }
+
+    static readonly Guid ConstructMeshId = new Guid("E2C0F9DB-A862-4BD9-810C-EF2610E7A56F");
+    static readonly Guid LoadPatternId = new Guid("C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B");
+    static readonly Guid MeshLoadId = new Guid("C8514DEA-1B1B-45A6-ABC1-8004C1EFC617");
+
+    /// <summary>A curved shell's surface, shaded: a light grey, as concrete reads on the background.</summary>
+    static readonly Color Concrete = Color.FromArgb(226, 229, 234);
+
+    static IGH_Param PlateModel(char key) => Member(Members(key), AssembleId).Params.Output[0];
+
+    static void LinesLog(IGH_Component lines, Stopwatch watch = null) =>
+        Log($"  {lines.NickName}: {Values<GH_Curve>(Out(lines, "SL1")).Count} + {Values<GH_Curve>(Out(lines, "SL2")).Count} lines" +
+            (watch == null ? "" : $" in {watch.Elapsed.TotalSeconds:F1} s"));
+
+    /// <summary>
+    /// The lines drawn as the tracer grew them, out from the seed, a few more each frame: through two
+    /// Curve parameters the previews take their lines from for the while. <paramref name="frames"/>
+    /// frames into <paramref name="folder"/>.
+    /// </summary>
+    static void Growing(Drawn2d d, RhinoView view, string folder, int frames)
+    {
+        var all = new[] { Values<GH_Curve>(Out(d.Lines, "SL1")), Values<GH_Curve>(Out(d.Lines, "SL2")) };
+        var previews = new[] { d.Sl1, d.Sl2 };
+        var shown = new Param_Curve[2];
+        for (int f = 0; f < 2; f++)
+        {
+            var b = previews[f].Attributes.Bounds;
+            shown[f] = Place(new Param_Curve { NickName = "Drawn so far", Hidden = true }, new PointF(b.Left - 60, b.Top - 30));
+            previews[f].Params.Input[0].RemoveAllSources();
+            previews[f].Params.Input[0].AddSource(shown[f]);
+        }
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        for (int k = 0; k <= frames; k++)
+        {
+            for (int f = 0; f < 2; f++)
+            {
+                int n = (int)Math.Round(all[f].Count * (double)k / frames);
+                shown[f].PersistentData.Clear();
+                shown[f].PersistentData.AppendRange(all[f].Take(n));
+                shown[f].ExpireSolution(false);
+            }
+            doc.NewSolution(false);
+            Shoot(view, Path.Combine(folder, k.ToString("D3")));
+        }
+        for (int f = 0; f < 2; f++)
+        {
+            previews[f].Params.Input[0].RemoveAllSources();
+            previews[f].Params.Input[0].AddSource(Out(d.Lines, f == 0 ? "SL1" : "SL2"));
+            doc.RemoveObject(shown[f], false);
+        }
+        doc.NewSolution(false);
+        Log($"  {frames + 1} frames, to {all[0].Count} + {all[1].Count} lines");
+    }
+
+    /// <summary>
+    /// The camera taken once round <paramref name="box"/> about Z, from along <paramref name="eye"/>
+    /// to start with, at the distance that frames it then: <paramref name="frames"/> frames into
+    /// <paramref name="folder"/>. Zoomed afresh each frame, the model would breathe in and out.
+    /// </summary>
+    static void Turning(BoundingBox box, Vector3d eye, string folder, int frames)
+    {
+        var view = Aim(box, eye, Vector3d.ZAxis);
+        var vp = view.ActiveViewport;
+        var target = vp.CameraTarget;
+        double distance = vp.CameraLocation.DistanceTo(target);
+        var along = eye;
+        along.Unitize();
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        for (int k = 0; k < frames; k++)
+        {
+            var turned = along;
+            turned.Rotate(2 * Math.PI * k / frames, Vector3d.ZAxis);
+            vp.SetCameraLocations(target, target + turned * distance);
+            vp.CameraUp = Vector3d.ZAxis;
+            Shoot(view, Path.Combine(folder, k.ToString("D3")));
+        }
+        Log($"  {frames} frames round");
+    }
+
+    /// <summary>
+    /// A load walked along its nodes by the slider <paramref name="node"/>, there and back, every
+    /// <paramref name="every"/> node from <paramref name="from"/> to <paramref name="to"/>: the model
+    /// solved and its lines traced at each, one frame each into <paramref name="folder"/>.
+    /// </summary>
+    static void Walking(string node, int from, int to, int every, RhinoView view, string folder)
+    {
+        var slider = Find<GH_NumberSlider>(node);
+        double start = (double)slider.Slider.Value;
+        var stops = new List<int>();
+        for (int i = from; i <= to; i += every) stops.Add(i);
+        stops.AddRange(stops.Skip(1).Reverse().Skip(1).ToList());
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        var watch = Stopwatch.StartNew();
+        for (int k = 0; k < stops.Count; k++)
+        {
+            Slider(node, stops[k]);
+            doc.NewSolution(false);
+            Shoot(view, Path.Combine(folder, k.ToString("D3")));
+        }
+        Slider(node, start);
+        doc.NewSolution(false);
+        Log($"  {stops.Count} frames, {node} {from} to {to} and back, in {watch.Elapsed.TotalSeconds:F0} s");
+    }
+
+    // StressLinesPlates: a cantilever wall and a deep beam in their own plane, a slab on four edges and
+    // a cantilever slab in bending; each alone, with and without its supports and loads; the deep
+    // beam's load and a point load on the slab walking along, and the wall's lines growing from their
+    // seed, as frames.
+    static List<(string, Func<bool>)> Plates()
+    {
+        var plates = new Dictionary<char, Drawn2d>();
+        var slab = new Vector3d(0.55, -1.25, 0.95);
+        var canopy = new Vector3d(1, -0.9, 0.55);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () =>
+            {
+                Open(here + "StressLinesPlates.gh");
+                foreach (var c in Components(RunAnalysisId)) Messages(c);
+                foreach (var c in Components(StressLinesId)) { Messages(c); LinesLog(c); }
+            }),
+            Do("canvas", () =>
+            {
+                foreach (var key in new[] { 'A', 'B', 'C', 'D' }) plates[key] = PlatePreviews(key);
+                doc.NewSolution(false);
+                Canvas("plates-canvas", 1.0f);
+                foreach (var key in plates.Keys)
+                {
+                    var ids = Members(key);
+                    Canvas("plate-" + char.ToLower(key) + "-canvas", 1.5f, o => ids.Contains(o.InstanceGuid));
+                }
+            }),
+            Do("each plate", () =>
+            {
+                // Arrows about a metre long: 8 kN on each node of the wall, 500 kN on the deep
+                // beam. The slabs' uniform load is drawn as a sheet over them, hiding the lines:
+                // left out.
+                AddSymbols(plates['A'], PlateModel('A'), 0.1, 0.6);
+                AddSymbols(plates['B'], PlateModel('B'), 0.004, 0.8);
+                AddSymbols(plates['C'], PlateModel('C'), 0, 0.5);
+                AddSymbols(plates['D'], PlateModel('D'), 0, 0.5);
+                doc.NewSolution(false);
+                foreach (var key in new[] { 'A', 'B' })
+                {
+                    string name = key == 'A' ? "cantilever-wall" : "deep-beam";
+                    Reveal(plates[key].All);
+                    Shoot(Front(Framed(0.02)), name);
+                    Reveal(plates[key].Clean);
+                    Shoot(Front(Framed(0.02)), name + "-clean");
+                }
+                Reveal(plates['C'].All);
+                var box = Framed(0.02);
+                Shoot(Aim(box, slab, Vector3d.ZAxis), "slab");
+                Reveal(plates['C'].Clean);
+                Shoot(Top(Framed(0.03)), "slab-top");
+                Shoot(Aim(box, slab, Vector3d.ZAxis), "slab-clean");
+                Reveal(plates['D'].All);
+                box = Framed(0.02);
+                Shoot(Aim(box, canopy, Vector3d.ZAxis), "cantilever-shell");
+                Shoot(Aim(box, new Vector3d(1, -0.3, 0.35), Vector3d.ZAxis), "cantilever-shell-tip");
+                Reveal(plates['D'].Clean);
+                Shoot(Aim(box, canopy, Vector3d.ZAxis), "cantilever-shell-clean");
+                Reveal(plates.Values.SelectMany(p => p.All).ToArray());
+                Shoot(Aim(Framed(0.02), new Vector3d(0.7, -1.3, 0.6), Vector3d.ZAxis), "all-four");
+            }),
+            Do("spins and walks", () =>
+            {
+                // Each plate turning round, and walked past - or under - at eye height.
+                var cases = new (char key, string name, Vector3d spin, Point3d from, Point3d to, Vector3d ahead)[]
+                {
+                    ('A', "cantilever-wall", new Vector3d(0.3, -1, 0.35), new Point3d(-3, -6, 1.25), new Point3d(10, -6, 1.25), new Vector3d(6, 8, 0.2)),
+                    ('B', "deep-beam", new Vector3d(0.3, -1, 0.35), new Point3d(8, -8, 1.6), new Point3d(24, -8, 1.6), new Vector3d(5, 9, 0.6)),
+                    ('C', "slab", slab, new Point3d(-2, -10, -1.7), new Point3d(14, -10, -1.7), new Vector3d(6, 1.5, 1.2)),
+                    ('D', "cantilever-shell", canopy, new Point3d(25, -11, 0.6), new Point3d(13, -11, 0.6), new Vector3d(-6, 0, 0.4)),
+                };
+                foreach (var c in cases)
+                {
+                    Reveal(plates[c.key].All);
+                    Turning(Framed(0.06), c.spin, c.name + "-spin-frames", 72);
+                    Walk(c.from, c.to, c.ahead, 24, c.name + "-walk-through-frames");
+                }
+            }),
+            Do("deep beam, load walking", () =>
+            {
+                Reveal(plates['B'].All);
+                Walking("B load node", 2, 48, 2, Front(Framed(0.02)), "deep-beam-walking-frames");
+            }),
+            Do("slab, point load walking", () =>
+            {
+                // A point load alone: the lines turn round wherever it is. The uniform load is
+                // unwired from the load pattern rather than set to 0: Model View stops drawing at
+                // an area load of 0, before the supports.
+                var ids = Members('C');
+                var pattern = Member(ids, LoadPatternId).Params.Input[1];
+                var uniform = Member(ids, MeshLoadId).Params.Output[0];
+                pattern.RemoveSource(uniform);
+                pattern.ExpireSolution(false);
+                Slider("C point load [kN]", 300);
+                LoadScale(plates['C'].Symbols, 0.006);
+                Loads(plates['C'].Symbols, true);
+                Reveal(plates['C'].All);
+                var view = Aim(Framed(0.02), slab, Vector3d.ZAxis);
+                Shoot(view, "slab-point-load");
+                Shoot(Top(Framed(0.03)), "slab-point-load-top");
+                Walking("C load node", 2, 28, 1, view, "slab-walking-frames");
+                Slider("C point load [kN]", 0);
+                Loads(plates['C'].Symbols, false);
+                pattern.AddSource(uniform);
+                pattern.ExpireSolution(true);
+            }),
+            Do("cantilever wall, growing", () =>
+            {
+                Reveal(plates['A'].All);
+                Growing(plates['A'], Front(Framed(0.02)), "cantilever-wall-growing-frames", 40);
+            }),
+            Do("close", Close),
+        };
+    }
+
+    /// <summary>
+    /// A Custom Preview of <paramref name="source"/> in a matte <paramref name="colour"/>, from
+    /// Grasshopper's Create Material with no specular and no shine: a floor or a ceiling reads as
+    /// concrete then, not as plastic with the display's lights on it. <paramref name="flat"/> lights it
+    /// from within rather: the colour whatever the light, for a floor the display lights edge-on.
+    /// </summary>
+    static IGH_Component Matte(IGH_Param source, Color colour, PointF at, bool flat = false)
+    {
+        var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Desc.Name == "Create Material");
+        if (proxy == null) { Log("  no Create Material component"); return Preview(source, colour, at); }
+        var material = Place((IGH_Component)proxy.CreateInstance(), at);
+        var inputs = material.Params.Input;
+        void Colour(int i, Color c)
+        {
+            if (i < inputs.Count && inputs[i] is GH_PersistentParam<GH_Colour> p) { p.PersistentData.Clear(); p.PersistentData.Append(new GH_Colour(c)); }
+        }
+        void Number(int i, double v)
+        {
+            if (i < inputs.Count && inputs[i] is GH_PersistentParam<GH_Number> p) { p.PersistentData.Clear(); p.PersistentData.Append(new GH_Number(v)); }
+        }
+        // Diffuse, Specular, Emission, Transparency, Shine.
+        Colour(0, flat ? Color.Black : colour);
+        Colour(1, Color.Black);
+        Colour(2, flat ? colour : Color.Black);
+        Number(3, 0);
+        Number(4, 0);
+        var preview = Place((IGH_Component)Instances.ComponentServer.EmitObject(CustomPreviewId), new PointF(at.X + 160, at.Y));
+        preview.Params.Input[0].AddSource(source);
+        preview.Params.Input[1].AddSource(material.Params.Output[0]);
+        material.ExpireSolution(false);
+        preview.ExpireSolution(false);
+        return preview;
+    }
+
+    /// <summary>Grasshopper's Mesh Brep on <paramref name="source"/>, at its default settings.</summary>
+    static IGH_Param Meshed(IGH_Param source, PointF at)
+    {
+        var proxy = Instances.ComponentServer.ObjectProxies.FirstOrDefault(p => p.Desc.Name == "Mesh Brep");
+        if (proxy == null) { Log("  no Mesh Brep component"); return source; }
+        var mesher = Place((IGH_Component)proxy.CreateInstance(), at);
+        mesher.Params.Input[0].AddSource(source);
+        mesher.ExpireSolution(false);
+        return mesher.Params.Output[0];
+    }
+
+    /// <summary>
+    /// A walk from <paramref name="from"/> to <paramref name="to"/>, looking along <paramref name="ahead"/>
+    /// through a <paramref name="lens"/> mm lens, easing in and out as a walk starts and stops:
+    /// <paramref name="frames"/> frames into <paramref name="folder"/>. Every case gets one, and a spin.
+    /// </summary>
+    static void Walk(Point3d from, Point3d to, Vector3d ahead, double lens, string folder, int frames = 72)
+    {
+        var view = Inside(from, from + ahead, lens);
+        var vp = view.ActiveViewport;
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        for (int k = 0; k < frames; k++)
+        {
+            double t = 0.5 - 0.5 * Math.Cos(Math.PI * k / (frames - 1));
+            var at = from + (to - from) * t;
+            vp.SetCameraLocations(at + ahead, at);
+            vp.CameraUp = Vector3d.ZAxis;
+            Shoot(view, Path.Combine(folder, k.ToString("D3")));
+        }
+        Log($"  {frames} frames, {from.DistanceTo(to):F0} m walked");
+    }
+
+    /// <summary>A perspective from <paramref name="eye"/> to <paramref name="target"/>, as someone standing there would see it.</summary>
+    static RhinoView Inside(Point3d eye, Point3d target, double lens)
+    {
+        var view = View("Perspective");
+        var vp = view.ActiveViewport;
+        vp.ChangeToPerspectiveProjection(true, lens);
+        vp.Camera35mmLensLength = lens;
+        vp.SetCameraLocations(target, eye);
+        vp.CameraUp = Vector3d.ZAxis;
+        return view;
+    }
+
+    // StressLinesNerviFlatSlab, the Nervi flat slab: a flat slab on a 5 m grid of columns and its bending lines, from above; from
+    // below, the lines as ribs, as Nervi built them, in the brand colours and in concrete alone; the
+    // lines growing from their seed; a walk under the slab between two rows of columns.
+    static List<(string, Func<bool>)> NerviFlatSlab()
+    {
+        Drawn2d d = null;
+        IGH_Component[] coloured = null, concrete = null;
+        // Standing between the second and third rows of columns, at eye height above the floor
+        // 4 m down, looking along the rows and a little up.
+        var eye = new Point3d(7.5, -3.5, -2.4);
+        var ahead = new Vector3d(2.0, 22.0, 1.9);
+        // As Nervi's floors photograph: the ribs light, the slab between them in their shadow.
+        var light = Color.FromArgb(234, 232, 227);
+        var recess = Color.FromArgb(160, 160, 157);
+        var floorGrey = Color.FromArgb(226, 225, 221);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () =>
+            {
+                Open(here + "StressLinesNerviFlatSlab.gh");
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
+                LinesLog(Components(StressLinesId).First());
+            }),
+            Do("from above", () =>
+            {
+                var lines = Components(StressLinesId).First();
+                var slab = Find<IGH_Component>("100 x 100 quads").Params.Output[0];
+                d = Previews(lines, slab, Color.FromArgb(26, DarkTech), Find<IGH_Component>("25 x 25 m").Params.Output[0]);
+                // From below: the ribs in the brand colours, or in concrete as the slab and columns.
+                var ribs1 = Out(Find<IGH_Component>("Ribs SL1"), "Extrusion");
+                var ribs2 = Out(Find<IGH_Component>("Ribs SL2"), "Extrusion");
+                var shafts = Find<IGH_Component>("Column shafts").Params.Output[0];
+                var floor = Find<IGH_Component>("Floor").Params.Output[0];
+                var at = Beside(lines, 120, 420);
+                // Meshes rather than Breps: Grasshopper draws a Brep's edges, one across a rib at
+                // every span of its curve, and mesh edges are off for the pictures.
+                ribs1 = Meshed(ribs1, new PointF(at.X - 140, at.Y + 360));
+                ribs2 = Meshed(ribs2, new PointF(at.X - 140, at.Y + 480));
+                shafts = Meshed(shafts, new PointF(at.X - 140, at.Y + 120));
+                var underside = Matte(slab, recess, at);
+                var columns = Matte(shafts, light, new PointF(at.X, at.Y + 120));
+                var ground = Matte(floor, floorGrey, new PointF(at.X, at.Y + 240), true);
+                coloured = new[] { Matte(ribs1, Purple, new PointF(at.X, at.Y + 360)), Matte(ribs2, LightBlue, new PointF(at.X, at.Y + 480)),
+                                   underside, columns, ground };
+                concrete = new[] { Matte(ribs1, light, new PointF(at.X, at.Y + 600)), Matte(ribs2, light, new PointF(at.X, at.Y + 720)),
+                                   underside, columns, ground };
+                doc.NewSolution(false);
+                Canvas("nervi-flat-slab-canvas", 1.0f);
+                AddSymbols(d, Components(AssembleId).First().Params.Output[0], 0, 0.6);
+                doc.NewSolution(false);
+                Reveal(d.All);
+                Shoot(Top(Framed(0.02)), "nervi-flat-slab-top");
+                Shoot(Aim(Framed(0.02), new Vector3d(0.6, -1.2, 0.9), Vector3d.ZAxis), "nervi-flat-slab");
+                Reveal(d.Clean);
+                Shoot(Top(Framed(0.02)), "nervi-flat-slab-top-clean");
+            }),
+            Do("from below", () =>
+            {
+                Reveal(coloured);
+                Shoot(Inside(eye, eye + ahead, 20), "nervi-flat-slab-below");
+                Shoot(Inside(new Point3d(-6, -6, -2.4), new Point3d(12.5, 12.5, -0.8), 20), "nervi-flat-slab-below-corner");
+                Reveal(concrete);
+                Shoot(Inside(eye, eye + ahead, 20), "nervi-flat-slab-below-concrete");
+                Shoot(Inside(new Point3d(-6, -6, -2.4), new Point3d(12.5, 12.5, -0.8), 20), "nervi-flat-slab-below-corner-concrete");
+            }),
+            Do("growing", () =>
+            {
+                Reveal(d.Clean);
+                Growing(d, Top(Framed(0.02)), "nervi-flat-slab-growing-frames", 40);
+            }),
+            Do("spin and walk", () =>
+            {
+                // Twelve metres along between the rows of columns; and the hall turning round.
+                Reveal(coloured);
+                Walk(eye, eye + new Vector3d(0, 12, 0), ahead, 20, "nervi-flat-slab-walk-through-frames");
+                Turning(Framed(0.02), new Vector3d(0.8, -1.2, 0.45), "nervi-flat-slab-spin-frames", 72);
+            }),
+            Do("close", Close),
+        };
+    }
+
+    // StressLinesNerviUmbrella, the Nervi umbrella: a square slab cantilevering from one column, its
+    // bending lines from above; nine of them as a hall, from below, the lines as ribs in the brand
+    // colours and in concrete; the hall spinning, and walked through between the columns.
+    static List<(string, Func<bool>)> NerviUmbrella()
+    {
+        Drawn2d d = null;
+        IGH_Component[] coloured = null, concrete = null;
+        // Between a row of columns and the gap to the next row of umbrellas, at eye height above the
+        // floor 8 m down, looking along the hall and a little up.
+        var from = new Point3d(11.5, -24, -6.4);
+        var to = new Point3d(11.5, 6, -6.4);
+        var ahead = new Vector3d(1.5, 20, 3.5);
+        var light = Color.FromArgb(234, 232, 227);
+        var recess = Color.FromArgb(160, 160, 157);
+        var floorGrey = Color.FromArgb(226, 225, 221);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () =>
+            {
+                Open(here + "StressLinesNerviUmbrella.gh");
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
+                LinesLog(Components(StressLinesId).First());
+            }),
+            Do("one umbrella", () =>
+            {
+                var lines = Components(StressLinesId).First();
+                d = Previews(lines, Find<IGH_Component>("60 x 60 quads").Params.Output[0], Color.FromArgb(26, DarkTech),
+                             Find<IGH_Component>("15 x 15 m").Params.Output[0]);
+                var at = Beside(lines, 120, 420);
+                var slabs = Matte(Find<IGH_Component>("Hall slabs").Params.Output[0], recess, at);
+                var columns = Matte(Meshed(Find<IGH_Component>("Hall columns").Params.Output[0], new PointF(at.X - 140, at.Y + 120)), light, new PointF(at.X, at.Y + 120));
+                var ground = Matte(Find<IGH_Component>("Floor").Params.Output[0], floorGrey, new PointF(at.X, at.Y + 240), true);
+                var ribs1 = Meshed(Find<IGH_Component>("Hall ribs SL1").Params.Output[0], new PointF(at.X - 140, at.Y + 360));
+                var ribs2 = Meshed(Find<IGH_Component>("Hall ribs SL2").Params.Output[0], new PointF(at.X - 140, at.Y + 480));
+                coloured = new[] { Matte(ribs1, Purple, new PointF(at.X, at.Y + 360)), Matte(ribs2, LightBlue, new PointF(at.X, at.Y + 480)), slabs, columns, ground };
+                concrete = new[] { Matte(ribs1, light, new PointF(at.X, at.Y + 600)), Matte(ribs2, light, new PointF(at.X, at.Y + 720)), slabs, columns, ground };
+                doc.NewSolution(false);
+                Canvas("nervi-umbrella-canvas", 1.0f);
+                AddSymbols(d, Components(AssembleId).First().Params.Output[0], 0, 0.3);
+                doc.NewSolution(false);
+                Reveal(d.All);
+                Shoot(Top(Framed(0.02)), "nervi-umbrella-top");
+                Shoot(Aim(Framed(0.02), new Vector3d(0.6, -1.2, 0.9), Vector3d.ZAxis), "nervi-umbrella");
+                Reveal(d.Clean);
+                Shoot(Top(Framed(0.02)), "nervi-umbrella-top-clean");
+            }),
+            Do("the hall", () =>
+            {
+                Reveal(coloured);
+                Shoot(Inside(from, from + ahead, 20), "nervi-umbrella-below");
+                Shoot(Inside(new Point3d(-34, -34, -6.4), new Point3d(7.5, 7.5, -3), 24), "nervi-umbrella-hall");
+                Reveal(concrete);
+                Shoot(Inside(from, from + ahead, 20), "nervi-umbrella-below-concrete");
+                Shoot(Inside(new Point3d(-34, -34, -6.4), new Point3d(7.5, 7.5, -3), 24), "nervi-umbrella-hall-concrete");
+            }),
+            Do("spin and walk", () =>
+            {
+                Reveal(coloured);
+                Walk(from, to, ahead, 20, "nervi-umbrella-walk-through-frames");
+                Turning(Framed(0.02), new Vector3d(0.8, -1.2, 0.45), "nervi-umbrella-spin-frames", 72);
+            }),
+            Do("growing", () =>
+            {
+                Reveal(d.Clean);
+                Growing(d, Top(Framed(0.02)), "nervi-umbrella-growing-frames", 40);
+            }),
+            Do("close", Close),
+        };
+    }
+
+    // StressLinesMusmeciBridge, the Musmeci bridge: a membrane form-found by Kangaroo on paired footings
+    // over four spans, analysed as a concrete shell under its own weight, its lines in its surface, a
+    // deck on its crowns; from three sides and from under it; the form being found; spinning; walked
+    // through underneath.
+    static List<(string, Func<bool>)> MusmeciBridge()
+    {
+        Drawn2d d = null;
+        IGH_Component deck = null, ground = null;
+        BoundingBox frame = BoundingBox.Empty;
+        var eye = new Vector3d(0.55, -1.3, 0.38);
+        int used = 0;
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open(here + "StressLinesMusmeciBridge.gh")),
+            Do("bridge", () =>
+            {
+                var zombie = Find<IGH_Component>("Zombie Solver");
+                used = Values<GH_Integer>(zombie.Params.Output[0]).Select(i => i.Value).FirstOrDefault();
+                var form = Find<IGH_Component>("Form");
+                Log($"  Kangaroo: {used} iterations; form {Values<GH_Mesh>(form.Params.Output[0]).FirstOrDefault()?.Value.GetBoundingBox(true)}");
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
+                var lines = Components(StressLinesId).First();
+                LinesLog(lines);
+                // Matte: shiny, the membrane reads white, its form lost.
+                d = Previews(lines, form.Params.Output[0], Color.FromArgb(222, 221, 217), null, true);
+                var at = Beside(lines, 120, 420);
+                deck = Matte(Find<IGH_Component>("Deck").Params.Output[0], Color.FromArgb(234, 232, 227), at);
+                ground = Matte(Find<IGH_Component>("Ground").Params.Output[0], Color.FromArgb(226, 225, 221), new PointF(at.X, at.Y + 120), true);
+                doc.NewSolution(false);
+                Canvas("musmeci-bridge-canvas", 1.0f);
+                AddSymbols(d, Components(AssembleId).First().Params.Output[0], 0, 1.2);
+                doc.NewSolution(false);
+                Reveal(d.All.Concat(new[] { deck }).ToArray());
+                frame = Framed(0.02);
+                Shoot(Aim(frame, eye, Vector3d.ZAxis), "musmeci-bridge");
+                Shoot(Front(frame), "musmeci-bridge-elevation");
+                Reveal(d.Clean.Concat(new[] { deck }).ToArray());
+                Shoot(Aim(frame, eye, Vector3d.ZAxis), "musmeci-bridge-clean");
+                Reveal(d.Clean.Concat(new[] { deck, ground }).ToArray());
+                Shoot(Inside(new Point3d(-14, 30, 1.7), new Point3d(30, 4, 6), 20), "musmeci-bridge-from-the-valley");
+                Shoot(Inside(new Point3d(14, 6, 1.7), new Point3d(40, 5, 7), 18), "musmeci-bridge-below");
+                Reveal(d.Clean);
+                Shoot(Top(Framed(0.02)), "musmeci-bridge-top");
+            }),
+            Do("form finding", () =>
+            {
+                // As the Kangaroo shell's: evenly spaced iterations, ending where the net is all but up.
+                Reveal(d.All.Concat(new[] { deck }).ToArray());
+                var view = Aim(frame, eye, Vector3d.ZAxis);
+                var form = Find<IGH_Component>("Form");
+                double Rise() => Values<GH_Mesh>(form.Params.Output[0]).FirstOrDefault()?.Value.GetBoundingBox(true).Max.Z ?? 0;
+                var run = Components(RunAnalysisId).First();
+                run.Locked = true;
+                double top = Rise();
+                int settled = used;
+                for (int i = used / 40; i < used; i += Math.Max(1, used / 40))
+                {
+                    Slider("Iterations", i);
+                    if (Rise() >= 0.99 * top) { settled = i; break; }
+                }
+                run.Locked = false;
+                int frames = 40;
+                var stops = Enumerable.Range(0, frames).Select(k => 1 + (int)Math.Round((settled - 1) * (double)k / (frames - 1))).Distinct().ToList();
+                Directory.CreateDirectory(Path.Combine(outDir, "musmeci-bridge-form-finding-frames"));
+                var watch = Stopwatch.StartNew();
+                for (int k = 0; k < stops.Count; k++)
+                {
+                    Slider("Iterations", stops[k]);
+                    doc.NewSolution(false);
+                    Shoot(view, Path.Combine("musmeci-bridge-form-finding-frames", k.ToString("D3")));
+                }
+                Slider("Iterations", 20000);
+                doc.NewSolution(false);
+                Log($"  {stops.Count} frames to iteration {stops.Last()} of {used}, in {watch.Elapsed.TotalSeconds:F0} s");
+            }),
+            Do("spin and walk", () =>
+            {
+                Reveal(d.All.Concat(new[] { deck }).ToArray());
+                Turning(Grown(frame, 0.04), eye, "musmeci-bridge-spin-frames", 72);
+                // Along the valley under the bridge, through two of its vaults.
+                Reveal(d.Clean.Concat(new[] { deck, ground }).ToArray());
+                Walk(new Point3d(-14, 6, 1.7), new Point3d(44, 6, 1.7), new Vector3d(14, 0, 2.2), 20, "musmeci-bridge-walk-through-frames");
+            }),
+            Do("close", Close),
+        };
+    }
+
+    // ------------------------------------------------------------------ the studies
+
+    /// <summary>
+    /// A study of StressLinesStudies.py, Studies/<see cref="Name"/>.gh, and where to stand for its
+    /// pictures: below it, and walking through it, at eye height.
+    /// </summary>
+    class Study
+    {
+        public string Name;
+        public Vector3d Eye = new Vector3d(0.6, -1.2, 0.75), Spin = new Vector3d(0.8, -1.2, 0.45);
+        public double SupportScale = 0.5, Lens = 20;
+        public Point3d From, To;
+        public Vector3d Ahead;
+    }
+
+    // Scene names to studies. The walks start outside each, at eye height above its floor, and go in.
+    static readonly Dictionary<string, Study> Studies = new Dictionary<string, Study>
+    {
+        ["cornerslab"] = new Study { Name = "corner-slab", From = new Point3d(-4, -4, -2.4), To = new Point3d(8, 8, -2.4), Ahead = new Vector3d(9, 9, 2.2) },
+        ["roundumbrella"] = new Study { Name = "round-umbrella", From = new Point3d(-13, -3, -4.4), To = new Point3d(9, -3, -4.4), Ahead = new Vector3d(10, 3, 2.6), SupportScale = 0.25 },
+        ["roundslab"] = new Study { Name = "round-slab", From = new Point3d(-14, -1.5, -3.4), To = new Point3d(10, -1.5, -3.4), Ahead = new Vector3d(10, 2, 2.2) },
+        ["candela"] = new Study { Name = "candela-umbrella", From = new Point3d(6.25, -26, -2.4), To = new Point3d(6.25, 4, -2.4), Ahead = new Vector3d(1.5, 20, 3.2), SupportScale = 0.25 },
+        ["groinvault"] = new Study { Name = "groin-vault", From = new Point3d(0, -12, 1.6), To = new Point3d(0, 5, 1.6), Ahead = new Vector3d(0.8, 10, 1.4) },
+        ["palazzetto"] = new Study { Name = "palazzetto", From = new Point3d(-21, -2, 1.6), To = new Point3d(6, -2, 1.6), Ahead = new Vector3d(10, 2, 2.4) },
+        ["isler"] = new Study { Name = "isler-shell", From = new Point3d(0, -16, 1.6), To = new Point3d(0, 3, 1.6), Ahead = new Vector3d(0.6, 10, 2.2) },
+        ["hexshell"] = new Study { Name = "hexagonal-shell", From = new Point3d(-17, 1, 1.6), To = new Point3d(4, 1, 1.6), Ahead = new Vector3d(10, 0.8, 2.2) },
+    };
+
+    static IGH_Component Optional(string nick) => doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == nick);
+
+    /// <summary>
+    /// A study: its lines from above, with and without its supports; from below, standing where the
+    /// walk starts - a slab's lines as ribs, in the brand colours and in concrete; its definition;
+    /// a Kangaroo form being found; spinning; walked through; its lines growing.
+    /// </summary>
+    static List<(string, Func<bool>)> StudyScene(Study s)
+    {
+        string n = s.Name;
+        Drawn2d d = null;
+        IGH_Component[] coloured = null, concrete = null;
+        IGH_Component floor = null;
+        bool kangaroo = false;
+        // The structure without its floor, framed: the floor reaches well past it, and framed with it
+        // the structure would be a speck in the middle.
+        BoundingBox Structure()
+        {
+            Reveal(coloured.Where(c => c != floor).ToArray());
+            var box = Framed(0.02);
+            Reveal(coloured);
+            return box;
+        }
+        var light = Color.FromArgb(234, 232, 227);
+        var recess = Color.FromArgb(160, 160, 157);
+        var shellGrey = Color.FromArgb(222, 221, 217);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () =>
+            {
+                Open(here + "Studies" + Path.DirectorySeparatorChar + n + ".gh");
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
+                LinesLog(Components(StressLinesId).First());
+                var zombie = Optional("Zombie Solver");
+                kangaroo = zombie != null;
+                if (kangaroo)
+                    Log($"  Kangaroo: {Values<GH_Integer>(zombie.Params.Output[0]).Select(i => i.Value).FirstOrDefault()} iterations, " +
+                        $"rise {Values<GH_Mesh>(Find<IGH_Component>("Surface").Params.Output[0]).FirstOrDefault()?.Value.GetBoundingBox(true).Max.Z:F2} m");
+            }),
+            Do("pictures", () =>
+            {
+                var lines = Components(StressLinesId).First();
+                var surface = Find<IGH_Component>("Surface").Params.Output[0];
+                bool slab = Optional("Ribs SL1") != null;
+                d = slab ? Previews(lines, surface, Color.FromArgb(26, DarkTech), null) : Previews(lines, surface, shellGrey, null, true);
+                IGH_Param Hall(string nick, IGH_Param single) => Optional(nick)?.Params.Output[0] ?? single;
+                var at = Beside(lines, 120, 420);
+                PointF Next() { at = new PointF(at.X, at.Y + 120); return new PointF(at.X + 160, at.Y); }
+                floor = Matte(Find<IGH_Component>("Floor").Params.Output[0], Color.FromArgb(226, 225, 221), Next(), true);
+                var shafts = Optional("Column shafts");
+                var columns = shafts == null ? null : Matte(Meshed(Hall("Hall columns", shafts.Params.Output[0]), Next()), light, Next());
+                if (slab)
+                {
+                    var ribs1 = Meshed(Hall("Hall SL1", Out(Find<IGH_Component>("Ribs SL1"), "Extrusion")), Next());
+                    var ribs2 = Meshed(Hall("Hall SL2", Out(Find<IGH_Component>("Ribs SL2"), "Extrusion")), Next());
+                    var underside = Matte(Hall("Hall surface", surface), recess, Next());
+                    coloured = new[] { Matte(ribs1, Purple, Next()), Matte(ribs2, LightBlue, Next()), underside, columns, floor };
+                    concrete = new[] { Matte(ribs1, light, Next()), Matte(ribs2, light, Next()), underside, columns, floor };
+                }
+                else
+                {
+                    var hall = Optional("Hall surface") != null;
+                    coloured = hall
+                        ? new[] { Preview(Hall("Hall SL1", null), Purple, Next()), Preview(Hall("Hall SL2", null), LightBlue, Next()),
+                                  Matte(Hall("Hall surface", null), shellGrey, Next()), columns, floor }
+                        : new[] { d.Sl1, d.Sl2, d.Surface, columns, floor };
+                }
+                coloured = coloured.Where(c => c != null).ToArray();
+                concrete = concrete?.Where(c => c != null).ToArray();
+                doc.NewSolution(false);
+                Canvas(n + "-canvas", 1.0f);
+                AddSymbols(d, Components(AssembleId).First().Params.Output[0], 0, s.SupportScale);
+                doc.NewSolution(false);
+                Reveal(d.All);
+                Shoot(Top(Framed(0.02)), n + "-top");
+                Shoot(Aim(Framed(0.02), s.Eye, Vector3d.ZAxis), n);
+                Reveal(d.Clean);
+                Shoot(Top(Framed(0.02)), n + "-top-clean");
+                Shoot(Aim(Framed(0.02), s.Eye, Vector3d.ZAxis), n + "-clean");
+                var structure = Structure();
+                Shoot(Inside(s.From, s.From + s.Ahead, s.Lens), n + "-below");
+                Shoot(Aim(structure, new Vector3d(0.9, -1.1, 0.3), Vector3d.ZAxis), n + "-outside");
+                if (concrete != null)
+                {
+                    Reveal(concrete);
+                    Shoot(Inside(s.From, s.From + s.Ahead, s.Lens), n + "-below-concrete");
+                    Shoot(Aim(structure, new Vector3d(0.9, -1.1, 0.3), Vector3d.ZAxis), n + "-outside-concrete");
+                }
+            }),
+            Do("form finding", () =>
+            {
+                if (!kangaroo) return;
+                Reveal(d.All);
+                FormFinding(n, Grown(Framed(0.02), 0.02), s.Eye);
+            }),
+            Do("spin and walk", () =>
+            {
+                Turning(Grown(Structure(), 0.04), s.Spin, n + "-spin-frames", 72);
+                Walk(s.From, s.To, s.Ahead, s.Lens, n + "-walk-through-frames");
+            }),
+            Do("growing", () =>
+            {
+                Reveal(d.Clean);
+                Growing(d, Top(Framed(0.02)), n + "-growing-frames", 40);
+            }),
+            Do("close", Close),
+        };
+    }
+
+    /// <summary>
+    /// A Kangaroo form being found, as frames into <paramref name="name"/>-form-finding-frames:
+    /// Iterations moved evenly from 1 to where the form is all but up - found first with the analysis
+    /// locked, Kangaroo alone - the model analysed and its lines traced at each. Its form is the
+    /// Surface; its slider, Iterations, is put back to its end.
+    /// </summary>
+    static void FormFinding(string name, BoundingBox frame, Vector3d eye)
+    {
+        var view = Aim(frame, eye, Vector3d.ZAxis);
+        var form = Find<IGH_Component>("Surface");
+        var zombie = Find<IGH_Component>("Zombie Solver");
+        int used = Values<GH_Integer>(zombie.Params.Output[0]).Select(i => i.Value).FirstOrDefault();
+        double Rise() => Values<GH_Mesh>(form.Params.Output[0]).FirstOrDefault()?.Value.GetBoundingBox(true).Max.Z ?? 0;
+        var slider = Find<GH_NumberSlider>("Iterations");
+        double end = (double)slider.Slider.Value;
+        var run = Components(RunAnalysisId).First();
+        run.Locked = true;
+        double top = Rise();
+        int settled = used;
+        for (int i = Math.Max(1, used / 40); i < used; i += Math.Max(1, used / 40))
+        {
+            Slider("Iterations", i);
+            if (Rise() >= 0.99 * top) { settled = i; break; }
+        }
+        run.Locked = false;
+        int frames = 40;
+        var stops = Enumerable.Range(0, frames).Select(k => 1 + (int)Math.Round((settled - 1) * (double)k / (frames - 1))).Distinct().ToList();
+        string folder = name + "-form-finding-frames";
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        var watch = Stopwatch.StartNew();
+        for (int k = 0; k < stops.Count; k++)
+        {
+            Slider("Iterations", stops[k]);
+            doc.NewSolution(false);
+            Shoot(view, Path.Combine(folder, k.ToString("D3")));
+        }
+        Slider("Iterations", end);
+        doc.NewSolution(false);
+        Log($"  {stops.Count} frames to iteration {stops.Last()} of {used}, in {watch.Elapsed.TotalSeconds:F0} s");
+    }
+
+    // StressLinesShell: a net held at its corners and pushed up, form-found by Kangaroo, analysed as a
+    // concrete shell under its own weight, its lines in its surface: from three sides and from above;
+    // the form found iteration by iteration with the lines on each; turning round; the lines growing.
+    static List<(string, Func<bool>)> Kangaroo()
+    {
+        Drawn2d d = null;
+        BoundingBox frame = BoundingBox.Empty;
+        var eye = new Vector3d(1, -1.3, 0.55);
+        int used = 0;
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open(here + "StressLinesShell.gh")),
+            Do("shell", () =>
+            {
+                var zombie = Find<IGH_Component>("Zombie Solver");
+                used = Values<GH_Integer>(zombie.Params.Output[0]).Select(i => i.Value).FirstOrDefault();
+                var form = Find<IGH_Component>("Form");
+                var mesh = Values<GH_Mesh>(form.Params.Output[0]).FirstOrDefault()?.Value;
+                Log($"  Kangaroo: {used} iterations; form {mesh?.GetBoundingBox(true)}");
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
+                var lines = Components(StressLinesId).First();
+                LinesLog(lines);
+                d = Previews(lines, form.Params.Output[0], Color.FromArgb(255, 226, 229, 234), null);
+                doc.NewSolution(false);
+                Canvas("shell-canvas", 1.0f);
+                AddSymbols(d, Components(AssembleId).First().Params.Output[0], 0, 0.8);
+                doc.NewSolution(false);
+                Reveal(d.All);
+                frame = Grown(Drawn(), 0.02);
+                Shoot(Aim(frame, eye, Vector3d.ZAxis), "shell");
+                Shoot(Aim(frame, new Vector3d(1, -0.25, 0.22), Vector3d.ZAxis), "shell-low");
+                Shoot(Aim(frame, new Vector3d(0.3, -0.5, 1.4), Vector3d.ZAxis), "shell-above");
+                Shoot(Top(frame), "shell-top");
+                Reveal(d.Clean);
+                Shoot(Aim(frame, eye, Vector3d.ZAxis), "shell-clean");
+            }),
+            Do("form finding", () =>
+            {
+                // Evenly spaced iterations, to the end: pushed so lightly, the net rises slowly
+                // and steadily, not all at the start.
+                Reveal(d.All);
+                var view = Aim(frame, eye, Vector3d.ZAxis);
+                var form = Find<IGH_Component>("Form");
+                double Rise() => Values<GH_Mesh>(form.Params.Output[0]).FirstOrDefault()?.Value.GetBoundingBox(true).Max.Z ?? 0;
+                // Where the net is all but up: found with the analysis locked, Kangaroo alone.
+                var run = Components(RunAnalysisId).First();
+                run.Locked = true;
+                double top = Rise();
+                int settled = used;
+                for (int i = used / 40; i < used; i += Math.Max(1, used / 40))
+                {
+                    Slider("Iterations", i);
+                    if (Rise() >= 0.99 * top) { settled = i; break; }
+                }
+                run.Locked = false;
+                int frames = 40;
+                var stops = Enumerable.Range(0, frames).Select(k => 1 + (int)Math.Round((settled - 1) * (double)k / (frames - 1))).Distinct().ToList();
+                var rises = new List<string>();
+                Directory.CreateDirectory(Path.Combine(outDir, "shell-form-finding-frames"));
+                var watch = Stopwatch.StartNew();
+                for (int k = 0; k < stops.Count; k++)
+                {
+                    Slider("Iterations", stops[k]);
+                    doc.NewSolution(false);
+                    var mesh = Values<GH_Mesh>(form.Params.Output[0]).FirstOrDefault()?.Value;
+                    rises.Add(mesh == null ? "-" : mesh.GetBoundingBox(true).Max.Z.ToString("F2", Inv));
+                    Shoot(view, Path.Combine("shell-form-finding-frames", k.ToString("D3")));
+                }
+                Slider("Iterations", 10000);
+                doc.NewSolution(false);
+                Log($"  {stops.Count} frames to iteration {stops.Last()} of {used}, in {watch.Elapsed.TotalSeconds:F0} s; rise {string.Join(" ", rises)}");
+            }),
+            Do("spin and walk", () =>
+            {
+                Reveal(d.All);
+                Turning(Grown(frame, 0.04), eye, "shell-spin-frames", 72);
+                // Under the crown, from one side of the shell to the other.
+                Walk(new Point3d(2, 4.5, 1.4), new Point3d(8.5, 5.5, 1.4), new Vector3d(8, 1, 1.2), 24, "shell-walk-through-frames");
+            }),
+            Do("growing", () =>
+            {
+                Reveal(d.All);
+                Growing(d, Aim(frame, eye, Vector3d.ZAxis), "shell-growing-frames", 40);
+            }),
+            Do("close", Close),
+        };
+    }
 
     static BoundingBox Grown(BoundingBox b, double f)
     {

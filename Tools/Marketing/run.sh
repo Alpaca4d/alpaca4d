@@ -7,7 +7,9 @@
 #     PUBLISH=0 ./run.sh cow        # the captures only, in out/; ./publish.sh cow later
 #
 # Scenes: cow femur dragon bricks mixed (solids), bridge tower benchmarks (topology optimisation),
-# lines2d bridgelines (principal stress lines). See README.md.
+# lines2d bridgelines plates kangaroo nerviflatslab nerviumbrella musmeci and the studies
+# (cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell) (principal stress lines), twospan (section optimiser).
+# See README.md.
 #
 # Starts Rhino 8 and quits it at the end. With a Rhino already open, it runs in that one instead, if
 # it runs the script server: set RHINO_ID to its name in `rhinocode list`. The pictures show the
@@ -18,7 +20,7 @@ cd "$(dirname "$0")"
 here=$(pwd)
 repo=$(cd ../.. && pwd)
 
-ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan"
+ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell"
 SCENES=${*:-$ALL}
 OUT=${OUT:-$here/out}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}
