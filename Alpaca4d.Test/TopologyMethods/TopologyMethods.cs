@@ -740,8 +740,116 @@ static class TopologyMethods
                                   $"volumes {string.Join(" ", mm.History.Last().MaterialVolumes.Select(N))}, {soft} soft and {stiff} stiff at 0.5");
             }
         }
+        else if (name == "speed")
+        {
+            // The three methods timed on one problem at several sizes: speed bridge|truss|joint [sizes] [methods], each a
+            // comma-separated list. Sizes are bricks per metre for the bridge (2,3,4,5), per side of the cube for the nodes
+            // (10,20,30); methods are simp, beso and multi (two materials, as the examples), and multi1 (steel alone).
+            string kind = a.Length > 1 ? a[1] : "truss";
+            var sizes = (a.Length > 2 ? a[2] : kind == "bridge" ? "2,3,4,5" : "10,20,30").Split(',').Select(int.Parse).ToList();
+            var methods = (a.Length > 3 ? a[3] : "simp,beso,multi").Split(',').ToList();
+            Console.WriteLine($"{Environment.ProcessorCount} cores, OpenSees {openSees}");
+            foreach (int n in sizes)
+                foreach (var method in methods)
+                    Speed(kind, n, method, openSees, folder);
+        }
         else
             throw new ArgumentException($"No bench called {name}.");
+    }
+
+    /// <summary>
+    /// One timed run, with an OpenSees of its own started inside the clock, as a component starts one. Each method keeps
+    /// the share of the examples - 20% of the bridge's block below the deck and of the joint, 12% of the truss node -
+    /// and the iterations they allow: 200 for SIMP, 300 for BESO and Multi-Material. Appends a line to speed_summary.csv
+    /// and writes the run's history, with the wall clock at the end of each iteration.
+    /// </summary>
+    static void Speed(string kind, int n, string method, string openSees, string folder)
+    {
+        string stem = $"speed-{kind}-{n}-{method}";
+        double fraction = kind == "truss" ? 0.12 : 0.2;
+        double[] moduli = kind == "truss" ? new[] { 210e6, 70e6 } : new[] { 210e6, 33e6 };
+        double[] shares = kind == "truss" ? new[] { 0.04, 0.08 } : kind == "joint" ? new[] { 0.06, 0.14 } : new[] { 0.05, 0.15 };
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        List<SolidCell> cells;
+        int nodes;
+        TopologyAnalysis analysis;
+        if (kind == "bridge")
+        {
+            var problem = Bridge(n);
+            problem.Name = stem;
+            cells = problem.Grid.Cells(problem.E, problem.Passive);
+            nodes = problem.Grid.Nodes;
+            analysis = Start(problem, openSees, folder, cells);
+        }
+        else
+        {
+            var v = kind == "truss" ? TrussNode(n) : kind == "joint" ? BeamColumnJoint(n) : throw new ArgumentException($"No problem called {kind}.");
+            cells = v.Cells(210e6);
+            analysis = Start(v, stem, openSees, folder, cells, 210e6, 0.3);
+            nodes = v.NodeCount;
+        }
+        double started = clock.Elapsed.TotalSeconds;
+
+        var wall = new List<double>();
+        Action<TopologyIteration, double[]> tick = (it, densities) => wall.Add(clock.Elapsed.TotalSeconds);
+        TopologyResult result;
+        using (analysis)
+        {
+            if (method == "simp")
+                result = TopologyOptimiser.Run(cells, new TopologySettings { VolumeFraction = fraction, MaxIterations = 200 }, analysis.Energies, progress: tick);
+            else if (method == "beso")
+                result = BesoOptimiser.Run(cells, new BesoSettings { VolumeFraction = fraction, MaxIterations = 300 }, analysis.Energies, progress: tick);
+            else if (method == "multi")
+                result = MultiMaterialOptimiser.Run(cells, new MultiMaterialSettings { Moduli = moduli, VolumeFractions = shares }, analysis.Energies, progress: tick);
+            else if (method == "multi1")
+                result = MultiMaterialOptimiser.Run(cells, new MultiMaterialSettings { Moduli = new[] { 210e6 }, VolumeFractions = new[] { fraction } }, analysis.Energies, progress: tick);
+            else
+                throw new ArgumentException($"No method called {method}.");
+            clock.Stop();
+        }
+
+        // Start-up is making the model and starting OpenSees on it, and what the first solve takes over a usual one.
+        var history = result.History;
+        var solves = history.Select(it => it.AnalysisSeconds).ToList();
+        double usual = Median(solves.Skip(1)), first = Math.Max(0.0, solves[0] - usual), startup = started + first;
+        double total = clock.Elapsed.TotalSeconds, solving = solves.Sum() - first, updating = history.Sum(it => it.UpdateSeconds);
+        double other = total - startup - solving - updating;
+        double final = history.Last().Compliance;
+        int settled = history.Count;
+        while (settled > 1 && Math.Abs(history[settled - 2].Compliance - final) <= 0.01 * final)
+            settled--;
+
+        using (var file = new StreamWriter(Path.Combine(folder, stem + "_history.csv")))
+        {
+            file.WriteLine("iteration,compliance,volume,analysis_s,update_s,wall_s");
+            for (int k = 0; k < history.Count; k++)
+                file.WriteLine(string.Join(",", history[k].Iteration, N(history[k].Compliance), N(history[k].Volume),
+                    N(history[k].AnalysisSeconds), N(history[k].UpdateSeconds), N(wall[k])));
+        }
+
+        string summary = Path.Combine(folder, "speed_summary.csv");
+        if (!File.Exists(summary))
+            File.WriteAllText(summary, "problem,n,bricks,design,dofs,method,iterations,converged,broke_after,total_s,startup_s,solve_s,update_s,other_s," +
+                                       "solve_median_s,update_median_s,settled_iteration,settled_s,first_compliance,final_compliance\n");
+        File.AppendAllText(summary, string.Join(",", kind, n, cells.Count, cells.Count(c => !c.Passive), 3 * nodes, method, history.Count,
+            result.Converged ? 1 : 0, result.BrokeAfter?.ToString() ?? "", N(total), N(startup), N(solving), N(updating), N(other),
+            N(usual), N(Median(history.Select(it => it.UpdateSeconds))), settled, N(wall[settled - 1]),
+            N(history[0].Compliance), N(final)) + "\n");
+
+        Console.WriteLine($"  {kind} {n}, {cells.Count} bricks, {method}: {history.Count} iterations{(result.Converged ? "" : " (not converged)")}" +
+                          $"{(result.BrokeAfter != null ? $", broke after {result.BrokeAfter}" : "")}, " +
+                          $"{total:0.0} s = start-up {startup:0.0} + solves {solving:0.0} + updates {updating:0.0} + other {other:0.0}; " +
+                          $"a solve {usual:0.000} s, an update {Median(history.Select(it => it.UpdateSeconds)):0.000} s; " +
+                          $"within 1% of its last compliance from iteration {settled}, {wall[settled - 1]:0.0} s");
+    }
+
+    static double Median(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        if (sorted.Count == 0) return 0.0;
+        int middle = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[middle] : 0.5 * (sorted[middle - 1] + sorted[middle]);
     }
 
     static void Print(TopologyIteration it, double[] densities)

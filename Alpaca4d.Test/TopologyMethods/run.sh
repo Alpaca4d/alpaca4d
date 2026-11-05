@@ -8,6 +8,7 @@
 #     ./run.sh bench zheng 3 60 30 15 5 auto     ... its grid, filter radius, and the component's objective scale
 #     ./run.sh bench beso-3d                     BESO on a 40 x 20 x 4 cantilever, then reference.py on it
 #     ./run.sh bench beso-cantilever             esoL's clamped cantilever, one element deep, then reference.py
+#     ./run.sh bench speed truss 10,20 simp,beso  the methods timed at those sizes (speed.sh runs the whole speed test)
 #
 # A benchmark writes its history and densities to ./results (or RESULTS=...), which reference.py reads.
 set -e

@@ -11,6 +11,7 @@
     ./run.sh bench node joint 20               # a beam-column joint, the same way
     ./example.sh                               # Tools/Examples/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
     ./nodes.sh                                 # Tools/Examples/TopologyNodes.py's two definitions, against the node benches
+    ./speed.sh                                 # the speed test: every method timed on the bridge, the joint and the truss node
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or
 `OPENSEES=`). `reference.py` needs a Python with numpy and scipy (`PYTHON=`). The checks of the components
