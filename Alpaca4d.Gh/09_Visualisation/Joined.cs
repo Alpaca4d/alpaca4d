@@ -6,7 +6,7 @@ using Rhino.Geometry;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// What Model View and View Results draw, put together for the viewport.
+    /// What Model View draws, put together for the viewport.
     ///
     /// Rhino draws a mesh, or a batch of lines, in one call however big it is, and on a small mesh the
     /// call costs more than the drawing. Ten thousand bricks drawn one by one were ten thousand calls
@@ -59,12 +59,34 @@ namespace Alpaca4d.Gh
                 _curved.Add((curve, colour));
         }
 
-        public void Draw(DisplayPipeline display)
+        public void Draw(DisplayPipeline display, int thickness = 1)
         {
             foreach (var batch in _straight)
-                display.DrawLines(batch.Value, batch.Key);
+                display.DrawLines(batch.Value, batch.Key, thickness);
             foreach (var item in _curved)
-                display.DrawCurve(item.Curve, item.Colour);
+                display.DrawCurve(item.Curve, item.Colour, thickness);
+        }
+
+        /// <summary>Every line and curve added, as curves without their colours.</summary>
+        public IEnumerable<Curve> Curves()
+        {
+            foreach (var batch in _straight)
+                foreach (var line in batch.Value)
+                    yield return new LineCurve(line);
+            foreach (var item in _curved)
+                yield return item.Curve;
+        }
+
+        /// <summary>What the lines and curves span; empty when there are none.</summary>
+        public BoundingBox BoundingBox()
+        {
+            var box = Rhino.Geometry.BoundingBox.Empty;
+            foreach (var batch in _straight)
+                foreach (var line in batch.Value)
+                    box.Union(line.BoundingBox);
+            foreach (var item in _curved)
+                box.Union(item.Curve.GetBoundingBox(false));
+            return box;
         }
     }
 }

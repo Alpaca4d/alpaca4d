@@ -44,7 +44,7 @@ MENU_GAP = 6
 MENU_FONT = 12
 CONTROL_FONT = 14
 CHAR = 8.6              # Overpass Mono at 14 px, per character
-ROW = {"check": 24, "dropdown": 32, "slider": 28, "text": 18, "plug": 32}
+ROW = {"check": 24, "dropdown": 32, "slider": 28, "text": 18, "plug": 32, "checks": 24}
 MIN_H = 80              # NODE_MINIMUM_HEIGHT
 PORT_FONT = 18          # NODE_PORT_LABEL_FONT_SIZE
 PORT_OFFSET = 12        # NODE_PORT_LABEL_OFFSET
@@ -53,6 +53,26 @@ PORT_MIN_W = 50         # NODE_PORT_MINIMUM_WIDTH
 R = 5                   # NODE_PORT_RADIUS
 CHIP = 9                # NODE_PORT_CHIP_SIZE
 MARGIN = 10
+
+
+def row_height(kind, c):
+    # A group of checkboxes is one row high laid out in a row, a row per box in a column.
+    if kind == "checks" and not c.get("row"):
+        return ROW[kind] * len(c["items"])
+    return ROW[kind]
+
+
+def checks_width(c):
+    # A box, its label and a gap, for each box in the row.
+    return sum(24 + len(item["text"]) * CHAR + 16 for item in c["items"]) - 16
+
+
+def check_box(x, mid, checked):
+    fill = DARK if checked else LIGHT
+    out = [f'<rect x="{x}" y="{mid - 7}" width="14" height="14" rx="3" ry="3" fill="{fill}" stroke="{DARK}" stroke-width="2"/>']
+    if checked:
+        out.append(f'<path d="M {x + 3.5} {mid} L {x + 6.2} {mid + 3} L {x + 10.5} {mid - 3}" fill="none" stroke="{LIGHT}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+    return out
 
 
 def label_width(text):
@@ -97,7 +117,7 @@ def menu_height(menu, open_):
     if not open_:
         return MENU_HEADER
     rows = menu_rows(menu)
-    return MENU_HEADER + (4 + 8 + sum(ROW[k] for k, _ in rows) + 8 if rows else 0)
+    return MENU_HEADER + (4 + 8 + sum(row_height(k, c) for k, c in rows) + 8 if rows else 0)
 
 
 def menu_width(menu):
@@ -105,6 +125,8 @@ def menu_width(menu):
     for kind, c in menu_rows(menu):
         if kind == "check":
             need = max(need, 30 + len(c["text"]) * CHAR)
+        elif kind == "checks":
+            need = max(need, 6 + checks_width(c) if c.get("row") else 30 + max(len(i["text"]) for i in c["items"]) * CHAR)
         elif kind == "dropdown":
             item = c["items"][c["selected"]] if 0 <= c["selected"] < len(c["items"]) else ""
             need = max(need, 56 + len(item) * CHAR)
@@ -133,13 +155,13 @@ def draw_menu(menu, open_, x0, x1, y, left_x, right_x):
     if not rows:
         return out
     top = y + MENU_HEADER + 4
-    height = 8 + sum(ROW[k] for k, _ in rows) + 8
+    height = 8 + sum(row_height(k, c) for k, c in rows) + 8
     out.append(f'<rect x="{x0}" y="{top}" width="{x1 - x0}" height="{height}" rx="6" ry="6" fill="{PALE}"/>')
     cy = top + 8
     cx0, cx1 = x0 + 12, x1 - 12
     mono = f'font-family="Overpass Mono, monospace" font-weight="600" font-size="{CONTROL_FONT}" fill="{DARK}"'
     for kind, c in rows:
-        h = ROW[kind]
+        h = row_height(kind, c)
         mid = cy + h / 2
         if kind == "plug":
             name_in, name_out = c
@@ -150,11 +172,18 @@ def draw_menu(menu, open_, x0, x1, y, left_x, right_x):
                 out.append(f'<circle cx="{right_x}" cy="{mid}" r="{R}" fill="{LIGHT}" stroke="{DARK}" stroke-width="2"/>')
                 out.append(f'<text x="{cx1}" y="{mid + CONTROL_FONT * 0.35}" {mono} text-anchor="end">{html.escape(name_out)}</text>')
         elif kind == "check":
-            fill = DARK if c["checked"] else LIGHT
-            out.append(f'<rect x="{cx0}" y="{mid - 7}" width="14" height="14" rx="3" ry="3" fill="{fill}" stroke="{DARK}" stroke-width="2"/>')
-            if c["checked"]:
-                out.append(f'<path d="M {cx0 + 3.5} {mid} L {cx0 + 6.2} {mid + 3} L {cx0 + 10.5} {mid - 3}" fill="none" stroke="{LIGHT}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+            out += check_box(cx0, mid, c["checked"])
             out.append(f'<text x="{cx0 + 24}" y="{mid + CONTROL_FONT * 0.35}" {mono}>{html.escape(c["text"])}</text>')
+        elif kind == "checks":
+            # In a row, each box and its label side by side; in a column, as checkboxes one under another.
+            x, row_mid = cx0, mid if c.get("row") else cy + ROW[kind] / 2
+            for item in c["items"]:
+                out += check_box(x, row_mid, item["checked"])
+                out.append(f'<text x="{x + 24}" y="{row_mid + CONTROL_FONT * 0.35}" {mono}>{html.escape(item["text"])}</text>')
+                if c.get("row"):
+                    x += 24 + len(item["text"]) * CHAR + 16
+                else:
+                    row_mid += ROW[kind]
         elif kind == "dropdown":
             item = c["items"][c["selected"]] if 0 <= c["selected"] < len(c["items"]) else ""
             out.append(f'<rect x="{cx0}" y="{mid - 12}" width="{cx1 - cx0}" height="24" rx="6" ry="6" fill="{LIGHT}" stroke="{DARK}" stroke-width="2"/>')

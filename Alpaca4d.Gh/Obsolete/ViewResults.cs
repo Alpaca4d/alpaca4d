@@ -15,24 +15,13 @@ using Alpaca4d.UIWidgets;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// One component for looking at results, in place of one per kind of result.
-    ///
-    /// The five view components it stands in for each read one thing and draw it their own way, so
-    /// a model with beams, shells and solids in it needs three of them side by side, three colour
-    /// gradients, three ranges, and no way to say "show me only this part". What is actually wanted
-    /// is nearly always one question at a time - this quantity, on these elements, at this step -
-    /// and that is one component with a dropdown, not five wired in parallel.
-    ///
-    /// Two things it does that none of them do. Elements can be filtered in the same language the
-    /// numerical components already use - an ElementId, a wildcard over them, a tag, a regular
-    /// expression - and what is filtered out is ghosted rather than hidden, so the part being looked
-    /// at stays in the model it belongs to. And the deformed shape is a toggle over any of it rather
-    /// than a component of its own, so a stress can be read on the shape it belongs to.
-    ///
-    /// WIP, and named so: it is meant to grow into the replacement for the others, and until it has
-    /// been used in anger on real models they should stay where they are.
+    /// Superseded by <see cref="ModelView"/>, which draws the same results - its Result dropdown past
+    /// None - together with the model's ids, axes, loads and supports. Kept so that definitions
+    /// saved with it still open and draw what they drew; "Upgrade Components" swaps it for Model
+    /// View with its settings, through <see cref="ViewResultsUpgrader"/>.
     /// </summary>
-    public class ViewResults : GH_ExtendableComponent
+    [Obsolete]
+    public class ViewResults_obsolete : GH_ExtendableComponent
     {
         private Alpaca4d.Model _model;
         private ResultField _field;
@@ -84,25 +73,25 @@ namespace Alpaca4d.Gh
         private readonly Dictionary<int, Tuple<BeamSectionField, List<Strip>>> _sections = new Dictionary<int, Tuple<BeamSectionField, List<Strip>>>();
 
         private MenuDropDown _ddFamily;
-        private MenuDropDown _ddComponent;
-        private MenuDropDown _ddLayer;
-        private MenuDropDown _ddReaction;
-        private MenuDropDown _ddAxes;
+        internal MenuDropDown _ddComponent;
+        internal MenuDropDown _ddLayer;
+        internal MenuDropDown _ddReaction;
+        internal MenuDropDown _ddAxes;
 
         // One per kind of quantity, by Quantity, and only the one the result is shown: each
         // remembers its own unit, so going from N to My and back finds N still in the unit it
         // was in.
-        private MenuDropDown[] _ddUnits;
+        internal MenuDropDown[] _ddUnits;
 
-        private MenuCheckBox _ckDeformed;
-        private MenuSlider _slDeformScale;
+        internal MenuCheckBox _ckDeformed;
+        internal MenuSlider _slDeformScale;
         private MenuCheckBox _ckAnimate;
-        private MenuCheckBox _ckExtruded;
-        private MenuSlider _slDiagramScale;
-        private MenuCheckBox _ckBands;
-        private MenuCheckBox _ckWires;
-        private MenuCheckBox _ckValues;
-        private MenuSlider _slTextSize;
+        internal MenuCheckBox _ckExtruded;
+        internal MenuSlider _slDiagramScale;
+        internal MenuCheckBox _ckBands;
+        internal MenuCheckBox _ckWires;
+        internal MenuCheckBox _ckValues;
+        internal MenuSlider _slTextSize;
 
         // A caption is hidden with the control it names, so both are held.
         private MenuStaticText _txLayer;
@@ -115,7 +104,7 @@ namespace Alpaca4d.Gh
         /// <summary>The colour everything outside the filter is drawn in.</summary>
         private static readonly Color GhostColour = Color.FromArgb(150, 150, 150);
 
-        public ViewResults()
+        public ViewResults_obsolete()
           : base("View Results_WIP (Alpaca4d)", "View Results_WIP",
             "Draw any result on the model: displacements, beam force diagrams, beam stresses, shell " +
             "forces, shell stresses, solid stresses, reactions.\n" +
@@ -126,7 +115,7 @@ namespace Alpaca4d.Gh
             "A vibration or buckling mode is drawn at deformation scale 1 with its largest movement as far off " +
             "the model as the diagrams stand; any other displacement at true size. On a natural vibration or " +
             "buckling model the scale runs from -2 to 2, so Animate swings the mode both ways.\n" +
-            "Work in progress, and meant to grow into the replacement for the separate view components.",
+            "Replaced by Model View, which draws the same results. Upgrade Components swaps it.",
             "Alpaca4d", "09_Visualisation")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
@@ -289,22 +278,8 @@ namespace Alpaca4d.Gh
             base.OnComponentLoaded();
             if (_ddFamily == null) return;
 
-            _ddFamily.ValueChanged += OnFamilyChanged;
-            _ddComponent.ValueChanged += OnWidgetChanged;
-            _ddLayer.ValueChanged += OnWidgetChanged;
-            _ddReaction.ValueChanged += OnWidgetChanged;
-            _ddAxes.ValueChanged += OnWidgetChanged;
-            foreach (var dropdown in _ddUnits)
-                dropdown.ValueChanged += OnWidgetChanged;
-            _ckDeformed.ValueChanged += OnWidgetChanged;
-            _slDeformScale.ValueChanged += OnWidgetChanged;
-            _ckAnimate.ValueChanged += OnAnimateChanged;
-            _ckExtruded.ValueChanged += OnWidgetChanged;
-            _slDiagramScale.ValueChanged += OnWidgetChanged;
-            _ckBands.ValueChanged += OnWidgetChanged;
-            _ckWires.ValueChanged += OnWidgetChanged;
-            _ckValues.ValueChanged += OnWidgetChanged;
-            _slTextSize.ValueChanged += OnWidgetChanged;
+            // Listened to once, in Setup. A file is read into a component whose menus are already
+            // made, and listening again here ran the solution twice for every change.
 
             // Saved before the menu had an order of its own, the Result dropdown's position was
             // the family's place in the enum. Turned into its place in the menu, before the
@@ -440,7 +415,7 @@ namespace Alpaca4d.Gh
             _ddComponent.Value = wanted < names.Length ? wanted : 0;
         }
 
-        private ResultFamily Family
+        internal ResultFamily Family
         {
             get
             {
@@ -1839,7 +1814,7 @@ namespace Alpaca4d.Gh
 
         #endregion
 
-        public override GH_Exposure Exposure => GH_Exposure.primary;
+        public override GH_Exposure Exposure => GH_Exposure.hidden;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Deformed_Model__Alpaca4d_;
 

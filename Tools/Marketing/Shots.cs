@@ -27,9 +27,8 @@ using Rhino.Geometry;
 public static class Shots
 {
     static readonly Guid TopologyId = new Guid("8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93");
-    static readonly Guid ModelViewId = new Guid("5EDB6364-D458-43D6-81E9-324DECA1FEA6");
+    static readonly Guid ModelViewId = new Guid("F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE");
     static readonly Guid RunAnalysisId = new Guid("8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452");
-    static readonly Guid ViewResultsId = new Guid("4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3");
     static readonly Guid LegendId = new Guid("A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5");
     static readonly Guid StressLinesId = new Guid("E2C4E5D3-4A7F-4F8E-9A1D-39E0E7C0D4A2");
     static readonly Guid CustomPreviewId = new Guid("537B0419-BBC2-4FF4-BF08-AFE526367B2C");
@@ -335,6 +334,20 @@ public static class Shots
     }
 
     static IEnumerable<IGH_Component> Components(Guid id) => doc.Objects.OfType<IGH_Component>().Where(c => c.ComponentGuid == id);
+
+    /// <summary>Whether a Model View has any result ticked, rather than drawing the model alone.</summary>
+    static bool DrawsResults(IGH_Component view)
+    {
+        foreach (var result in (Array)Field(view, "_results"))
+        {
+            var tick = result.GetType().GetField("Tick").GetValue(result);
+            if ((bool)tick.GetType().GetProperty("Active").GetValue(tick)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>The Model Views that draw a result, rather than the model alone.</summary>
+    static IEnumerable<IGH_Component> ResultViews() => Components(ModelViewId).Where(DrawsResults);
     static IGH_Param Out(IGH_Component c, string name) => c.Params.Output.First(p => p.Name == name || p.NickName == name);
     static IGH_Param In(IGH_Component c, string name) => c.Params.Input.First(p => p.Name == name || p.NickName == name);
     static List<T> Values<T>(IGH_Param p) => p.VolatileData.AllData(true).OfType<T>().ToList();
@@ -644,7 +657,7 @@ public static class Shots
     static void FemurLines()
     {
         var run = Components(RunAnalysisId).First();
-        var results = Components(ViewResultsId).First();
+        var results = ResultViews().First();
         var (nodes, tets) = ReadTets(examples + "Femur.txt");
         var skin = Skin(nodes, tets);
         var box = new BoundingBox(nodes);
@@ -755,7 +768,7 @@ public static class Shots
             Do("modes", () =>
             {
                 foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
-                var results = Components(ViewResultsId).First();
+                var results = ResultViews().First();
                 Log($"  deform scale {Field(results, "_slDeformScale").GetType().GetProperty("Value").GetValue(Field(results, "_slDeformScale"))}");
                 var box = Drawn();
                 box.Inflate(box.Diagonal.Length * 0.04);
@@ -775,7 +788,7 @@ public static class Shots
         foreach (int mode in new[] { 4, 0 })
             list.Add(Do("mode " + mode + " moving", () =>
             {
-                var results = Components(ViewResultsId).First();
+                var results = ResultViews().First();
                 var scale = Field(results, "_slDeformScale");
                 var value = scale.GetType().GetProperty("Value");
                 double max = Convert.ToDouble(scale.GetType().GetProperty("MaxValue").GetValue(scale));
@@ -811,18 +824,24 @@ public static class Shots
         return list;
     }
 
-    /// <summary>View Results' Result and Component, picked as the menu picks them.</summary>
-    static void ShowResult(IGH_Component results, int family, int component)
+    /// <summary>
+    /// One of Model View's results ticked alone, at a component, as clicks in its Results menu tick
+    /// it, and its menus showing the controls that go with it. A result is its place in the menu
+    /// from 1 - Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses, Brick
+    /// stresses, Reactions - or 0 for none, the model alone.
+    /// </summary>
+    static void ShowResult(IGH_Component results, int show, int component)
     {
-        var f = Field(results, "_ddFamily");
-        f.GetType().GetProperty("Value").SetValue(f, family);
-        results.GetType().GetMethod("SyncComponentList", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(results, null);
-        var c = Field(results, "_ddComponent");
-        c.GetType().GetProperty("Value").SetValue(c, component);
+        var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+        results.GetType().GetMethod("ShowResult", flags).Invoke(results, new object[] { show, component });
         results.ExpireSolution(false);
     }
 
-    /// <summary>A Legend fed by View Results, as the examples wire it.</summary>
+    /// <summary>The Unit dropdown of one of Model View's results, by its place in the menu from 1, for a kind of quantity: 0 lengths, 3 stresses.</summary>
+    static object Unit(IGH_Component results, int show, int quantity) =>
+        results.GetType().GetMethod("UnitOf", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(results, new object[] { show, quantity });
+
+    /// <summary>A Legend fed by a Model View's result, as the examples wire it.</summary>
     static IGH_Component AddLegend(IGH_Component results, string title)
     {
         var legend = Place((IGH_Component)Instances.ComponentServer.EmitObject(LegendId), Beside(results, 120, 0));
@@ -842,14 +861,14 @@ public static class Shots
         Do("solve", () =>
         {
             var run = Components(RunAnalysisId).First();
-            var results = Components(ViewResultsId).First();
+            var results = ResultViews().First();
             run.Locked = false;
             results.Locked = false;
             var watch = Stopwatch.StartNew();
             run.ExpireSolution(false);
             doc.NewSolution(false);
             Log($"  solved in {watch.Elapsed.TotalSeconds:F1} s");
-            ShowResult(results, 5, 6);
+            ShowResult(results, 6, 6);
             // The column loads are points: their peaks would take the whole scale.
             var range = (GH_PersistentParam<GH_Interval>)In(results, "Range");
             range.PersistentData.Clear();
@@ -876,15 +895,15 @@ public static class Shots
         Do("solve", () =>
         {
             var run = Components(RunAnalysisId).First();
-            var results = Components(ViewResultsId).First();
+            var results = ResultViews().First();
             run.Locked = false;
             results.Locked = false;
             var watch = Stopwatch.StartNew();
             run.ExpireSolution(false);
             doc.NewSolution(false);
             Log($"  solved in {watch.Elapsed.TotalSeconds:F1} s");
-            // Lengths in mm: the first of View Results' units.
-            var length = ((Array)Field(results, "_ddUnits")).GetValue(0);
+            // Lengths in mm: the first of Model View's units.
+            var length = Unit(results, 1, 0);
             length.GetType().GetProperty("Value").SetValue(length, 0);
             results.ExpireSolution(false);
             var legend = AddLegend(results, "Displacement [mm]");
@@ -920,12 +939,17 @@ public static class Shots
         };
     }
 
-    /// <summary>Model View drawing only the supports and loads of the model <paramref name="source"/> carries.</summary>
+    /// <summary>
+    /// Model View drawing the supports and loads of the model <paramref name="source"/> carries. An
+    /// ElementId no element has leaves every element out, and Model View greys what it leaves out:
+    /// see-through, and with Element edges off, without its edges.
+    /// </summary>
     static IGH_Component Symbols(IGH_Param source, PointF at, double loadScale, double supportScale)
     {
         var view = Place((IGH_Component)Instances.ComponentServer.EmitObject(ModelViewId), at);
         view.Params.Input[0].AddSource(source);
-        ((GH_PersistentParam<GH_Integer>)In(view, "ElementIds")).PersistentData.Append(new GH_Integer(-1));
+        ((GH_PersistentParam<GH_String>)In(view, "ElementId")).PersistentData.Append(new GH_String("-1"));
+        SetWidget(view, "_ckWires", "Active", false);
         SetWidget(view, "_ckShowSupports", "Active", true);
         SetWidget(view, "_ckShowLoads", "Active", loadScale > 0);
         if (loadScale > 0) SetWidget(view, "_slLoadScale", "Value", loadScale);
@@ -967,7 +991,7 @@ public static class Shots
 
     /// <summary>
     /// The design <paramref name="topology"/> found, analysed as a model of its own, as the bridge
-    /// example does it: Run Analysis on its AlpacaModel, View Results on the bricks' Von Mises stress,
+    /// example does it: Run Analysis on its AlpacaModel, Model View on the bricks' Von Mises stress,
     /// in <paramref name="stressUnit"/> (0 kPa, the model's own unit; 1 MPa), and a Legend. Added only
     /// once the run is over: wired while Step moves, it would analyse every design.
     /// </summary>
@@ -977,10 +1001,12 @@ public static class Shots
         var run = Place((IGH_Component)Instances.ComponentServer.EmitObject(RunAnalysisId), new PointF(at.X + 200, at.Y));
         run.Params.Input[0].AddSource(Out(topology, "AlpacaModel"));
         run.Params.Input[1].AddSource(settings.Params.Output[0]);
-        var results = Place((IGH_Component)Instances.ComponentServer.EmitObject(ViewResultsId), new PointF(at.X + 420, at.Y));
+        var results = Place((IGH_Component)Instances.ComponentServer.EmitObject(ModelViewId), new PointF(at.X + 420, at.Y));
         results.Params.Input[0].AddSource(run.Params.Output[0]);
-        ShowResult(results, 5, 6);
-        var stress = ((Array)Field(results, "_ddUnits")).GetValue(3);
+        SetWidget(results, "_ckExtruded", "Active", false);
+        SetWidget(results, "_ckReleases", "Active", false);
+        ShowResult(results, 6, 6);
+        var stress = Unit(results, 6, 3);
         stress.GetType().GetProperty("Value").SetValue(stress, stressUnit);
         var legend = AddLegend(results, title);
         var watch = Stopwatch.StartNew();
@@ -1032,7 +1058,7 @@ public static class Shots
             Do("analysed", () =>
             {
                 var run = Components(RunAnalysisId).First();
-                var results = Components(ViewResultsId).First();
+                var results = ResultViews().First();
                 var legend = Components(LegendId).First();
                 run.Locked = false;
                 legend.Locked = false;
@@ -1251,7 +1277,7 @@ public static class Shots
             Do("sections", () =>
             {
                 Sized();
-                sections = Components(ModelViewId).First();
+                sections = Components(ModelViewId).First(c => !DrawsResults(c));
                 tags = Find<IGH_Component>("HEA");
                 deformed = Find<IGH_Component>("Deformed shape");
                 legend = Components(LegendId).First();
@@ -1336,11 +1362,11 @@ public static class Shots
         return view;
     }
 
-    /// <summary>What View Results says it draws: the result, its unit and its range.</summary>
+    /// <summary>What a Model View says it draws: the result, its unit and its range.</summary>
     static string Info(IGH_Component results) => Values<GH_String>(Out(results, "Info")).Select(v => v.Value).FirstOrDefault() ?? "";
 
     /// <summary>
-    /// A Legend for a beam force diagram, titled with the force and its unit from View Results' Info:
+    /// A Legend for a beam force diagram, titled with the force and its unit from Model View's Info:
     /// the colour of each sign beside the end of the range it reaches.
     /// </summary>
     static IGH_Component DiagramLegend(IGH_Component results, string title, Color negative, Color positive)
@@ -1366,7 +1392,7 @@ public static class Shots
     {
         var optimiser = Find<IGH_Component>("Whole beam");
         Messages(optimiser);
-        foreach (var view in Components(ModelViewId).Concat(Components(ViewResultsId))) Messages(view);
+        foreach (var view in Components(ModelViewId)) Messages(view);
         var runs = new List<(string name, int count)>();
         foreach (var section in Values<IGH_Goo>(Out(optimiser, "Section")).Select(g => (g as GH_ObjectWrapper)?.Value?.ToString() ?? g.ToString()))
             if (runs.Count > 0 && runs[runs.Count - 1].name == section) runs[runs.Count - 1] = (section, runs[runs.Count - 1].count + 1);

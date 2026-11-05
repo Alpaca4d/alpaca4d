@@ -132,6 +132,14 @@ class Export
             case "MenuStaticText":
                 into.Add($"{{\"kind\":\"text\",\"text\":{Q((string)Get(control, "Text"))},\"visible\":{visible}}}");
                 break;
+            case "MenuCheckBoxGroup":
+                // Several checkboxes, in a row or in a column.
+                var labels = ((System.Collections.IEnumerable)Get(control, "Labels")).Cast<string>().ToList();
+                var ticked = new HashSet<int>(((System.Collections.IEnumerable)Get(control, "Ticked")).Cast<int>());
+                var boxes = labels.Select((label, i) => $"{{\"text\":{Q(label)},\"checked\":{(ticked.Contains(i) ? "true" : "false")}}}");
+                bool row = Get(control, "Direction").ToString() == "Horizontal";
+                into.Add($"{{\"kind\":\"checks\",\"items\":[{string.Join(",", boxes)}],\"row\":{(row ? "true" : "false")},\"visible\":{visible}}}");
+                break;
             default:
                 into.Add($"{{\"kind\":{Q(kind)},\"visible\":{visible}}}");
                 break;

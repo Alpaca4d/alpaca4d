@@ -46,9 +46,8 @@ ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotrop
 TEN_NODE = "1F38CDFC-F909-4F3F-969E-9E2C63F9A321"           # Ten Node Tetrahedron
 SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 NATURAL_VIBRATION = "3B7D2E95-6A41-4C8F-9E1D-5F0A8C27B6D3"  # Natural Vibration Analysis
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
@@ -62,15 +61,15 @@ GREY = Color.FromArgb(40, 42, 45, 49)
 DATA = "InigoTheDragon.txt"
 GROUND = 0.001              # m: a node below this stands on the ground
 MODES = 12                  # how many modes to solve for
-# Which mode View Results opens on, counted from 0 as its Step is: the fourth, both wings flapping together.
+# Which mode Model View opens on, counted from 0 as its Step is: the fourth, both wings flapping together.
 WING = 3
 # The four faces of a tetrahedron, by its corners. Ten Node Tetrahedron reads only the corners and
 # puts them in order itself, so any four faces would do; these make a closed mesh.
 FACES = ((0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0))
-# View Results' Result menu: Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses,
-# Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
-DISPLACEMENT, MAGNITUDE = 0, 0
-# A mode is read with its largest translation 1, and View Results draws it at scale 1 with its
+# Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
+# stresses, Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
+DISPLACEMENT, MAGNITUDE = 1, 0
+# A mode is read with its largest translation 1, and Model View draws it at scale 1 with its
 # largest movement 8% of the model's diagonal: 0.68 m on this 8.5 m one. 0.4 moves the wing tip by a
 # quarter of a metre; Animate sweeps the scale from 0 to SWEEP and back, which is half a metre.
 DEFORMATION_SCALE = 0.4
@@ -325,6 +324,16 @@ def widget(obj, field):
     return obj.GetType().GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(obj)
 
 
+def show_result(view, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
+    flags = BindingFlags.NonPublic | BindingFlags.Instance
+    view.GetType().GetMethod("ShowResult", flags).Invoke(view, System.Array[System.Object]([show, component]))
+    view.Attributes.ExpireLayout()
+    view.Attributes.PerformLayout()
+
+
 # ---------------------------------------------------------------- the dragon
 
 # Columns, in the order the data flows...
@@ -418,22 +427,23 @@ def build(doc):
     inp(vibration, 1).PersistentData.Clear()
     inp(vibration, 1).PersistentData.Append(GH_Integer(MODES))
     mode = slider(m, "Mode, from 0", 0, MODES - 1, WING, MODEL, ANALYSED)
-    results = component(m, VIEW_RESULTS, "View Results", None, VIEW, ANALYSED)
+    results = component(m, MODEL_VIEW, "Model View", None, VIEW, ANALYSED)
     wire(inp(results, 0), out(vibration))
     wire(inp(results, 1), mode)
-    widget(results, "_ddFamily").Value = DISPLACEMENT
-    widget(results, "_ddComponent").Value = MAGNITUDE
     widget(results, "_ckDeformed").Active = True
     scale = widget(results, "_slDeformScale")
     scale.MaxValue = SWEEP
     scale.Value = DEFORMATION_SCALE
+    widget(results, "_ckExtruded").Active = False
+    widget(results, "_ckReleases").Active = False
+    show_result(results, DISPLACEMENT, MAGNITUDE)
     legend = component(m, LEGEND, "Legend", None, SHOWN, ANALYSED)
     legend_title = text(m, "Title", "Mode shape, largest translation 1", SHOWN, ANALYSED, width=160.0)
     wire(inp(legend, 0), legend_title)
-    wire(inp(legend, 1), out(results, 1))
-    wire(inp(legend, 2), out(results, 2))
+    wire(inp(legend, 1), out(results, 3))
+    wire(inp(legend, 2), out(results, 4))
     frequencies = readout(m, "Frequencies [Hz]", out(vibration, 3), SHOWN, ANALYSED, width=160.0, height=240.0)
-    info = readout(m, "What is drawn", out(results, 0), SHOWN, ANALYSED, width=300.0, height=40.0)
+    info = readout(m, "What is drawn", out(results, 2), SHOWN, ANALYSED, width=300.0, height=40.0)
     log = readout(m, "OpenSees log", out(vibration, 4), SHOWN, ANALYSED, width=300.0, height=140.0)
 
     m.arrange(right + 160, 0)
@@ -448,8 +458,9 @@ def build(doc):
     group(doc, "5 - The first 12 modes, and the one picked drawn over the dragon",
           [vibration, mode, results, legend, legend_title, frequencies, info, log], GREY)
 
-    # Only View Results draws the dragon; Model View and the construction geometry stay out of the
-    # viewport. Show Model View's preview to see the elements and the supports.
+    # Only the Model View after Natural Vibration draws the dragon; the one after Assemble Model and the
+    # construction geometry stay out of the viewport. Show that one's preview to see the elements and
+    # the supports.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
         if hasattr(obj, "Hidden") and obj.InstanceGuid != results.InstanceGuid and obj.InstanceGuid != legend.InstanceGuid:
@@ -473,8 +484,8 @@ def build(doc):
          "5. Mode picks the mode to draw, 0 being the first. The dragon sways "
          "forward and back at 7.7 Hz (0), side to side at 22 Hz (1), wags its tail at 42 Hz (2), and "
          "flaps its wings together at 59 Hz (3) and against each other at 60 Hz (4). Tick Animate "
-         "under View Results' Display to watch it move. A mode has no size of its own: it is read with "
-         "its largest translation 1, so its numbers say where the dragon moves most, not by how much.".format(len(tetrahedra), len(nodes), volume(nodes, tetrahedra), 2.5 * volume(nodes, tetrahedra)),
+         "under Display, in the Model View after Natural Vibration, to watch it move. A mode has no "
+         "size of its own: it is read with its largest translation 1, so its numbers say where the dragon moves most, not by how much.".format(len(tetrahedra), len(nodes), volume(nodes, tetrahedra), 2.5 * volume(nodes, tetrahedra)),
          0, -440, 640, 370)
 
 

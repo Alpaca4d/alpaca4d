@@ -17,8 +17,8 @@
 # Assembled, the model goes to a Section Optimiser with one design group over the whole beam, from a
 # list of HEAs: Uniform off, as it opens, gives each element the first of the list that it can have, so
 # the HEA varies along the beam; Uniform on gives the whole beam one section, the first of the list
-# that every element can have. Text tags name the HEA wherever it changes, and View Results draws the
-# sized beam's deformed shape, coloured by its displacement, with a Legend.
+# that every element can have. Text tags name the HEA wherever it changes, and a second Model View
+# draws the sized beam's deformed shape, coloured by its displacement, with a Legend.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -67,8 +67,7 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 GRAVITY = "4B6FA7FD-9388-4699-B374-B94F94583A53"            # Gravity Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 DESIGN_GROUP = "35B2FF27-7BCC-4138-9CC7-267397D6A45A"       # Design Group
 OPTIMISER = "56302D3A-734F-4B03-899E-F6C273CF1B9F"          # Section Optimiser
@@ -85,10 +84,13 @@ O_MODEL_OUT, O_SECTION, O_UTILISATION, O_MASS, O_CONVERGED, O_GOVERNING, O_HISTO
 G_NAME, G_ELEMENT_ID, G_SECTIONS, G_UNIFORM = 0, 1, 2, 3
 # Text Tag 3D's inputs: where, what, how big, the colour and the justification - 4 is middle left.
 T_LOCATION, T_TEXT, T_SIZE, T_COLOUR, T_JUSTIFICATION = 0, 1, 2, 3, 4
-# View Results' outputs, and Legend's inputs. Its Result menu: Beam forces is the second family; Vy and
-# Mz, the shear and the moment of a beam bending in its vertical plane, the second and the sixth of it.
-R_INFO, R_VALUES, R_COLORS = 0, 1, 2
-BEAM_FORCES, VY, MZ = 1, 1, 5
+# Model View's outputs, and Legend's inputs. Its results, from 1: Displacement is the
+# first and Beam forces the second. Magnitude is the first of the displacements; Vy and Mz,
+# the shear and the moment of a beam bending in its vertical plane, the second and the sixth of the
+# beam forces.
+R_INFO, R_VALUES, R_COLORS = 2, 3, 4
+DISPLACEMENT, MAGNITUDE = 1, 0
+BEAM_FORCES, VY, MZ = 2, 1, 5
 L_TITLE, L_VALUES, L_COLORS = 0, 1, 2
 
 # The HEAs of the library, in the order the design group tries them: the order is the user's.
@@ -410,14 +412,15 @@ def menu_setting(c, field, prop, value):
     setattr(c.GetType().GetField(field, flags).GetValue(c), prop, value)
 
 
-def show_result(c, family, component):
-    """Picks View Results' Result and Component, as its menu does: the Component list is rebuilt for
-    the Result before one of its items is picked."""
+def show_result(c, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
     c = getattr(c, "__implementation__", c)
-    menu_setting(c, "_ddFamily", "Value", family)
     flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
-    c.GetType().GetMethod("SyncComponentList", flags).Invoke(c, None)
-    menu_setting(c, "_ddComponent", "Value", component)
+    c.GetType().GetMethod("ShowResult", flags).Invoke(c, System.Array[System.Object]([show, component]))
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
 
 
 def reparameterize(param):
@@ -444,7 +447,7 @@ MAIN, BEARINGS, LOADING, SIZING, DRAWN = range(5)
 ALONG = ["0", "0.25", "0.5", "0.75", "1"]
 HEIGHT = ["0", "0.7", "1", "0.55", "0.25"]
 
-# How many times its true size View Results draws the deformation.
+# How many times its true size Model View draws the deformation.
 DEFORMATION_SCALE = 20
 
 
@@ -658,10 +661,10 @@ def build(doc):
     integer(inp(tags, T_JUSTIFICATION), 4)
 
     # 8 - The optimiser's last analysis. The sized beam's deformed shape, extruded with its real
-    # sections and coloured by how far each node moves, in mm - Deformation scale is in View Results'
+    # sections and coloured by how far each node moves, in mm - Deformation scale is in Model View's
     # Display menu - and, with their previews off, its bending moment Mz and its shear Vy: turn a
-    # preview on to draw that one. Each View Results' Info gives the range it draws.
-    results = emit(VIEW_RESULTS, "View Results")
+    # preview on to draw that one. Each Model View's Info gives the range it draws.
+    results = emit(MODEL_VIEW, "Model View")
     results.NickName = "Deformed shape"
     open_menus(results)
     grid.put(results, SETS, DRAWN, lead=80)
@@ -669,19 +672,25 @@ def build(doc):
     menu_setting(results, "_ckDeformed", "Active", True)
     menu_setting(results, "_slDeformScale", "Value", DEFORMATION_SCALE)
     menu_setting(results, "_ckExtruded", "Active", True)
+    menu_setting(results, "_ckReleases", "Active", False)
+    show_result(results, DISPLACEMENT, MAGNITUDE)
     deformed_info = panel(grid, "Info", out(results, R_INFO), 300, 40, SETS, DRAWN, gap=30)
-    moment = emit(VIEW_RESULTS, "View Results")
+    moment = emit(MODEL_VIEW, "Model View")
     moment.NickName = "Bending moment"
     open_menus(moment)
     grid.put(moment, CULLED, DRAWN, lead=80)
     wire(inp(moment, 0), out(optimiser, O_MODEL_OUT))
+    menu_setting(moment, "_ckExtruded", "Active", False)
+    menu_setting(moment, "_ckReleases", "Active", False)
     show_result(moment, BEAM_FORCES, MZ)
     moment_info = panel(grid, "Info", out(moment, R_INFO), 300, 40, CULLED, DRAWN, gap=30)
-    shear = emit(VIEW_RESULTS, "View Results")
+    shear = emit(MODEL_VIEW, "Model View")
     shear.NickName = "Shear"
     open_menus(shear)
     grid.put(shear, PLANES, DRAWN, lead=80)
     wire(inp(shear, 0), out(optimiser, O_MODEL_OUT))
+    menu_setting(shear, "_ckExtruded", "Active", False)
+    menu_setting(shear, "_ckReleases", "Active", False)
     show_result(shear, BEAM_FORCES, VY)
     shear_info = panel(grid, "Info", out(shear, R_INFO), 300, 40, PLANES, DRAWN, gap=30)
     title = text(grid, "Title", "Displacement [mm]", SHIFTED, DRAWN)

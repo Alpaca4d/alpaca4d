@@ -6,7 +6,7 @@ using System.Globalization;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// Where each colour of a gradient sits on the values, for View Results, which paints by it,
+    /// Where each colour of a gradient sits on the values, for Model View, which paints by it,
     /// and Legend, which labels by it. In one place because the two have to agree, and because
     /// it has no Grasshopper in it, so it can be checked outside Rhino.
     /// </summary>
@@ -46,7 +46,7 @@ namespace Alpaca4d.Gh
         /// value, which is all the model shows: everything is the first colour.
         ///
         /// The last is <paramref name="max"/> itself, not min + span, which can round a hair off:
-        /// View Results hands these to Legend, which reads its range back from the ends.
+        /// Model View hands these to Legend, which reads its range back from the ends.
         /// </summary>
         internal static List<double> LabelValues(double min, double max, int count)
         {
@@ -83,7 +83,7 @@ namespace Alpaca4d.Gh
         /// <summary>
         /// Where band <paramref name="k"/> of <see cref="Band"/> starts, the edge it shares with
         /// band k - 1; edge <paramref name="count"/> is max. The same values LabelValues gives for
-        /// one more than <paramref name="count"/>, which is what View Results hands Legend so it
+        /// one more than <paramref name="count"/>, which is what Model View hands Legend so it
         /// writes them at the edges between its swatches.
         /// </summary>
         internal static double Edge(int k, double min, double max, int count)

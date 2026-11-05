@@ -31,36 +31,36 @@ class ViewResultsFilesTest
         Console.WriteLine(title);
     }
 
-    static Alpaca4d.UIWidgets.MenuDropDown DropDown(Alpaca4d.Gh.ViewResults view, string field) =>
-        (Alpaca4d.UIWidgets.MenuDropDown)typeof(Alpaca4d.Gh.ViewResults)
+    static Alpaca4d.UIWidgets.MenuDropDown DropDown(Alpaca4d.Gh.ViewResults_obsolete view, string field) =>
+        (Alpaca4d.UIWidgets.MenuDropDown)typeof(Alpaca4d.Gh.ViewResults_obsolete)
             .GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(view);
 
-    static Alpaca4d.UIWidgets.MenuSlider Slider(Alpaca4d.Gh.ViewResults view, string field) =>
-        (Alpaca4d.UIWidgets.MenuSlider)typeof(Alpaca4d.Gh.ViewResults)
+    static Alpaca4d.UIWidgets.MenuSlider Slider(Alpaca4d.Gh.ViewResults_obsolete view, string field) =>
+        (Alpaca4d.UIWidgets.MenuSlider)typeof(Alpaca4d.Gh.ViewResults_obsolete)
             .GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(view);
 
     /// <summary>What a solve does with the model wired in before it reads anything from it.</summary>
-    static void Wire(Alpaca4d.Gh.ViewResults view, Alpaca4d.Model model)
+    static void Wire(Alpaca4d.Gh.ViewResults_obsolete view, Alpaca4d.Model model)
     {
-        typeof(Alpaca4d.Gh.ViewResults).GetField("_model", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(view, model);
-        typeof(Alpaca4d.Gh.ViewResults).GetMethod("FitScaleRange", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
+        typeof(Alpaca4d.Gh.ViewResults_obsolete).GetField("_model", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(view, model);
+        typeof(Alpaca4d.Gh.ViewResults_obsolete).GetMethod("FitScaleRange", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
     }
 
-    static Alpaca4d.Gh.ViewResults Make()
+    static Alpaca4d.Gh.ViewResults_obsolete Make()
     {
-        var view = new Alpaca4d.Gh.ViewResults();
+        var view = new Alpaca4d.Gh.ViewResults_obsolete();
         view.CreateAttributes();
         return view;
     }
 
     /// <summary>What the Component dropdown shows.</summary>
-    static string Shown(Alpaca4d.Gh.ViewResults view)
+    static string Shown(Alpaca4d.Gh.ViewResults_obsolete view)
     {
         var component = DropDown(view, "_ddComponent");
         return component.Items[component.Value].content;
     }
 
-    static string Family(Alpaca4d.Gh.ViewResults view)
+    static string Family(Alpaca4d.Gh.ViewResults_obsolete view)
     {
         var family = DropDown(view, "_ddFamily");
         return family.Items[family.Value].content;
@@ -71,7 +71,7 @@ class ViewResultsFilesTest
     /// opened in a new one - with the marks named in <paramref name="older"/> taken out first, as a
     /// file saved before them would be without them.
     /// </summary>
-    static Alpaca4d.Gh.ViewResults SaveAndOpen(int family, int component, params string[] older)
+    static Alpaca4d.Gh.ViewResults_obsolete SaveAndOpen(int family, int component, params string[] older)
     {
         var view = Make();
         DropDown(view, "_ddFamily").Value = family;

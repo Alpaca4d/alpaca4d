@@ -56,6 +56,8 @@ namespace Alpaca4d.Gh
             Values<GH_Integer>(from, to);
             Values<GH_String>(from, to);
             Values<GH_Boolean>(from, to);
+            Values<GH_Interval>(from, to);
+            Values<GH_Colour>(from, to);
             Values<IGH_Goo>(from, to);
         }
 

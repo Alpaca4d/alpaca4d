@@ -54,10 +54,9 @@ SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
 POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
@@ -79,9 +78,9 @@ TOLERANCE = 0.0001          # m: two points nearer than this are one node
 # The four faces of a tetrahedron, by its corners. Ten Node Tetrahedron reads only the corners and
 # puts them in order itself, so any four faces would do; these make a closed mesh.
 FACES = ((0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0))
-# View Results' Result menu: Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses,
-# Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
-DISPLACEMENT, MAGNITUDE = 0, 0
+# Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
+# stresses, Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
+DISPLACEMENT, MAGNITUDE = 1, 0
 DEFORMATION_SCALE = 20.0
 
 
@@ -320,6 +319,16 @@ def widget(obj, field):
     return obj.GetType().GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(obj)
 
 
+def show_result(view, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
+    flags = BindingFlags.NonPublic | BindingFlags.Instance
+    view.GetType().GetMethod("ShowResult", flags).Invoke(view, System.Array[System.Object]([show, component]))
+    view.Attributes.ExpireLayout()
+    view.Attributes.PerformLayout()
+
+
 # ---------------------------------------------------------------- the femur
 
 # Columns, in the order the data flows...
@@ -452,18 +461,19 @@ def build(doc):
     run = component(m, RUN_ANALYSIS, "Run Analysis", None, MODEL, ANALYSED)
     wire(inp(run, 0), out(assemble))
     wire(inp(run, 1), out(settings))
-    results = component(m, VIEW_RESULTS, "View Results", None, VIEW, ANALYSED)
+    results = component(m, MODEL_VIEW, "Model View", None, VIEW, ANALYSED)
     wire(inp(results, 0), out(run))
-    widget(results, "_ddFamily").Value = DISPLACEMENT
-    widget(results, "_ddComponent").Value = MAGNITUDE
     widget(results, "_ckDeformed").Active = True
     widget(results, "_slDeformScale").Value = DEFORMATION_SCALE
+    widget(results, "_ckExtruded").Active = False
+    widget(results, "_ckReleases").Active = False
+    show_result(results, DISPLACEMENT, MAGNITUDE)
     legend = component(m, LEGEND, "Legend", None, SHOWN, ANALYSED)
     legend_title = text(m, "Title", "Displacement [mm]", SHOWN, ANALYSED, width=140.0)
     wire(inp(legend, 0), legend_title)
-    wire(inp(legend, 1), out(results, 1))
-    wire(inp(legend, 2), out(results, 2))
-    info = readout(m, "What is drawn", out(results, 0), SHOWN, ANALYSED, width=300.0, height=40.0)
+    wire(inp(legend, 1), out(results, 3))
+    wire(inp(legend, 2), out(results, 4))
+    info = readout(m, "What is drawn", out(results, 2), SHOWN, ANALYSED, width=300.0, height=40.0)
     log = readout(m, "OpenSees log", out(run, 1), SHOWN, ANALYSED, width=300.0, height=140.0)
 
     m.arrange(right + 160, 0)
@@ -480,8 +490,9 @@ def build(doc):
     group(doc, "6 - Solve, and the displacement over the bone, 20 times",
           [settings, run, results, legend, legend_title, info, log], GREY)
 
-    # Only View Results draws the bone; Model View and the construction geometry stay out of the
-    # viewport. Show Model View's preview to see the elements, the supports and the loads.
+    # Only the Model View after Run Analysis draws the bone; the one after Assemble Model and the
+    # construction geometry stay out of the viewport. Show that one's preview to see the elements, the
+    # supports and the loads.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
         if hasattr(obj, "Hidden") and obj.InstanceGuid != results.InstanceGuid and obj.InstanceGuid != legend.InstanceGuid:
@@ -504,8 +515,8 @@ def build(doc):
          "every element's ten.\n"
          "4. The hip pushes on the head with about 2.5 times the body's weight when walking: 2 kN, "
          "leaning 13 degrees from the shaft, shared among the nodes within 15 mm of the top of the head.\n"
-         "5. View Results draws the displacement, 20 times: the head moves most, and the bone bends "
-         "over the knee. Pick another result from its Result menu.".format(
+         "5. The Model View after Run Analysis draws the displacement, 20 times: the head moves most, "
+         "and the bone bends over the knee. Pick another result from its Results menu.".format(
              len(tetrahedra), len(nodes), 1e6 * volume(nodes, tetrahedra)),
          0, -420, 640, 350)
 
