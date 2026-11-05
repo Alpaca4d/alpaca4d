@@ -52,13 +52,12 @@ SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
 POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation
 BESO = "3B7E5C21-9A4D-4F68-B2E1-7C5D0A8F6E14"               # BESO Topology
 MULTI_TOPOLOGY = "6D2A9E47-1C8B-4E35-A9F0-58B3C7D16A22"     # Multi-Material Topology
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
 # The three components' inputs and outputs, by position. Topology Optimisation registers Step and
@@ -70,9 +69,9 @@ M_MODEL, M_KEEP, M_MATERIALS, M_FRACTIONS, M_ITERATIONS, M_RUN = range(6)
 M_STEP = 14
 (M_SURFACE, M_COLOUR, M_SOLID, M_MATERIAL, M_DENSITY, M_ELEMENT, M_COMPLIANCE, M_VOLUME, M_CONVERGED, M_HISTORY,
  M_LOG, M_STEP_OUT, M_ALPACA_MODEL) = range(13)
-# View Results' Result menu: Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses,
-# Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises.
-BRICK_STRESSES, VON_MISES = 5, 6
+# Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
+# stresses, Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises.
+BRICK_STRESSES, VON_MISES = 6, 6
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 RED = Color.FromArgb(50, 254, 0, 0)
@@ -344,19 +343,20 @@ def open_menus(c):
             menu.Expand()
 
 
-def dropdown(obj, field):
-    """One of an Alpaca4d component's menu dropdowns, which it keeps to itself."""
+def widget(obj, field):
+    """One of an Alpaca4d component's menu controls, which it keeps to itself."""
     flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
     return obj.GetType().GetField(field, flags).GetValue(obj)
 
 
-def show_result(results, family, component):
-    """Picks View Results' Result and Component as the menu would: the Component list follows the
-    Result, so it is filled for it before a component is picked from it."""
-    dropdown(results, "_ddFamily").Value = family
+def show_result(results, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
     flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-    results.GetType().GetMethod("SyncComponentList", flags).Invoke(results, None)
-    dropdown(results, "_ddComponent").Value = component
+    results.GetType().GetMethod("ShowResult", flags).Invoke(results, System.Array[System.Object]([show, component]))
+    results.Attributes.ExpireLayout()
+    results.Attributes.PerformLayout()
 
 
 
@@ -690,7 +690,7 @@ def build(doc):
         number(inp(tag, 2), 0.09)
         shown += [place, tag]
 
-    # 8 - Each design analysed: Run Analysis and View Results, locked to start with - enable one at a time,
+    # 8 - Each design analysed: Run Analysis and Model View, locked to start with - enable one at a time,
     # once its run has stopped; each draws where the model is.
     settings = component(m, ANALYSIS_SETTINGS, "Analysis Settings", None, MODEL, ANALYSED)
     analysed = [settings]
@@ -699,13 +699,15 @@ def build(doc):
         wire(inp(run, 0), out(c, model_out))
         faint(wire(inp(run, 1), out(settings)))
         run.Locked = True
-        results = component(m, VIEW_RESULTS, "View Results", "Stress " + label, OPTIMISE, ANALYSED, gap=10)
+        results = component(m, MODEL_VIEW, "Model View", "Stress " + label, OPTIMISE, ANALYSED, gap=10)
         wire(inp(results, 0), out(run))
+        widget(results, "_ckExtruded").Active = False
+        widget(results, "_ckReleases").Active = False
         show_result(results, BRICK_STRESSES, VON_MISES)
         legend = component(m, LEGEND, "Legend", "Legend " + label, RESULTS, ANALYSED, gap=10)
         legend.Locked = True
-        wire(inp(legend, 1), out(results, 1))
-        wire(inp(legend, 2), out(results, 2))
+        wire(inp(legend, 1), out(results, 3))
+        wire(inp(legend, 2), out(results, 4))
         title = text(m, "Title", "Von Mises stress, " + label, RESULTS, ANALYSED, width=200.0)
         wire(inp(legend, 0), title)
         analysed += [run, results, legend, title]

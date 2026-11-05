@@ -43,11 +43,10 @@ SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
 POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
-MODEL_VIEW = "5EDB6364-D458-43D6-81E9-324DECA1FEA6"         # Model View
+MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 BESO = "3B7E5C21-9A4D-4F68-B2E1-7C5D0A8F6E14"               # BESO Topology
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
-VIEW_RESULTS = "4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"       # View Results
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
 # BESO Topology's inputs and outputs, by position.
@@ -55,9 +54,9 @@ T_MODEL, T_KEEP, T_VOLUME_FRACTION, T_ITERATIONS, T_RUN = range(5)
 T_STEP = 11                                                 # after the Settings menu's
 T_SURFACE, T_SOLID, T_DENSITY, T_ELEMENT, T_COMPLIANCE, T_VOLUME, T_CONVERGED, T_HISTORY, T_LOG = range(9)
 T_ALPACA_MODEL = 10
-# View Results' Result menu: Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses,
-# Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises.
-BRICK_STRESSES, VON_MISES = 5, 6
+# Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
+# stresses, Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises.
+BRICK_STRESSES, VON_MISES = 6, 6
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 RED = Color.FromArgb(50, 254, 0, 0)
@@ -331,19 +330,20 @@ def open_menus(c):
             menu.Expand()
 
 
-def dropdown(obj, field):
-    """One of an Alpaca4d component's menu dropdowns, which it keeps to itself."""
+def widget(obj, field):
+    """One of an Alpaca4d component's menu controls, which it keeps to itself."""
     flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
     return obj.GetType().GetField(field, flags).GetValue(obj)
 
 
-def show_result(results, family, component):
-    """Picks View Results' Result and Component as the menu would: the Component list follows the
-    Result, so it is filled for it before a component is picked from it."""
-    dropdown(results, "_ddFamily").Value = family
+def show_result(results, show, component):
+    """Ticks one of Model View's results alone, at a component, as clicks in its Results menu do.
+    Its menus then show the controls its settings have a use for and put the rest away, and it is laid
+    out again: the grid measures it at the height it opens at. Set its other widgets first."""
     flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-    results.GetType().GetMethod("SyncComponentList", flags).Invoke(results, None)
-    dropdown(results, "_ddComponent").Value = component
+    results.GetType().GetMethod("ShowResult", flags).Invoke(results, System.Array[System.Object]([show, component]))
+    results.Attributes.ExpireLayout()
+    results.Attributes.PerformLayout()
 
 
 # ---------------------------------------------------------------- the bridge
@@ -498,16 +498,18 @@ def build(doc):
     wire(inp(analysis, 0), out(topology, T_ALPACA_MODEL))
     wire(inp(analysis, 1), out(settings))
     analysis.Locked = True
-    results = component(m, VIEW_RESULTS, "View Results", None, OPTIMISE, ANALYSED)
+    results = component(m, MODEL_VIEW, "Model View", None, OPTIMISE, ANALYSED)
     wire(inp(results, 0), out(analysis))
+    widget(results, "_ckExtruded").Active = False
+    widget(results, "_ckReleases").Active = False
     show_result(results, BRICK_STRESSES, VON_MISES)
     legend = component(m, LEGEND, "Legend", None, RESULTS, ANALYSED)
     legend.Locked = True    # with nothing analysed it would draw an empty legend
     legend_title = text(m, "Title", "Von Mises stress [MPa]", RESULTS, ANALYSED, width=160.0)
     wire(inp(legend, 0), legend_title)
-    wire(inp(legend, 1), out(results, 1))
-    wire(inp(legend, 2), out(results, 2))
-    shown = readout(m, "What is drawn", out(results, 0), RESULTS, ANALYSED, gap=10, width=300.0, height=40.0)
+    wire(inp(legend, 1), out(results, 3))
+    wire(inp(legend, 2), out(results, 4))
+    shown = readout(m, "What is drawn", out(results, 2), RESULTS, ANALYSED, gap=10, width=300.0, height=40.0)
 
     m.arrange(right + 160, 0)
 
@@ -543,7 +545,7 @@ def build(doc):
          "3. Drag Step back to go through the designs: each one is a bridge of the volume reached, from the whole block "
          "down - choose the one you want.\n"
          "4. Once the run has stopped, enable Run Analysis and Legend: AlpacaModel is the design shown as a model, and "
-         "View Results colours it by Von Mises stress.\n\n"
+         "the Model View after Run Analysis colours it by Von Mises stress.\n\n"
          "Each SSP Brick is solved as OpenSees' eight point brick, and a void brick keeps a billionth of its stiffness. "
          "Above 500 bricks BESO Topology needs a license.",
          0, -450, 620, 380)
