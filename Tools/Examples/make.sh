@@ -40,6 +40,10 @@ cp "$PY"/IronPython.dll "$PY"/IronPython.Modules.dll "$PY"/Microsoft.Dynamic.dll
 cp "$R7"/Resources/Mono.Cecil*.dll "$R7"/Resources/Newtonsoft.Json.Rhino.dll "$R7"/Resources/Rhino.UI.dll \
    "$R7"/Resources/Yak.Core.dll "$R7"/Resources/Eto.dll "$R7"/Resources/ManagedPlugIns/GrasshopperPlugin.rhp/GH_Util.dll "$work/"
 for gha in CurveComponents MathComponents VectorComponents XformComponents GalapagosComponents SurfaceComponents; do cp "$COMPONENTS/$gha.gha" "$work/"; done
+# GhPython, for examples with a Python component; it saves through its editor, which needs Eto.CodeEditor.
+cp "$COMPONENTS/GhPython.gha" "$R7/Resources/Eto.CodeEditor.dll" "$work/"
+# Kangaroo2, for form finding; its goals and solver are in KangarooSolver.dll.
+cp "$COMPONENTS/Kangaroo2Component.gha" "$COMPONENTS/KangarooSolver.dll" "$work/"
 cp GhHost.cs WriteGh.py "$work/"
 export DYLD_FALLBACK_LIBRARY_PATH=${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib:/usr/local/lib}
 
@@ -47,5 +51,7 @@ export DYLD_FALLBACK_LIBRARY_PATH=${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/li
   mcs -nologo -r:IronPython.dll -r:Microsoft.Scripting.dll -r:Microsoft.Dynamic.dll -r:System.Drawing.dll GhHost.cs
   mono GhHost.exe WriteGh.py "$script_dir" "$module" "$OUT" \
     "$work/CurveComponents.gha" "$work/MathComponents.gha" "$work/VectorComponents.gha" \
-    "$work/XformComponents.gha" "$work/GalapagosComponents.gha" "$work/SurfaceComponents.gha" "$work/Grasshopper.dll" \
+    "$work/XformComponents.gha" "$work/GalapagosComponents.gha" "$work/SurfaceComponents.gha" "$work/GhPython.gha" \
+    "$work/Grasshopper.dll" \
+    "$work/Kangaroo2Component.gha" \
     "$work/$(basename "$GHA")" 2>&1 | grep -v "Carbon driver" )
