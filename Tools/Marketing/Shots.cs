@@ -21,7 +21,7 @@ using Rhino.Geometry;
 
 // Marketing pictures of the Alpaca4d examples, from the real definitions on a live Grasshopper canvas:
 // each scene opens an example, solves it (or runs it), adds Custom Previews in the brand colours where
-// Grasshopper's own pink would be the only colour, and saves viewport captures on white, canvas
+// Grasshopper's own pink would be the only colour, and saves viewport captures on light grey, canvas
 // pictures and animation frames. It drives the plugin installed in that Rhino, by GUID and reflection
 // only. run.sh builds it, loads it into Rhino 8 and starts it; see README.md.
 public static class Shots
@@ -39,6 +39,9 @@ public static class Shots
     static readonly Color Orange = Color.FromArgb(235, 108, 63);
     static readonly Color Purple = Color.FromArgb(158, 53, 218);
     static readonly Color DarkTech = Color.FromArgb(42, 45, 49);
+
+    // The pictures' background: a light grey rather than white, which post.py keeps.
+    static readonly Color Background = Color.FromArgb(251, 251, 251);
 
     // Set by Run, from what run.sh passes.
     static string examples, here, licence;
@@ -221,7 +224,7 @@ public static class Shots
         RhinoDoc.ActiveDoc.GroundPlane.Enabled = false;
     }
 
-    /// <summary>Puts back what Setup changed in Grasshopper's settings, and drops the white display mode.</summary>
+    /// <summary>Puts back what Setup changed in Grasshopper's settings, and drops the pictures' display mode.</summary>
     static void Finish()
     {
         CentralSettings.PreviewMeshEdges = meshEdgesBefore;
@@ -424,7 +427,7 @@ public static class Shots
         var id = DisplayModeDescription.CopyDisplayMode(shaded.Id, ModeName);
         mode = DisplayModeDescription.GetDisplayMode(id);
         mode.DisplayAttributes.FillMode = DisplayPipelineAttributes.FrameBufferFillMode.SolidColor;
-        mode.DisplayAttributes.SetFill(Color.White);
+        mode.DisplayAttributes.SetFill(Background);
         try { mode.DisplayAttributes.MeshSpecificAttributes.ShowMeshWires = false; } catch { }
         DisplayModeDescription.UpdateDisplayMode(mode);
         return DisplayModeDescription.GetDisplayMode(id);
@@ -495,7 +498,7 @@ public static class Shots
 
     static Guid lastViewport = Guid.Empty;
 
-    /// <summary>The view on white, at Width x Height, with screen items scaled to the capture.</summary>
+    /// <summary>The view on the background grey, at Width x Height, with screen items scaled to the capture.</summary>
     static void Shoot(RhinoView view, string name)
     {
         var mode = WhiteMode();
@@ -648,7 +651,7 @@ public static class Shots
         var skinParam = Place(new Param_Mesh { NickName = "Skin" }, new PointF(at.X, at.Y + 260));
         skinParam.PersistentData.Append(new GH_Mesh(skin));
         var right = lines.Attributes.Bounds.Right + 60;
-        var p1 = Preview(Out(lines, "SL1"), Orange, new PointF(right, at.Y - 60));
+        var p1 = Preview(Out(lines, "SL1"), Purple, new PointF(right, at.Y - 60));
         var p3 = Preview(Out(lines, "SL3"), LightBlue, new PointF(right, at.Y + 60));
         var ps = Preview(skinParam, Color.FromArgb(30, DarkTech), new PointF(right, at.Y + 200));
         var watch = Stopwatch.StartNew();
@@ -1205,7 +1208,7 @@ public static class Shots
             var outline = Place(new Param_Mesh { NickName = "Domain" }, new PointF(at.X + 420, at.Y + 260));
             outline.PersistentData.Append(new GH_Mesh(Mesh.CreateFromBox(box, 1, 1, 1)));
             var right = lines.Attributes.Bounds.Right + 60;
-            var p1 = Preview(Out(lines, "SL1"), Orange, new PointF(right, at.Y - 60));
+            var p1 = Preview(Out(lines, "SL1"), Purple, new PointF(right, at.Y - 60));
             var p3 = Preview(Out(lines, "SL3"), LightBlue, new PointF(right, at.Y + 60));
             var pd = Preview(outline, Color.FromArgb(24, DarkTech), new PointF(right, at.Y + 200));
             var symbols = Symbols(model, new PointF(right, at.Y + 330), 1, 1);

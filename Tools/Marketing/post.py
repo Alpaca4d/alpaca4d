@@ -1,6 +1,6 @@
 """Trims run.sh's captures and makes them into pictures and animations with ffmpeg, for publish.sh.
 
-    python3 post.py trim in.png out.png [margin] [max_width] [grow] # cut to what is drawn, on white
+    python3 post.py trim in.png out.png [margin] [max_width] [grow] # cut to what is drawn
     python3 post.py anim frames_dir out_base [margin] [width] [fps] [hold]
                                                                     # out_base.gif + out_base.mp4
     python3 post.py pair out.png left.png right.png [height]        # side by side, both as tall
@@ -9,8 +9,14 @@
 import glob, os, re, shutil, subprocess, sys
 
 FF = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
-# Rhino's capture background is 255,254,255: made pure white.
-WHITE = "format=rgb24,lutrgb=r='if(gte(val,250),255,val)':g='if(gte(val,250),255,val)':b='if(gte(val,250),255,val)'"
+# The pictures' background: a light grey, 251, which Shots.cs fills the viewport with. Rhino captures it
+# a shade off in one channel or another; anything that light is made exactly that grey, and for finding
+# what is drawn, white.
+BG = 251
+BG_HEX = "0x%02X%02X%02X" % (BG, BG, BG)
+_LIGHT = "if(gte(val,%d),%%d,val)" % (BG - 3)
+BACKGROUND = "format=rgb24,lutrgb=r='{0}':g='{0}':b='{0}'".format(_LIGHT % BG)
+WHITE = "format=rgb24,lutrgb=r='{0}':g='{0}':b='{0}'".format(_LIGHT % 255)
 
 
 def run(args):
@@ -53,7 +59,7 @@ def crop_filter(b, w, h, margin):
 def trim(src, dst, margin=40, max_width=0, grow=0):
     w, h = size(src)
     f, cw, ch = crop_filter(box([src], grow), w, h, margin)
-    vf = WHITE + "," + f
+    vf = BACKGROUND + "," + f
     if max_width and cw > max_width:
         vf += ",scale=%d:-2:flags=lanczos" % max_width
     r = run(["-i", src, "-vf", vf, "-frames:v", "1", "-update", "1", dst])
@@ -67,7 +73,7 @@ def anim(frames, base, margin=40, width=900, fps=12, hold=2):
     w, h = size(files[0])
     pattern = os.path.join(frames, "%03d.png")
     f, cw, ch = crop_filter(box(pattern), w, h, margin)
-    chain = WHITE + "," + f + ",scale=%d:-2:flags=lanczos" % width
+    chain = BACKGROUND + "," + f + ",scale=%d:-2:flags=lanczos" % width
     if hold:
         chain += ",tpad=stop_mode=clone:stop_duration=%d" % hold
     r = run(["-framerate", str(fps), "-i", pattern, "-vf", chain + ",split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a",
@@ -84,16 +90,16 @@ def anim(frames, base, margin=40, width=900, fps=12, hold=2):
 def stack(dst, top, bottom, gap=40):
     tw, th = size(top)
     r = run(["-i", top, "-i", bottom, "-filter_complex",
-             "[1]scale=%d:-2:flags=lanczos[b];[0]pad=iw:ih+%d:0:0:white[t];[t][b]vstack" % (tw, gap), "-frames:v", "1", "-update", "1", dst])
+             "[1]scale=%d:-2:flags=lanczos[b];[0]pad=iw:ih+%d:0:0:%s[t];[t][b]vstack" % (tw, gap, BG_HEX), "-frames:v", "1", "-update", "1", dst])
     if r.returncode:
         raise SystemExit(r.stderr[-800:])
     print("stacked -> %s (%s)" % (dst, "x".join(map(str, size(dst)))))
 
 
 def pair(dst, left, right, height=1400, gap=60):
-    """The canvas on the left, the result on the right, both made height tall, on white."""
+    """The canvas on the left, the result on the right, both made height tall, on the background grey."""
     r = run(["-i", left, "-i", right, "-filter_complex",
-             "[0]scale=-2:%d:flags=lanczos,pad=iw+%d:ih:0:0:white[l];[1]scale=-2:%d:flags=lanczos[r];[l][r]hstack" % (height, gap, height),
+             "[0]scale=-2:%d:flags=lanczos,pad=iw+%d:ih:0:0:%s[l];[1]scale=-2:%d:flags=lanczos[r];[l][r]hstack" % (height, gap, BG_HEX, height),
              "-frames:v", "1", "-update", "1", dst])
     if r.returncode:
         raise SystemExit(r.stderr[-800:])
