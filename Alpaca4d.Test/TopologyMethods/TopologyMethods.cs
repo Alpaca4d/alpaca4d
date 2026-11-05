@@ -352,6 +352,7 @@ static class TopologyMethods
         MultiMaterialRun(openSees, folder);
         BesoRun(openSees, folder);
         BesoBreakdown(openSees, folder);
+        BesoBreakdownInTwoSteps(openSees, folder);
 
         Console.WriteLine(fails == 0 ? "\nAll checks passed." : $"\n{fails} check(s) FAILED.");
         Environment.Exit(fails == 0 ? 0 : 1);
@@ -592,6 +593,30 @@ static class TopologyMethods
             // A member nearly cut and brought back shows as a jump the run recovers from: BESO's bringing elements back at work.
             Check(result.Converged && result.BrokeAfter == null,
                   $"converges in {result.History.Count} iterations at {result.History.Last().Compliance:G4}, nothing broken (largest jump {jump:0.00} times, recovered)");
+        }
+    }
+
+    /// <summary>
+    /// The beam-column joint at 10 bricks a side, by BESO: the compliance rises 4.3 times at iteration 109, under
+    /// Breakdown, then a million times at 110, and comes back only to eight times what it was. Measured against the
+    /// design just before the big jump, that looked mended; measured against the lowest of the five before, it is not.
+    /// </summary>
+    static void BesoBreakdownInTwoSteps(string openSees, string folder)
+    {
+        Section("BESO: a member cut in two steps, the beam-column joint at 10 bricks a side");
+        var joint = BeamColumnJoint(10);
+        var cells = joint.Cells(210e6);
+        using (var analysis = Start(joint, "joint-10", openSees, folder, cells, 210e6, 0.3))
+        {
+            var result = BesoOptimiser.Run(cells, new BesoSettings { VolumeFraction = 0.2, MaxIterations = 300 }, analysis.Energies);
+            var h = result.History.Select(it => it.Compliance).ToList();
+            int broke = result.BrokeAfter ?? 0;
+            Check(broke > 1 && !result.Converged && !result.Stopped,
+                  $"it ends after {h.Count} iterations, broken after iteration {broke}, not converged");
+            Check(broke > 1 && h[broke] > BesoOptimiser.Mended * h[broke - 1] && h[broke] < BesoOptimiser.Breakdown * h[broke - 1]
+                  && h.Skip(broke).Max() > BesoOptimiser.Breakdown * h[broke - 1] && h.Last() > BesoOptimiser.Mended * h[broke - 1],
+                  $"iteration {broke}'s design, {h[Math.Max(0, broke - 1)]:G4}, is the last whole one: the next is {(broke > 1 ? h[broke] / h[broke - 1] : 0):G3} " +
+                  $"times softer, then {(broke > 1 ? h.Skip(broke).Max() / h[broke - 1] : 0):G3}, and the last {(broke > 1 ? h.Last() / h[broke - 1] : 0):G3}");
         }
     }
 
