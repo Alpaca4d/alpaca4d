@@ -93,3 +93,36 @@ chord pair needs only a bar between them, joined to nothing, which Solid and Alp
 a piece the supports do not hold. The truss node uses steel and aluminium (4% and 8%), the joint steel and
 concrete (6% and 14%); each method puts 20 to 30% more material on the joint's +x side, where the beam's
 moment is 150 kNm against 80, and the joint comes out symmetric along y, where the beams balance.
+
+**Speed**, `./speed.sh` (2026-11-05, the M2 Pro's 10 cores, OpenSeesLatest-Mumps): each run alone, with an OpenSees of
+its own started inside the clock; SIMP allowed 200 iterations, BESO and Multi-Material 300. Each cell is the whole run,
+its iterations, and in brackets when its compliance stayed within 1% of where it ended. The bridge at 8 192 bricks is a
+repeat: its first SIMP and BESO runs met a busy machine, a solve 0.71 and 0.45 s against 0.41 s. `speed.py` prints the
+full tables, start-up, solves, updates and the rest apart, and points out runs like those.
+
+| Model | Bricks | A solve | SIMP | BESO | Multi-Material |
+| --- | --- | --- | --- | --- | --- |
+| Bridge block | 1 024 | 0.05 s | 2.6 s, 44 (1.9 s) | 4.9 s, 92 (4.9 s) | 18.9 s, 267 (17.7 s) |
+| | 3 456 | 0.16 s | 13.4 s, 77 (5.3 s) | 16.7 s, 102 (16.3 s) | 59.3 s, 263 (53.7 s) |
+| | 8 192 | 0.41 s | 48.9 s, 109 (14.0 s) | 36.3 s, 90 (32.3 s) | 141 s, 260 (136 s) |
+| | 16 000 | 0.82 s | 108 s, 123 (26.2 s) | 78.0 s, 95 (69.1 s) | 293 s, 260 (284 s) |
+| Truss node | 1 072 | 0.06 s | 4.6 s, 70 (2.1 s) | 13.9 s, broke after 76 | 24.2 s, 270 (22.2 s) |
+| | 8 576 | 0.46 s | 98.7 s, 200 (25.5 s) | 55.7 s, 121 (48.8 s) | 159 s, 260 (152 s) |
+| | 28 944 | 2.0 s | 435 s, 200 (90.6 s) | 241 s, 119 (215 s) | 638 s, 260 (616 s) |
+| Beam-column joint | 1 128 | 0.06 s | 3.6 s, 54 (1.9 s) | 7.6 s, 123, see below | 21.8 s, 260 (20.8 s) |
+| | 9 024 | 0.49 s | 83.9 s, 160 (11.5 s) | 45.4 s, 92 (39.5 s) | 181 s, 264 (172 s) |
+
+* A solve takes as long whichever method asks for it - within 3% on every model - so the methods differ in how many
+  iterations they make and in their updates. OpenSees took 87% of the 50 minutes.
+* SIMP is within 1% of its end after 21 to 51 iterations at every size - on the larger models a quarter of its run or
+  less; the rest settles the densities. On the truss node it runs to its 200 without meeting top3d's test.
+* BESO's update is next to nothing (6 ms at 29 000 bricks) and it makes 90 to 123 iterations: from about 8 000 bricks
+  it is the quickest. Its design is there only near the end, as the volume comes down 2% an iteration.
+* Multi-Material makes 260 iterations, the sharpening of its projection, and MMA takes a sixth to a third of its time
+  (0.33 s an iteration at 29 000 bricks, two materials). With steel alone the update is less than half as long (6.0 s against
+  14.8 s on the 3 456-brick bridge, 12.2 against 34.9 on the 8 576-brick node) and the run 17 to 18% shorter: the
+  iterations make it slow, not the second material.
+* BESO at 10 bricks a side: on the truss node it cuts a leg through after iteration 76 and says so. On the joint the
+  compliance rose 4.3 times at iteration 109 (0.366 to 1.58), then a million times at 110; it came back to 2.9 and the
+  run reported converged, because the breakdown guard measured the mending against 1.58, the compliance after the
+  first rise, not 0.366.
