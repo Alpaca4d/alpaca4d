@@ -10,8 +10,8 @@ replaces the pictures of the round before.
 
 Each scene opens an example on the canvas of a live Rhino 8, solves it or runs it, and saves:
 
-* captures of the Rhino viewport on white, with Alpaca4d's own previews: View Results and its
-  Legend, the supports and loads Model View draws;
+* captures of the Rhino viewport on white, with Alpaca4d's own previews: Model View's results and
+  their Legend, the supports and loads Model View draws;
 * the definition, as Grasshopper draws it;
 * the frames of an animation: a topology optimisation run, a mode shape swinging.
 
@@ -77,7 +77,8 @@ Nothing is saved into the examples. What a scene changes stays on the canvas whi
 * Custom Previews in the brand colours, fed by a swatch, where Grasshopper's pink would be the
   only colour;
 * Weld Mesh, for a smooth optimised surface;
-* Model View drawing only the supports and loads;
+* Model View drawing the supports and loads, with every element left out by its ElementId and
+  so greyed;
 * a Legend, or a Run Analysis of the optimised design.
 
 Two of Grasshopper's settings change for a run and are put back at its end: the mesh edges
