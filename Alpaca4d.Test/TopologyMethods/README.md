@@ -33,6 +33,10 @@ themselves are in `../TopologyOptimisation/grasshopper.sh`, with Topology Optimi
 * **A BESO breakdown**: TopologyBridge's block at 2 bricks per metre with a 2 m filter cuts a member through
   and never mends it; the run settles on what is left and says it broke (`BrokeAfter`), not converged. The
   same block with the default filter converges.
+* **A BESO breakdown in two steps**: the beam-column joint at 10 bricks a side, whose compliance rises 4.3 times at
+  iteration 109, under Breakdown, then eighty million times at 110, and comes back only to eight times what it was. The
+  guard measures against the lowest of the five designs before, so it says the joint broke after iteration 108, the last
+  whole design; measured against the design just before the big jump, it had looked mended.
 
 ## The benchmarks
 
@@ -123,6 +127,6 @@ full tables, start-up, solves, updates and the rest apart, and points out runs l
   14.8 s on the 3 456-brick bridge, 12.2 against 34.9 on the 8 576-brick node) and the run 17 to 18% shorter: the
   iterations make it slow, not the second material.
 * BESO at 10 bricks a side: on the truss node it cuts a leg through after iteration 76 and says so. On the joint the
-  compliance rose 4.3 times at iteration 109 (0.366 to 1.58), then a million times at 110; it came back to 2.9 and the
+  compliance rose 4.3 times at iteration 109 (0.366 to 1.58), then a million times at 110, and came back to 2.9; the
   run reported converged, because the breakdown guard measured the mending against 1.58, the compliance after the
-  first rise, not 0.366.
+  first rise. The guard now measures against the lowest of the five before, and the joint broke after iteration 108.

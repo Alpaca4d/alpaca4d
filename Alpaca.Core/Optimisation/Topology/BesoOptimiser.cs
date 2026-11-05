@@ -62,16 +62,17 @@ namespace Alpaca4d.Optimisation
     public static class BesoOptimiser
     {
         /// <summary>
-        /// How many times the compliance of the design before it a design's has to be for a member to have been cut
-        /// through, leaving all but a mechanism; and how many times, at most, it has to come back to for the run to
-        /// have mended it, bringing elements back. A run that would converge on a design it has not mended stops
-        /// there, broken, not converged.
+        /// How many times the lowest compliance of the five designs before it a design's has to be for a member to have
+        /// been cut through, leaving all but a mechanism; and how many times that, at most, it has to come back to for
+        /// the run to have mended it, bringing elements back. The lowest of five, not the one before, so that a member
+        /// cut in two steps - the first under Breakdown - counts too. A run that would converge on a design it has not
+        /// mended stops there, broken, not converged.
         /// </summary>
         public const double Breakdown = 10.0, Mended = 3.0;
 
         /// <summary>
         /// What a run needs to go on: the sensitivity numbers of its last iteration, after averaging, and a breakdown
-        /// not mended yet - the iteration that found it and the compliance before it.
+        /// not mended yet - the iteration after the last whole design, and the compliance it is measured against.
         /// </summary>
         private sealed class Memory
         {
@@ -185,11 +186,17 @@ namespace Alpaca4d.Optimisation
 
                 double compliance = energies.Sum();
 
-                // A member cut through - Xia et al.'s "breakdown" (section 3.4) - or mended since.
-                if (brokenAt == 0 && result.History.Count > 0 && compliance > Breakdown * result.History[result.History.Count - 1].Compliance)
+                // A member cut through - Xia et al.'s "breakdown" (section 3.4) - or mended since. The last whole design is
+                // the last of the five before within Mended of the lowest: the one before, when the member went in one step.
+                if (brokenAt == 0 && result.History.Count > 0)
                 {
-                    brokenAt = iteration;
-                    beforeBreaking = result.History[result.History.Count - 1].Compliance;
+                    var before = result.History.Skip(Math.Max(0, result.History.Count - 5)).ToList();
+                    double lowest = before.Min(it => it.Compliance);
+                    if (compliance > Breakdown * lowest)
+                    {
+                        brokenAt = before.Last(it => it.Compliance <= Mended * lowest).Iteration + 1;
+                        beforeBreaking = lowest;
+                    }
                 }
                 else if (brokenAt > 0 && compliance < Mended * beforeBreaking)
                     brokenAt = 0;
