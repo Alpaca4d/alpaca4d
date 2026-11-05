@@ -27,18 +27,22 @@ namespace Alpaca4d.Gh
         }
 
         private const string ValuesDescription =
-            "Numbers the labels run from the smallest to the largest of - the Values output of View Results, " +
+            "Numbers the labels run from the smallest to the largest of - the Values output of Model View, " +
             "which follows the Range given to it. To label a range of your own, give its two ends.\n" +
-            "One value more than there are colours, as View Results gives with Iso-surfaces on, labels the edges between the colours rather than the colours.";
+            "Each branch is a legend of its own, drawn beside the one before: Model View gives a branch per result it draws.\n" +
+            "One value more than there are colours, as Model View gives with Iso-surfaces on, labels the edges between the colours rather than the colours.";
+
+        private const string TitleDescription =
+            "Legend title. With a branch of Values per legend, a title per legend, in the order of the branches.";
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
-            pManager.AddTextParameter("Title", "Title", "Legend title", GH_ParamAccess.item, "");
+            pManager.AddTextParameter("Title", "Title", TitleDescription, GH_ParamAccess.list, "");
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddNumberParameter("Values", "Values", ValuesDescription, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddColourParameter("Colors", "Colors", "Legend colors, from the low end to the high - the Colors output of View Results, so the legend and the model agree. " +
-                "Fewer than two fall back to the default gradient, as in View Results.", GH_ParamAccess.list);
+            pManager.AddColourParameter("Colors", "Colors", "Legend colors, from the low end to the high - the Colors output of Model View, so the legend and the model agree. " +
+                "Fewer than two fall back to the default gradient, as in Model View.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Position", "Pos", "0: Left, 1: Right, 2: Bottom Center", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -68,6 +72,16 @@ namespace Alpaca4d.Gh
                 if (values.NickName == "Data") values.NickName = "Values";
             }
 
+            // Title took one title, item by item. Matched that way against a branch of Values per
+            // legend, two titles drew every legend twice, once under each; as a list, each legend
+            // takes its own. A file says how the input took its data, so one saved before is told.
+            var title = Params.Input.Count > 0 ? Params.Input[0] : null;
+            if (title != null)
+            {
+                title.Access = GH_ParamAccess.list;
+                title.Description = TitleDescription;
+            }
+
             return true;
         }
 
@@ -75,13 +89,15 @@ namespace Alpaca4d.Gh
         {
             // Locals rather than fields: an input that brings no data then leaves its default,
             // not whatever the last solution read.
-            string title = string.Empty;
+            var titles = new List<string>();
             var data = new List<double>();
             var colors = new List<Color>();
             int position = 0;
             double scale = 1.5;
 
-            DA.GetData(0, ref title);
+            // A run per branch of Values, and a title each: the one in the same place, or the last.
+            DA.GetDataList(0, titles);
+            string title = titles.Count > 0 ? titles[Math.Min(DA.Iteration, titles.Count - 1)] : string.Empty;
             DA.GetDataList(1, data);
             DA.GetDataList(2, colors);
             DA.GetData(3, ref position);
@@ -97,7 +113,7 @@ namespace Alpaca4d.Gh
                 position = clamped;
             }
 
-            // As View Results does: one colour is not a gradient, and the two have to agree.
+            // As Model View does: one colour is not a gradient, and the two have to agree.
             if (colors.Count < 2)
                 colors = Alpaca4d.Colors.Gradient(0);
 
@@ -110,14 +126,14 @@ namespace Alpaca4d.Gh
                 max = finite.Max();
             }
 
-            // One more value than colours is View Results with iso-surfaces on, handing over the
+            // One more value than colours is Model View with iso-surfaces on, handing over the
             // edges of its bands: a label at each edge, between the swatches. A flat range is one
             // value either way, and one swatch.
             bool edges = data.Count == colors.Count + 1;
             var values = ColourScale.LabelValues(min, max, colors.Count + (edges ? 1 : 0));
             int swatches = values.Count > 1 && edges ? values.Count - 1 : values.Count;
 
-            _conduit.Update(title, colors.Take(swatches).ToList(), values.Select(value => ColourScale.Format(value, min, max)).ToList(), position, scale);
+            _conduit.Add(title, colors.Take(swatches).ToList(), values.Select(value => ColourScale.Format(value, min, max)).ToList(), position, scale);
             Rhino.RhinoDoc.ActiveDoc?.Views?.Redraw();
         }
 
@@ -159,6 +175,10 @@ namespace Alpaca4d.Gh
 
         protected override void BeforeSolveInstance()
         {
+            // One legend per run of SolveInstance: a branch of Values each, as Model View gives one
+            // per result.
+            _conduit.Clear();
+
             List<string> resultTypes = new List<string> { "Left", "Right", "Bottom" };
             List<int> values = new List<int> { 0, 1, 2 };
             ValueListUtils.UpdateValueLists(this, 3, resultTypes, values);
@@ -189,6 +209,24 @@ namespace Alpaca4d.Gh
             private static readonly Color Ink = Color.Black;
 
             private readonly Func<bool> _shouldDraw;
+
+            /// <summary>
+            /// One legend's title, colours and labels, and where and how big it is drawn. One label
+            /// per colour, each read at the middle of its swatch - or one more than that, the edges
+            /// of bands, each read at the line between two swatches.
+            /// </summary>
+            private sealed class Entry
+            {
+                public string Title;
+                public List<Color> Colors;
+                public List<string> Labels;
+                public int Position;
+                public double Scale;
+            }
+
+            private readonly List<Entry> _entries = new List<Entry>();
+
+            // The legend being drawn, which the drawing code below reads.
             private string _title = string.Empty;
             private List<Color> _colors = new List<Color>();
             private List<string> _labels = new List<string>();
@@ -204,39 +242,51 @@ namespace Alpaca4d.Gh
                 _shouldDraw = shouldDraw;
             }
 
-            /// <summary>
-            /// One label per colour, each read at the middle of its swatch - or one more than
-            /// that, the edges of bands, each read at the line between two swatches.
-            /// </summary>
-            public void Update(string title, List<Color> colors, List<string> labels, int position, double scale)
+            public void Clear() => _entries.Clear();
+
+            public void Add(string title, List<Color> colors, List<string> labels, int position, double scale)
             {
-                _title = title ?? string.Empty;
-                _colors = colors;
-                _labels = labels;
-                _position = position;
-                _scale = scale;
+                _entries.Add(new Entry { Title = title ?? string.Empty, Colors = colors, Labels = labels, Position = position, Scale = scale });
             }
 
+            /// <summary>
+            /// Each legend at the position it was given; a second at the same position beside the
+            /// first, inwards from the edge - or above it, along the bottom - so that two results
+            /// drawn together can each have one.
+            /// </summary>
             protected override void DrawForeground(DrawEventArgs e)
             {
-                if (!_shouldDraw() || _colors.Count == 0) return;
+                if (!_shouldDraw()) return;
 
                 e.Viewport.GetScreenPort(out int left, out int right, out int bottom, out int top, out _, out _);
                 int width = right - left;
                 int height = bottom - top;
                 _measureAt = new Point2d(0.5 * width, 0.5 * height);
 
-                if (_position == 2)
-                    DrawHorizontal(e.Display, width, height);
-                else
-                    DrawVertical(e.Display, width, height);
+                var taken = new double[3];
+                foreach (var entry in _entries.Where(x => x.Colors.Count > 0))
+                {
+                    _title = entry.Title;
+                    _colors = entry.Colors;
+                    _labels = entry.Labels;
+                    _position = entry.Position;
+                    _scale = entry.Scale;
+
+                    if (_position == 2)
+                        taken[2] += DrawHorizontal(e.Display, width, height, taken[2]);
+                    else
+                        taken[_position] += DrawVertical(e.Display, width, height, taken[_position]);
+                }
             }
 
-            /// <summary>Labels on the edges between swatches, not on the swatches: see <see cref="Update"/>.</summary>
+            /// <summary>Labels on the edges between swatches, not on the swatches: see <see cref="Entry"/>.</summary>
             private bool Edges => _labels.Count == _colors.Count + 1;
 
-            /// <summary>A column of swatches with their labels to the right, at the left or right edge.</summary>
-            private void DrawVertical(DisplayPipeline display, int width, int height)
+            /// <summary>
+            /// A column of swatches with their labels to the right, at the left or right edge, or
+            /// <paramref name="shift"/> pixels in from it. How wide it was, with a gap after it.
+            /// </summary>
+            private double DrawVertical(DisplayPipeline display, int width, int height, double shift)
             {
                 int count = _colors.Count;
                 double unit = 15.0 * _scale;
@@ -254,7 +304,7 @@ namespace Alpaca4d.Gh
 
                 double available = height * (1.0 - MarginTop - MarginBottomVertical) - titleBlock - overhang;
                 double length = Math.Min(3.5 * unit, available / count);
-                if (length < 1.0) return;
+                if (length < 1.0) return 0.0;
 
                 // Each label is centred on its swatch, so it can be no taller than one.
                 textPx = Math.Min(textPx, Math.Max(MinTextPx, (int)Math.Floor(length)));
@@ -263,7 +313,7 @@ namespace Alpaca4d.Gh
                 // Right-aligned by the whole block, labels included: placing the swatches by the
                 // margin left the labels to run off the edge.
                 double blockWidth = Math.Max(unit + gap + boxes.Max(box => box.Width), titleBox.Width);
-                double x = _position == 0 ? width * MarginSide : width * (1.0 - MarginSide) - blockWidth;
+                double x = _position == 0 ? width * MarginSide + shift : width * (1.0 - MarginSide) - blockWidth - shift;
                 double y = height * MarginTop;
 
                 if (hasTitle)
@@ -286,10 +336,15 @@ namespace Alpaca4d.Gh
                     double at = y + (Edges ? k : k + 0.5) * length;
                     DrawText(display, _labels[k], boxes[k], textPx, x + unit + gap, at - 0.5 * boxes[k].Height);
                 }
+
+                return blockWidth + 2.0 * unit;
             }
 
-            /// <summary>A row of swatches along the bottom, centred, labels above and the title below.</summary>
-            private void DrawHorizontal(DisplayPipeline display, int width, int height)
+            /// <summary>
+            /// A row of swatches along the bottom, centred, labels above and the title below, or
+            /// <paramref name="lift"/> pixels up from there. How tall it was, with a gap above it.
+            /// </summary>
+            private double DrawHorizontal(DisplayPipeline display, int width, int height, double lift)
             {
                 int count = _colors.Count;
                 double unit = 15.0 * _scale;
@@ -299,7 +354,7 @@ namespace Alpaca4d.Gh
 
                 // Labels on the edges stand half a swatch past either end of the row.
                 double length = Math.Min(3.5 * unit, width * (1.0 - 2.0 * MarginSide) / (Edges ? count + 1 : count));
-                if (length < 1.0) return;
+                if (length < 1.0) return 0.0;
 
                 // Labels sit side by side over their swatches, so the text shrinks until the
                 // widest of them fits over one.
@@ -315,7 +370,8 @@ namespace Alpaca4d.Gh
                 var titleBox = hasTitle ? Measure(display, _title, titlePx) : Size.Empty;
 
                 // Stacked up from the bottom margin: title, then the bar, then the labels.
-                double titleTop = height * (1.0 - MarginBottomHorizontal) - titleBox.Height;
+                double bottom = height * (1.0 - MarginBottomHorizontal) - lift;
+                double titleTop = bottom - titleBox.Height;
                 double barTop = (hasTitle ? titleTop - gap : titleTop) - unit;
                 double x = 0.5 * (width - count * length);
 
@@ -334,6 +390,9 @@ namespace Alpaca4d.Gh
 
                 if (hasTitle)
                     DrawText(display, _title, titleBox, titlePx, 0.5 * (width - titleBox.Width), titleTop);
+
+                double labelsTop = barTop - gap - boxes.Max(box => box.Height);
+                return bottom - labelsTop + unit;
             }
 
             /// <summary>The size of <paramref name="text"/> drawn <paramref name="height"/> pixels high.</summary>
