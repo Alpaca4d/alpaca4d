@@ -60,7 +60,7 @@ namespace Alpaca4d.Menu
                 (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.github.io/docs/"));
 
             menuItem.DropDown.Items.Add("Examples", Alpaca4d.Gh.Properties.Resources.External_Link__Alpaca4d_, 
-                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.github.io/docs/examples/multi-storey-building/multi-storey-building.html"));
+                (sender, e) => OpenBrowser(sender, e, "https://alpaca4d.github.io/examples/"));
 
             menuItem.DropDown.Items.Add(new ToolStripSeparator());
             //----------------------
