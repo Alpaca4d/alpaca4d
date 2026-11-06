@@ -168,6 +168,7 @@ namespace Alpaca4d.Gh
 
             var model = new Alpaca4d.Model();
             if (!DA.GetData(0, ref model)) return;
+            if (!AnalysedModel.Check(this, model)) return;
 
             int step = 0;
             DA.GetData(1, ref step);

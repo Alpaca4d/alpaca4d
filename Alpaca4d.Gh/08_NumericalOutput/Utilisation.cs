@@ -220,6 +220,7 @@ namespace Alpaca4d.Gh
             double gammaM0 = 1.0, gammaM1 = 1.0;
 
             if (!DA.GetData(ModelInput, ref alpacaModel)) return;
+            if (!AnalysedModel.Check(this, alpacaModel)) return;
             DA.GetData(StepInput, ref step);
             var filter = ElementFilterInput.Read(DA, FilterInput, this);
             DA.GetDataList(LengthInput, lengthsY);

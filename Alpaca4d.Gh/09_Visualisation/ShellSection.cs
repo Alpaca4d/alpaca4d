@@ -251,6 +251,7 @@ namespace Alpaca4d.Gh
         {
             Alpaca4d.Model model = null;
             if (!DA.GetData(0, ref model) || model == null) return;
+            if (!AnalysedModel.Check(this, model)) return;
 
             Curve curve = null;
             if (!DA.GetData(1, ref curve) || curve == null) return;
