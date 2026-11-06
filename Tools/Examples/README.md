@@ -101,7 +101,7 @@ Alpaca4d's switcher components (ForceBeamColumn, Load Pattern) write a diagnosti
 command line when they save, which is not there outside Rhino; WriteGh.py clears the parent the
 diagnostic checks for, and the component sets it back as it saves.
 
-Six examples are in the docs of the website repository: under Examples, as
-`doc/examples/steel-cantilever`, `footbridge-study` and `non-linear-optimisation`; under Ten Node
-Tetrahedron, as `doc/basics/elements/ten-node-tetrahedron/spot-the-cow`, `femur` and
+Six examples are published from the website repository: on the website's Examples, as
+`examples/steel-cantilever`, `footbridge-study` and `non-linear-optimisation`; in the docs, under
+Ten Node Tetrahedron, as `doc/basics/elements/ten-node-tetrahedron/spot-the-cow`, `femur` and
 `inigo-the-dragon`. After writing a `.gh` again, copy it there under that name.
