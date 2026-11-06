@@ -10,6 +10,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -21,6 +22,7 @@ using Grasshopper.Kernel.Types;
 using Rhino.Display;
 using Rhino.Geometry;
 
+using Alpaca4d;
 using Alpaca4d.UIWidgets;
 
 #pragma warning disable CS0612, CS0618
@@ -65,6 +67,8 @@ public static class GrasshopperCheck
             Filtered(small);
             DisplayOnly(small);
             Drawn(small);
+            LoadsDrawn(small);
+            LoadsDeformed(small);
             UpgradeModelView(small);
             UpgradeViewResults(small);
 
@@ -89,6 +93,7 @@ public static class GrasshopperCheck
     {
         public readonly GH_Document Document = new GH_Document();
         public readonly GH_Component Assemble, Analysis;
+        public readonly GH_Component ShellElements, BeamElements, SupportsMade, AreaPattern;
         public readonly int Shells, Beams, Supports;
 
         public Plate(string name, int nx, int ny)
@@ -160,6 +165,10 @@ public static class GrasshopperCheck
             Wire(Assemble, "AlpacaModel", Analysis, "AlpacaModel");
             Wire(settings, "Settings", Analysis, "Settings");
 
+            ShellElements = shell;
+            BeamElements = beams;
+            SupportsMade = support;
+            AreaPattern = pattern;
             Shells = nx * ny;
             Beams = 2 * nx;
             Supports = 2 * (ny + 1);
@@ -607,6 +616,157 @@ public static class GrasshopperCheck
             conduit.Draw.Add(view);
             rhino.CaptureToBitmap(rhino.Size)?.Dispose();
             Check(conduit.Frames > 0 && conduit.Failure == null, "every overlay over four results at once, deformed, drawn without an error" +
+                  (conduit.Failure == null ? "" : ": " + conduit.Failure));
+        }
+        finally
+        {
+            conduit.Enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// With Deformed shape ticked, the loads ride on the deformed shape: the area load's arrows end
+    /// where the plate's corners went, each moved as far as its node, and the edge beams' self-weight
+    /// with them.
+    /// </summary>
+    static void LoadsDeformed(Plate plate)
+    {
+        Section("Loads on the deformed shape");
+        var view = plate.View();
+        Field<MenuCheckBox>(view, "_ckShowLoads").Active = true;
+        plate.Solve(view);
+        var before = Field<List<Tuple<Line, Color>>>(Call(view, "Loads"), "_arrows").Select(a => a.Item1).ToList();
+
+        Field<MenuCheckBox>(view, "_ckDeformed").Active = true;
+        Field<MenuSlider>(view, "_slDeformScale").Value = 50.0;
+        plate.Solve(view);
+        var after = Field<List<Tuple<Line, Color>>>(Call(view, "Loads"), "_arrows").Select(a => a.Item1).ToList();
+        var moved = Field<Dictionary<int, Vector3d>>(view, "_drawnDisplacement");
+        var model = Field<Alpaca4d.Model>(view, "_model");
+
+        Check(moved != null && moved.Values.Any(v => v.Length > 1e-6), "the deformed shape's displacements reach the loads");
+        Check(after.Count == before.Count, $"the same arrows, as many as on the shape as built ({after.Count} and {before.Count})");
+        int onNodes = 0, wrong = 0;
+        for (int i = 0; i < Math.Min(before.Count, after.Count); i++)
+        {
+            int tag = model.NodeTagNear(before[i].To, out _);
+            if (tag == 0) continue;
+            onNodes++;
+            var expected = moved.TryGetValue(tag, out var by) ? by : Vector3d.Zero;
+            if ((after[i].To - before[i].To - expected).Length > 1e-9 || Math.Abs(after[i].Length - before[i].Length) > 1e-9) wrong++;
+        }
+        Check(onNodes > 0 && wrong == 0, $"each arrow ending on a node moved as far as the node, as long as it was ({onNodes} on nodes, {wrong} not)");
+        double far = after.Zip(before, (a, b) => a.To.DistanceTo(b.To)).Max();
+        Check(far > 0.0, $"and the loads moved with the plate, up to {far:F3} m at deformation scale 50");
+    }
+
+    /// <summary>
+    /// Every kind of load on the plate, each given element by element as a list wired into a load
+    /// component makes it, drawn to fit the model: once a run of beams or group of shells, the
+    /// largest arrow a share of the model's size, the area load's sheet on the side it comes from,
+    /// the self-weight as the loads OpenSees is given, along the beams.
+    /// </summary>
+    static void LoadsDrawn(Plate plate)
+    {
+        Section("Loads drawn to fit the model");
+
+        var line = plate.Add<Alpaca4d.Gh.LinearLoad>();
+        In(line, "Beam|Id").AddSource(Out(plate.BeamElements, "Element"));
+        Set(line, "Force", new GH_Vector(new Vector3d(0, 0, -10)));
+        var point = plate.Add<Alpaca4d.Gh.PointLoad>();
+        Set(point, "Point", new GH_Point(new Point3d(6, 5, 0)));
+        Set(point, "Force", new GH_Vector(new Vector3d(0, 0, -50)));
+        Set(point, "Moment", new GH_Vector(new Vector3d(0, 20, 0)));
+        var gravity = plate.Add<Alpaca4d.Gh.GravityLoad>();
+        var mass = plate.Add<Alpaca4d.Gh.MassPointLoad>();
+        Set(mass, "Point", new GH_Point(new Point3d(0, 0, 0)));
+        Set(mass, "TransMass", new GH_Vector(new Vector3d(500, 500, 500)));
+
+        var pattern = plate.Add<Alpaca4d.Gh.PatternBase>("PlainPattern (Alpaca4d)");
+        foreach (var load in new GH_Component[] { line, point, gravity })
+            In(pattern, "Loads").AddSource(load.Params.Output[0]);
+
+        var assemble = plate.Add<Alpaca4d.Gh.AssembleModel>();
+        Wire(plate.ShellElements, "Element", assemble, "Elements");
+        Wire(plate.BeamElements, "Element", assemble, "Elements");
+        Wire(plate.SupportsMade, "Support", assemble, "Supports");
+        foreach (var source in new[] { plate.AreaPattern, pattern, mass })
+            In(assemble, "LoadPatterns").AddSource(source.Params.Output[0]);
+
+        var view = plate.Add<Alpaca4d.Gh.ModelView>();
+        Wire(assemble, "AlpacaModel", view, "AlpacaModel");
+        Field<MenuCheckBox>(view, "_ckShowLoads").Active = true;
+        Field<MenuCheckBox>(view, "_ckShowLoadValues").Active = true;
+        plate.Solve();
+
+        var loads = Call(view, "Loads");
+        var values = ((System.Collections.IEnumerable)Field<object>(loads, "_values")).Cast<object>()
+            .Select(v => (string)v.GetType().GetField("Item1").GetValue(v)).ToList();
+        var arrows = Field<List<Tuple<Line, Color>>>(loads, "_arrows");
+        int Count(string text) => values.Count(v => v == text);
+
+        Check(Count("5 kN/m²") == 1, $"the area load given shell by shell is written once ({Count("5 kN/m²")} times, {plate.Shells} shells)");
+        Check(Count("10 kN/m") == 2, $"the line load given beam by beam once a run of beams, two edges ({Count("10 kN/m")} times, {plate.Beams} beams)");
+        Check(Count("50 kN") == 1 && Count("20 kN·m") == 1, "the point load's force and moment once each");
+        Check(Count("500 kg") == 1, $"the mass ({Count("500 kg")} times)");
+        Check(Field<System.Collections.ICollection>(loads, "_moments").Count == 1 && Field<System.Collections.ICollection>(loads, "_masses").Count == 1,
+              "an arc for the moment, a dot for the mass");
+
+        double size = Math.Sqrt(12 * 12 + 10 * 10);
+        double largest = arrows.Max(a => a.Item1.Length);
+        Check(Math.Abs(largest - 0.15 * size) < 1e-6, $"the largest arrow, the point load's, is 15% of the model's diagonal at Load scale 1 ({largest:F3} m of {size:F2} m)");
+        double Longest(DisplayItem item) => arrows.Where(a => a.Item2.ToArgb() == AlpacaSettings.Colour(item).ToArgb()).Max(a => a.Item1.Length);
+        Check(Math.Abs(Longest(DisplayItem.LineLoads) - 0.6 * largest) < 1e-6 && Math.Abs(Longest(DisplayItem.AreaLoads) - 0.4 * largest) < 1e-6,
+              $"the line load's 60% of that and the area load's 40% ({Longest(DisplayItem.LineLoads):F3} and {Longest(DisplayItem.AreaLoads):F3} m)");
+
+        var sheets = Field<Mesh>(loads, "_sheets").GetBoundingBox(true);
+        Check(sheets.Min.Z > 0.0, $"the sheet of a load down on the plate stands over it, where the load comes from (from z = {sheets.Min.Z:F3})");
+
+        var weight = AlpacaSettings.Colour(DisplayItem.Gravity).ToArgb();
+        var model = Field<Alpaca4d.Model>(view, "_model");
+        var applied = model.CreateGravityLoad(new Alpaca4d.Loads.Gravity(1.0, null));
+        // The plate's shells weigh nothing (Rho 0): the weight is the edge beams', along them.
+        var uniform = applied.OfType<Alpaca4d.Loads.LineLoad>().ToList();
+        double perMetre = 0.3 * 0.5 * 7850 * 9.81 / 1000.0;
+        Check(uniform.Count == plate.Beams && applied.OfType<Alpaca4d.Loads.PointLoad>().All(load => load.Force.Length == 0.0) && uniform.All(l => Math.Abs(l.GlobalForce.Z + perMetre) < 1e-9 && l.GlobalForce.X == 0.0 && l.GlobalForce.Y == 0.0),
+              $"the self-weight goes to OpenSees as a uniform load down along each beam, {perMetre:F2} kN/m ({uniform.Count} line loads, and {applied.Count - uniform.Count} point loads of nothing on the shells' nodes)");
+        // Twice a beam: the Linear Load of 10 kN/m on every beam, and the self-weight.
+        int written = string.Join("", model.Tcl).Split('\n').Count(line => line.TrimStart().StartsWith("eleLoad") && line.Contains("-beamUniform"));
+        Check(written == 2 * plate.Beams, $"and is written as eleLoad -beamUniform ({written} of them, {plate.Beams} beams)");
+
+        var own = arrows.Where(a => a.Item2.ToArgb() == weight).ToList();
+        var ownTails = Field<List<Tuple<Line, Color>>>(loads, "_tails").Where(t => t.Item2.ToArgb() == weight).ToList();
+        int Written(string text) => ((System.Collections.IEnumerable)Field<object>(loads, "_values")).Cast<object>()
+            .Count(v => ((Color)v.GetType().GetField("Item2").GetValue(v)).ToArgb() == weight && (string)v.GetType().GetField("Item1").GetValue(v) == text);
+        string value = perMetre.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) + " kN/m";
+        Check(own.Count > 2 && own.All(a => a.Item1.Direction.Z < 0.0 && (Math.Abs(a.Item1.To.Y) < 1e-9 || Math.Abs(a.Item1.To.Y - 10.0) < 1e-9)) && ownTails.Count == plate.Beams && Written(value) == 1,
+              $"drawn along the beams as a line load, in the Gravity colour, its value {value} written once for both edges ({own.Count} arrows, {ownTails.Count} tails, written {Written(value)} times)");
+        Check(Math.Abs(own.Max(a => a.Item1.Length) - 0.5 * 0.6 * largest) < 1e-6, $"its arrows half as long as the line load's ({own.Max(a => a.Item1.Length):F3} m)");
+
+        var along = AlpacaSettings.Colour(DisplayItem.LineLoads).ToArgb();
+        var tips = arrows.Where(a => a.Item2.ToArgb() == along).Select(a => a.Item1.To).ToList();
+        double closest = tips.SelectMany((p, i) => tips.Skip(i + 1).Select(q => p.DistanceTo(q))).Min();
+        Check(tips.Count < 7 * plate.Beams && closest >= 0.6 * 0.05 * size - 1e-9,
+              $"the line load's arrows spread over each run, {tips.Count} for {plate.Beams} beams, none closer than {closest:F2} m");
+
+        Field<MenuSlider>(view, "_slLoadScale").Value = 2.0;
+        Call(view, "OnDisplayChanged", null, EventArgs.Empty);
+        double doubled = Field<List<Tuple<Line, Color>>>(Call(view, "Loads"), "_arrows").Max(a => a.Item1.Length);
+        Check(Math.Abs(doubled - 2.0 * largest) < 1e-6, $"Load scale 2 makes it twice as long ({doubled:F3} m)");
+
+        var rhino = Rhino.RhinoDoc.ActiveDoc?.Views?.ActiveView;
+        if (rhino == null)
+        {
+            Line("  [SKIP] this Rhino has no document open, so no viewport to draw into");
+            return;
+        }
+
+        var conduit = new Drawer(plate.Document) { Enabled = true };
+        try
+        {
+            conduit.Draw.Add(view);
+            rhino.CaptureToBitmap(rhino.Size)?.Dispose();
+            Check(conduit.Frames > 0 && conduit.Failure == null, "and all of it drawn without an error" +
                   (conduit.Failure == null ? "" : ": " + conduit.Failure));
         }
         finally

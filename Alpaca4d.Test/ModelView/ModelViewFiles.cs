@@ -320,6 +320,24 @@ class ModelViewFilesTest
             Visible(back, false, "_ddColourBy");
         }
 
+        Section("A file from before the loads were drawn to fit the model");
+        {
+            // Its Load scale is in metres of arrow per kN, and would now shrink or stretch the fit.
+            var view = Make<Alpaca4d.Gh.ModelView>();
+            Field<MenuSlider>(view, "_slLoadScale").Value = 4.5;
+            var archive = new GH_Archive();
+            archive.CreateNewRoot(false);
+            var container = (GH_Chunk)archive.GetRootNode.CreateChunk("Container");
+            view.Write(container);
+            Check(container.RemoveItem("FittedLoads"), "(written as an older file)");
+
+            var opened = new GH_Archive();
+            opened.Deserialize_Binary(archive.Serialize_Binary());
+            var back = Make<Alpaca4d.Gh.ModelView>();
+            back.Read(opened.GetRootNode.FindChunk("Container"));
+            Check(Field<MenuSlider>(back, "_slLoadScale").Value == 1.0, $"opens at Load scale 1 ({Field<MenuSlider>(back, "_slLoadScale").Value})");
+        }
+
         Section("What a control does when it changes");
         {
             // A control listened to twice runs the solution twice for every change. The old Model

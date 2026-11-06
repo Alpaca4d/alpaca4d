@@ -31,6 +31,8 @@ The real component, built as Grasshopper builds it:
   checked, after a file is opened.
 * The controls that change only what is drawn over the model - ids, axes, releases, loads,
   supports, element edges, values and their sizes - redraw the viewport and run no solution.
+* A file from before the loads were drawn to fit the model opens at Load scale 1: its scale was
+  metres of arrow per kN.
 
 A `GH_Document` cannot be made in mono, so the upgrades are checked in Rhino.
 
@@ -54,6 +56,14 @@ assembled and analysed:
 * ElementId: what is left out is in **Geometry**, grey; the ids are written on what was kept.
 * Show Supports and Show Loads leave the solution as it is and grow the clipping box.
 * Every overlay over four deformed results, drawn into a viewport by a conduit, without an error.
+* Every kind of load on the plate, each given element by element: one value a run of beams or
+  group of shells, the point load's arrow 15% of the model's diagonal and the line and area loads'
+  60% and 40% of it, twice as long at Load scale 2, the area load's sheet on the side it comes
+  from, the self-weight a uniform load along each beam, as OpenSees is given it, drawn as a line
+  load in its own colour, the line load's arrows spread along
+  each run, an arc for a moment and a dot for a mass - and all of it drawn without an error.
+* With Deformed shape ticked, the loads ride on the deformed shape: every arrow on a node moved as far
+  as the node, none lost or gained.
 * The old Model View and View Results_WIP upgraded: settings, wires, LP to LoadPattern, ElemIds to
   ElementId as text - and the upgraded View Results gives the same Info and Values as the old one.
 * Timings of the old components against the new one on a plate of 3000 shells.
