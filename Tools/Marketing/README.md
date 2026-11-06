@@ -20,6 +20,14 @@ Each scene opens an example on the canvas of a live Rhino 8, solves it or runs i
 working screen would show them (`*-in-grasshopper.png`), and makes the frames into a GIF and an
 MP4.
 
+Each case folder in `marketing/` also has a `README.md` with its LinkedIn post: what to attach, the
+post and its first comment in text boxes ready to paste, other openings and the numbers behind it.
+`python3 social.py` gathers them all into one page, `out/social/index.html` with web-size copies of
+the pictures in `out/social/media/`, to publish as an artifact: a card per post with copy buttons and
+the path of every file on disk. Its `HOLD` and `NOTES` say which posts should wait, and why. The
+page's Open folder and Show in Finder buttons need `python3 finder.py` running: a browser page cannot
+open Finder, so they link to that helper on 127.0.0.1, which opens only paths inside `marketing/`.
+
 ## The scenes
 
 | Scene | Example | Into `marketing/` |
