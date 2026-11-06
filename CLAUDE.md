@@ -15,4 +15,5 @@ How-to procedures are skills, in `.claude/skills/<name>/SKILL.md`. They are load
 - `alpaca-icon`: draw a 24 px icon, and add it to the plugin's resources.
 - `run-in-rhino`: run Core code or real components inside a live Rhino 8.
 - `gh-canvas-capture`: pictures of the canvas and the Rhino viewport.
+- `deformation-pictures`: a structure deforming, as a looping GIF and MP4 and a still.
 - `yak-release`: build a Yak package. Started only with `/yak-release <version>`.
