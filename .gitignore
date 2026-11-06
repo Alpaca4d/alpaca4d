@@ -12,11 +12,13 @@ packages/
 .mpco
 *.mpco
 *AlpacaModel
-
-#!**/Alpaca4d.Gh/OpenSees-Solvers
+# What an analysis writes next to the .gh it runs from
+AlpacaResults/
 
 Alpaca.Core/bin/
 Alpaca4d.Gh/bin/
+Alpaca4d.Karamba/bin/
+Alpaca4d.FemDesign/bin/
 Alpaca4d.Test/bin/
 Alpaca4d.Utils/bin/
 Alpaca4d.Utils/bin/

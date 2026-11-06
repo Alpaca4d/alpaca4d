@@ -64,6 +64,7 @@ namespace Alpaca4d.Gh
             int step = 0;
 
             if (!DA.GetData(0, ref alpacaModel)) return;
+            if (!AnalysedModel.Check(this, alpacaModel)) return;
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 

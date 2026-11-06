@@ -42,7 +42,9 @@ when none was set.
 
 **Part 1 — `MassUnits.cs`** asserts the exact Tcl `Alpaca.Core` emits: `nDMaterial`
 isotropic and orthotropic `rho`, a point `mass` line including the rotational terms, and the
-beam mass density. It writes the lines it produced to `alpaca_lines.txt`.
+beam mass density. It also checks that masses on one node are added up into one `mass` line:
+`mass` sets a node's mass too, so of two Mass Points on one node only the last used to count.
+It writes the lines it produced to `alpaca_lines.txt`.
 
 **Part 2 — `cross_element.py`** builds the *same* cantilever — L = 6 m, 0.4 × 0.1 m, steel,
 ν = 0 so a strip behaves exactly as a beam — three ways, and solves each with OpenSees:

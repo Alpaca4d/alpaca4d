@@ -1,12 +1,15 @@
 ﻿// What a license allows, and what its absence stops.
 //
-// Two rules, both in Alpaca4d.License.License:
+// Three rules, all in Alpaca4d.License.License:
 //
 //   1. An analysis is free up to FreeElementLimit elements. Past it, Run Analysis and Natural
 //      Vibration Analysis refuse without a license - checked on every run, where it used to be
 //      checked once every five minutes and let everything through in between.
-//   2. Some components need a license whatever the model: View Results, Model View and Moment
-//      Curvature. They ask ValidateFeature.
+//   2. Topology Optimisation is free up to FreeTopologyElementLimit elements, asking
+//      ValidateLicense with that limit.
+//   3. Some components need a license whatever the model: View Results, Model View, Moment
+//      Curvature, Explorer Inputs, Explorer Record (to write a study) and Non-Linear Optimisation
+//      (to start a run). They ask ValidateFeature.
 //
 // Either refusal opens the License window, but no more than once every five minutes, because a
 // refused component re-solves whenever anything upstream changes.
@@ -85,11 +88,19 @@ class LicenseTest
             Check(shown == 2, "and opens the window regardless");
             Check(!LicenseRules.ValidateFeature(null), "refused with no window to open");
 
+            Console.WriteLine($"\nNo license file: Topology Optimisation free up to {LicenseRules.FreeTopologyElementLimit} elements");
+
+            int topology = LicenseRules.FreeTopologyElementLimit;
+            Check(topology == 500, "the limit is 500");
+            Check(LicenseRules.ValidateLicense(Of(500), false, null, topology), "500 elements run");
+            Check(!LicenseRules.ValidateLicense(Of(501), false, null, topology), "501 elements are refused");
+
             Console.WriteLine("\nA FreeVersion license that has not expired");
 
             Write("FreeVersion", "", DateTime.Today.AddMonths(1));
             Check(LicenseRules.IsValid, "is a license");
             Check(LicenseRules.ValidateLicense(Of(5000), false, window), "5000 elements run");
+            Check(LicenseRules.ValidateLicense(Of(5000), false, window, LicenseRules.FreeTopologyElementLimit), "and so does a topology optimisation of 5000");
             Check(LicenseRules.ValidateFeature(window), "a licensed component runs");
 
             Console.WriteLine("\nA FreeVersion license that has expired");

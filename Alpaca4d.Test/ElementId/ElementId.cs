@@ -32,6 +32,7 @@ using Rhino.Geometry;
 using Alpaca4d;
 using Alpaca4d.Element;
 using Alpaca4d.Generic;
+using Alpaca4d.Loads;
 using Alpaca4d.Result;
 
 /// <summary>
@@ -46,6 +47,17 @@ class StubElement : IElement
     public void SetTags() { }
     public void SetTopologyRTree(Model model) { }
     public string WriteTcl() => string.Empty;
+}
+
+/// <summary>A shell with no mesh, which is all a load by name looks at: the shell's two identifiers.</summary>
+class StubShell : StubElement, IShell
+{
+    public Mesh Mesh { get; set; }
+    public List<int?> IndexNodes { get; set; }
+    public IMultiDimensionSection Section { get; set; }
+    public System.Drawing.Color Color { get; set; }
+    public ElementClass ElementClass => ElementClass.ASDShellQ4;
+    public Plane LocalPlane => default(Plane);
 }
 
 class ElementIdTest
@@ -353,6 +365,46 @@ class ElementIdTest
         Check(someMissed.Count == 1, "and only the one that is not is complained about");
     }
 
+    // ---------------------------------------------------------------- loads, by name
+
+    static void LoadTests()
+    {
+        Console.WriteLine("\nA load names its elements the way the result filters do\n");
+
+        // A slab meshed into three faces that all took the one ElementId, a wall, and a shell
+        // nobody named, tagged 1..4 as Assemble would.
+        var shells = new List<IShell>
+        {
+            new StubShell { Id = 1, ElementId = "Slab1" },
+            new StubShell { Id = 2, ElementId = "Slab1" },
+            new StubShell { Id = 3, ElementId = "Slab1" },
+            new StubShell { Id = 4, ElementId = "Wall" },
+            new StubShell { Id = 5 },
+        };
+
+        Check(new MeshLoad().AppliedTo(shells).Count == 5, "with neither element nor name, a load goes on every shell");
+
+        var slab = new MeshLoad { Filter = "Slab1" }.AppliedTo(shells);
+        Check(slab.Select(shell => shell.Id).SequenceEqual(new int?[] { 1, 2, 3 }),
+              "the slab's name loads every face of it, and nothing else");
+
+        Check(new MeshLoad { Filter = "slab*" }.AppliedTo(shells).Count == 3, "a wildcard, in any case, does too");
+        Check(new MeshLoad { Filter = "4" }.AppliedTo(shells).Single().ElementId == "Wall", "and so does a tag");
+        Check(new MeshLoad { Filter = "Floor" }.AppliedTo(shells).Count == 0, "a name nobody gave loads nothing");
+
+        // An empty filter is everything, but a broken one must not be: the load meant for a few
+        // shells would land on the whole model.
+        Check(new MeshLoad { Filter = "regex:(" }.AppliedTo(shells).Count == 0,
+              "a filter that will not compile loads nothing, rather than everything");
+        Check(new MeshLoad { Filter = "  " }.AppliedTo(shells).Count == 5, "a blank one is no filter at all");
+
+        var own = new MeshLoad { Element = shells[3], Filter = "Slab1" }.AppliedTo(shells);
+        Check(own.Count == 1 && own[0] == shells[3], "a shell wired in wins over a name");
+
+        Check(ElementFilter.Named("Slab1", Elements("Slab1", "Slab1", "Roof")).Count == 2,
+              "the same reading on any kind of element, for the beam load");
+    }
+
     static void Main()
     {
         Console.WriteLine("Element identifiers, node tags and the result filters");
@@ -363,6 +415,7 @@ class ElementIdTest
         SelectionTests();
         NodeFilterTests();
         SupportPointTests();
+        LoadTests();
 
         Console.WriteLine(fails == 0 ? "\nAll checks passed." : $"\n{fails} check(s) FAILED.");
         Environment.Exit(fails == 0 ? 0 : 1);

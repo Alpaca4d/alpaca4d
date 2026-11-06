@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>Alpaca4d.FemDesign</RootNamespace>
+    <AssemblyName>Alpaca4d.FemDesign</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      FEM-Design's StruXml classes, from StruSoft's femdesign-api-2.0. That project targets net9.0, which
+      Rhino 7 and 8 cannot load, so lib/build-net48.sh builds its StruXml part for net48 without changing
+      it; see lib/README.md. Unlike Karamba's files, this one ships with Alpaca4d: Private copies it to
+      Alpaca4d.Gh's output, where the build and the Yak package pick up every *.dll.
+    -->
+    <Reference Include="FemDesign.Communication">
+      <HintPath>lib\FemDesign.Communication.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Alpaca.Core\Alpaca4d.Core.csproj" />
+  </ItemGroup>
+
+</Project>

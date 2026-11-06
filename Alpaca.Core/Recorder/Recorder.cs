@@ -71,6 +71,8 @@ namespace Alpaca4d
         ///                          or not, and every shell
         ///   section.fiber.stress   Shell Stresses - through the thickness of plate fibre and
         ///                          layered sections
+        ///   axialForce             Beam Forces of trusses - nothing else answers to it, so it
+        ///                          costs nothing in a model without them
         ///
         /// Append only, for the same reason as <see cref="NodeResultTypes"/>.
         /// </summary>
@@ -79,6 +81,7 @@ namespace Alpaca4d
             "stresses",
             "section.force",
             "section.fiber.stress",
+            "axialForce",
         };
 
         public static readonly IReadOnlyList<string> StaticNodeResults = new[]
@@ -100,12 +103,12 @@ namespace Alpaca4d
         /// <summary>What Brick Stresses, Beam Forces, Shell Forces and Shell Stresses read.</summary>
         public static readonly IReadOnlyList<string> DefaultElementResults = new[]
         {
-            "stresses", "section.force", "section.fiber.stress",
+            "stresses", "section.force", "section.fiber.stress", "axialForce",
         };
 
         public string WriteTcl()
         {
-            return $"recorder mpco {this.FileName} -N {string.Join(" ", this.NodeResults)} -E {string.Join(" ", this.ElementResults)}\n";
+            return $"recorder mpco {TclPath.Write(this.FileName)} -N {string.Join(" ", this.NodeResults)} -E {string.Join(" ", this.ElementResults)}\n";
         }
 
         public static Recorder MpcoStatic(string filePath)

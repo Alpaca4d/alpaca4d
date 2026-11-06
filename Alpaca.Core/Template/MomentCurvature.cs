@@ -32,6 +32,12 @@ namespace Alpaca4d.Template
         public const string CurvatureIncompleteMarker = "ALPACA_MK_CURVATURE_INCOMPLETE";
 
         /// <summary>
+        /// Printed by the deck when it stops itself at the first increment where a fibre has reached
+        /// its ultimate strain. The curve up to there is recorded, as on any other stop.
+        /// </summary>
+        public const string UltimateMarker = "ALPACA_MK_ULTIMATE_REACHED";
+
+        /// <summary>
         /// The section tag the deck uses. Hard-coded because the deck holds one section.
         /// </summary>
         private const int SectionTag = 1;
@@ -46,35 +52,65 @@ namespace Alpaca4d.Template
         /// </summary>
         public static void PrepareOutputFolder()
         {
-            Directory.CreateDirectory(OutputFolder);
+            PrepareOutputFolder(Directory.GetCurrentDirectory());
+        }
 
-            foreach (var file in Directory.GetFiles(OutputFolder))
+        /// <summary>As <see cref="PrepareOutputFolder()"/>, under <paramref name="root"/>: where the deck runs.</summary>
+        public static void PrepareOutputFolder(string root)
+        {
+            string folder = Path.Combine(root, OutputFolder);
+            Directory.CreateDirectory(folder);
+
+            foreach (var file in Directory.GetFiles(folder))
                 File.Delete(file);
         }
 
         /// <summary>
-        /// A moment-curvature deck: one zero-length fibre section, a held axial force, and
-        /// a curvature ramp about the section's local y or z axis.
+        /// A moment-curvature deck: one zero-length fibre section, a held axial force, and a
+        /// curvature ramp about the section's local y or z axis.
         /// </summary>
         /// <param name="fiber">The section. Its own Id is not used - the deck holds one section.</param>
         /// <param name="axialForce">Positive is tension.</param>
-        /// <param name="dof">"y" or "z"; the local axis to bend about.</param>
+        /// <param name="dof">"y" or "z", or a direction in degrees; see <see cref="Direction"/>.</param>
         /// <param name="maxPhi">The curvature to ramp to.</param>
         /// <param name="numIncr">Increments to reach <paramref name="maxPhi"/> in.</param>
         public static string Define(FiberSection fiber, double axialForce, string dof, double maxPhi, int numIncr = 1000)
         {
+            return Define(fiber, axialForce, Direction(dof), maxPhi, numIncr, null, false);
+        }
+
+        /// <summary>
+        /// A moment-curvature deck: one zero-length fibre section, a held axial force, and a
+        /// curvature ramp in the moment direction <paramref name="angle"/>.
+        ///
+        /// The moment is held to that direction and the curvature across it is left free, so a
+        /// section bent off its axes turns its neutral axis as it needs to. The element is turned
+        /// by -angle about its axis, which puts the section's direction u = (cos angle, sin angle)
+        /// on the global Y axis; the deck then pushes the rotation about Y and leaves the one about
+        /// Z free and unloaded, as it always did for bending about y. Section forces and
+        /// deformations are recorded in the section's own axes, whatever the element's.
+        /// </summary>
+        /// <param name="angle">The moment direction in the section's y-z plane, radians from y.</param>
+        /// <param name="maxPhi">The curvature along that direction to ramp to.</param>
+        /// <param name="ultimateRatioTcl">
+        /// A proc from <see cref="InteractionDomain.UltimateRatioTcl"/>, named alpacaUltimate, or null.
+        /// </param>
+        /// <param name="stopAtUltimate">Stop at the first increment where alpacaUltimate reaches 1.</param>
+        public static string Define(FiberSection fiber, double axialForce, double angle, double maxPhi, int numIncr,
+                                    string ultimateRatioTcl, bool stopAtUltimate)
+        {
             if (fiber == null)
                 throw new ArgumentNullException("fiber");
-
-            var bendAboutY = IsBendingAboutY(dof);
 
             if (numIncr < 1)
                 throw new ArgumentOutOfRangeException("numIncr", "A moment-curvature analysis needs at least one increment.");
 
+            if (stopAtUltimate && string.IsNullOrWhiteSpace(ultimateRatioTcl))
+                throw new ArgumentException("Stopping at the ultimate state needs the strain limits to check.", "ultimateRatioTcl");
+
             var clean = "wipe\n";
             var builder = "model BasicBuilder -ndm 3 -ndf 6\n";
 
-            // needs to be move to the center of the section
             var node1 = "node 1 0 0 0 \n";
             var node2 = "node 2 0 0 0\n";
 
@@ -91,7 +127,12 @@ namespace Alpaca4d.Template
 
             var fiberSection = fiber.WriteTcl(SectionTag);
 
-            var element = $"element zeroLengthSection 1 1 2 {SectionTag}\n";
+            // Local x along global X; local y turned by -angle about it, so the section's u lands on
+            // global Y. At angle 0 this is the element's default orientation.
+            double c = Math.Cos(angle), s = -Math.Sin(angle);
+            if (Math.Abs(c) < 1e-15) c = 0.0;
+            if (Math.Abs(s) < 1e-15) s = 0.0;
+            var element = $"element zeroLengthSection 1 1 2 {SectionTag} -orient 1 0 0 0 {TclNumber.Write(c)} {TclNumber.Write(s)}\n";
 
             var timeSeriesAxial = "timeSeries Constant 1\n";
             var patternAxial = "pattern Plain 1 1 {\n\t"
@@ -123,21 +164,48 @@ namespace Alpaca4d.Template
             var recorder2 = $"recorder Element -file {DeformationFilePath} -ele 1 section deformation\n";
             var recorder3 = Alpaca4d.Recorder.FiberData();
 
-            var dir = bendAboutY ? "1 0" : "0 1";
-
             var timeSeriesMoment = "timeSeries Linear 2\n";
             var patternMoment = "pattern Plain 2 2 {\n\t"
-            + $"load 2 0 0 0 0 {dir}}}\n";
+            + "load 2 0 0 0 0 1 0}\n";
 
-            var dofInt = bendAboutY ? 5 : 6;
+            var increment = $"set alpacaIncrement {TclNumber.Write(maxPhi / numIncr)}\n";
+            var integratorDisp = "integrator DisplacementControl 2 5 $alpacaIncrement\n";
 
-            var integratorDisp = $"integrator DisplacementControl 2 {dofInt} {TclNumber.Write(maxPhi / numIncr)}\n";
-
-            // A ramp that stops early still leaves a usable curve behind, so this reports
-            // and carries on to the wipe that flushes the recorders.
-            var analyzeIncrement = $"if {{[analyze {numIncr}] != 0}} {{\n"
-                                 + $"\tputs \"{CurvatureIncompleteMarker}\"\n"
-                                 + "}\n";
+            // One increment at a time, so that a step that does not converge gets another go before
+            // the curve is given up on: ten steps of a tenth, then a line search, then the initial
+            // tangent - what usually takes a fibre section past a kink in a material's curve. A
+            // ramp that still stops early leaves a usable curve behind, so this reports and carries
+            // on to the wipe that flushes the recorders.
+            var loop = new System.Text.StringBuilder();
+            loop.Append($"for {{set alpacaStep 1}} {{$alpacaStep <= {numIncr}}} {{incr alpacaStep}} {{\n");
+            loop.Append("\tset ok [analyze 1]\n");
+            loop.Append("\tif {$ok != 0} {\n");
+            loop.Append("\t\tintegrator DisplacementControl 2 5 [expr {$alpacaIncrement / 10.0}]\n");
+            loop.Append("\t\tset ok [analyze 10]\n");
+            loop.Append("\t\tintegrator DisplacementControl 2 5 $alpacaIncrement\n");
+            loop.Append("\t}\n");
+            loop.Append("\tif {$ok != 0} {\n");
+            loop.Append("\t\talgorithm NewtonLineSearch\n");
+            loop.Append("\t\tset ok [analyze 1]\n");
+            loop.Append("\t\talgorithm Newton\n");
+            loop.Append("\t}\n");
+            loop.Append("\tif {$ok != 0} {\n");
+            loop.Append("\t\talgorithm ModifiedNewton -initial\n");
+            loop.Append("\t\tset ok [analyze 1]\n");
+            loop.Append("\t\talgorithm Newton\n");
+            loop.Append("\t}\n");
+            loop.Append("\tif {$ok != 0} {\n");
+            loop.Append($"\t\tputs \"{CurvatureIncompleteMarker}\"\n");
+            loop.Append("\t\tbreak\n");
+            loop.Append("\t}\n");
+            if (stopAtUltimate)
+            {
+                loop.Append("\tif {[alpacaUltimate {*}[eleResponse 1 section deformation]] >= 1.0} {\n");
+                loop.Append($"\t\tputs \"{UltimateMarker}\"\n");
+                loop.Append("\t\tbreak\n");
+                loop.Append("\t}\n");
+            }
+            loop.Append("}\n");
 
             return Deck(
                 clean, builder, node1, node2, fix1, fix2,
@@ -147,7 +215,8 @@ namespace Alpaca4d.Template
                 analyze, lc,
                 recorder1, recorder2, recorder3,
                 timeSeriesMoment, patternMoment,
-                integratorDisp, analyzeIncrement,
+                ultimateRatioTcl ?? "",
+                increment, integratorDisp, loop.ToString(),
                 clean);
         }
 
@@ -176,6 +245,28 @@ namespace Alpaca4d.Template
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// The moment direction a Direction input names, in radians from the local y axis: "y" is
+        /// 0, "z" is 90 degrees, and a number is degrees, whatever the machine's decimal separator.
+        /// Anything else is rejected rather than quietly taken to mean y.
+        /// </summary>
+        public static double Direction(string dof)
+        {
+            if (string.Equals(dof?.Trim(), "y", StringComparison.OrdinalIgnoreCase))
+                return 0.0;
+
+            if (string.Equals(dof?.Trim(), "z", StringComparison.OrdinalIgnoreCase))
+                return 0.5 * Math.PI;
+
+            if (dof != null && double.TryParse(dof.Trim(), System.Globalization.NumberStyles.Float,
+                                               System.Globalization.CultureInfo.InvariantCulture, out double degrees) &&
+                !double.IsNaN(degrees) && !double.IsInfinity(degrees))
+                return degrees * Math.PI / 180.0;
+
+            throw new ArgumentException(
+                "Direction has to be \"y\", \"z\" or an angle in degrees from y, not \"" + dof + "\".", "dof");
         }
 
         /// <summary>

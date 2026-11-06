@@ -56,8 +56,7 @@ namespace Alpaca4d.Element
             var meshPoints = this.Mesh.Vertices.ToPoint3dArray();
 
             this.IndexNodes = Alpaca4d.Utils
-                .RTreeSearch(model.RTreeCloudPointThreeNDF, meshPoints, model.Tollerance,
-                             $"SSP Brick {this.Id}", model.UniquePointsThreeNDF)
+                .NodeSearch(model.NodeIndexThreeNDF, meshPoints, $"SSP Brick {this.Id}")
                 .Select(x => (int?)(x + 1))
                 .ToList();
         }

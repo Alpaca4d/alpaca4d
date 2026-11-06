@@ -107,8 +107,12 @@ namespace Alpaca4d
                     colors.Add(Color.FromArgb(gradient[i], gradient[i+1], gradient[i+2]));
                 }
 
-                colors = Enumerable.Range(0, step)      // 10 elements
-                    .Select(i => colors[i * 10])         // Pick index 0, 10, 20, ...
+                // Evenly spaced over the whole map, both ends included. Every tenth entry stopped
+                // at the 91st of 101, so no gradient ever reached its own top colour.
+                int count = Math.Max(step, 2);
+                int last = colors.Count - 1;
+                colors = Enumerable.Range(0, count)
+                    .Select(i => colors[(int)Math.Round(i * last / (double)(count - 1))])
                     .ToList();
 
                 return colors;

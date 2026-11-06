@@ -66,6 +66,7 @@ namespace Alpaca4d.Gh
             var alpacaModel = new Alpaca4d.Model();
 
             if (!DA.GetData(0, ref alpacaModel)) return;
+            if (!AnalysedModel.Check(this, alpacaModel)) return;
 
 
             // The same reading Natural Vibration's Modal Report menu does: each section found by

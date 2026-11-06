@@ -43,31 +43,20 @@ namespace Alpaca4d.Loads
 
         public void SetTag(Model model)
         {
-            try
+            // The three degree of freedom node first, as it always was here.
+            int found = model.NodeIndexThreeNDF.Nearest(this.Pos);
+            if (found >= 0)
             {
-                if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos)) <= model.Tollerance)
-                {
-                    this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
-                    this.Ndf = 3;
-                }
-                else if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos)) <= model.Tollerance)
-                {
-                    this.Id = model.CloudPointSixNDF.ClosestPoint(this.Pos) + 1 + model.UniquePointsThreeNDF.Count();
-                    this.Ndf = 6;
-                }
+                this.Id = found + 1;
+                this.Ndf = 3;
+                return;
             }
-            catch
+
+            found = model.NodeIndexSixNDF.Nearest(this.Pos);
+            if (found >= 0)
             {
-                if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos)) <= model.Tollerance)
-                {
-                    this.Id = model.CloudPointSixNDF.ClosestPoint(this.Pos) + 1 + model.UniquePointsThreeNDF.Count();
-                    this.Ndf = 6;
-                }
-                else if (this.Pos.DistanceTo(Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos)) <= model.Tollerance)
-                {
-                    this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
-                    this.Ndf = 3;
-                }
+                this.Id = found + 1 + model.UniquePointsThreeNDF.Count;
+                this.Ndf = 6;
             }
         }
 

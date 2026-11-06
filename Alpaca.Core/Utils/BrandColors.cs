@@ -47,5 +47,50 @@ namespace Alpaca4d
 
         /// <summary>Solids - SSPbrick and the four-node tetrahedron.</summary>
         public static Color DefaultBrick { get { return AlpacaLightGreen; } }
+
+        // When Model View colours the elements by section or by material, each section or material
+        // the user gave no colour takes one from this list, in the order the model meets them. They
+        // are Tableau's ten, chosen to be told apart from one another, with its red moved to the end
+        // so that a model of a few sections stays off the colour of loads and positive forces.
+        private static readonly Color[] CategoricalColours =
+        {
+            Color.FromArgb(78, 121, 167),   // blue
+            Color.FromArgb(242, 142, 43),   // orange
+            Color.FromArgb(118, 183, 178),  // teal
+            Color.FromArgb(89, 161, 79),    // green
+            Color.FromArgb(237, 201, 72),   // yellow
+            Color.FromArgb(176, 122, 161),  // purple
+            Color.FromArgb(255, 157, 167),  // pink
+            Color.FromArgb(156, 117, 95),   // brown
+            Color.FromArgb(186, 176, 172),  // grey
+            Color.FromArgb(225, 87, 89),    // red
+        };
+
+        /// <summary>
+        /// The <paramref name="index"/>th of a run of colours meant to be told apart: the ten above,
+        /// then the same ten darker, then lighter, and from the thirty-first round again.
+        /// </summary>
+        public static Color Categorical(int index)
+        {
+            int count = CategoricalColours.Length;
+            int i = ((index % (3 * count)) + 3 * count) % (3 * count);
+            var colour = CategoricalColours[i % count];
+
+            switch (i / count)
+            {
+                case 1: return Mix(colour, Color.Black, 0.35);
+                case 2: return Mix(colour, Color.White, 0.45);
+                default: return colour;
+            }
+        }
+
+        /// <summary><paramref name="a"/> moved the fraction <paramref name="t"/> of the way to <paramref name="b"/>.</summary>
+        private static Color Mix(Color a, Color b, double t)
+        {
+            return Color.FromArgb(
+                (int)System.Math.Round(a.R + (b.R - a.R) * t),
+                (int)System.Math.Round(a.G + (b.G - a.G) * t),
+                (int)System.Math.Round(a.B + (b.B - a.B) * t));
+        }
     }
 }

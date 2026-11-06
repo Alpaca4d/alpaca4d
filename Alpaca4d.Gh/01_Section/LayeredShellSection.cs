@@ -50,6 +50,7 @@ namespace Alpaca4d.Gh
                 $"[{Units.Length}] Thickness of each layer, bottom face first, matching Material.\n" +
                 $"A single value against a single material is the whole section, split into " +
                 $"{DefaultLayers} equal layers.", GH_ParamAccess.list);
+            pManager.AddParameter(ColourInput.Make(ColourInput.SectionDescription));
         }
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -133,7 +134,14 @@ namespace Alpaca4d.Gh
                 $"{stack} Shell Stresses reports the layer centres, so Top and Bottom sit half a " +
                 "layer in from the faces.");
 
+            section.Color = ColourInput.Read(this, DA);
             DA.SetData(0, section);
+        }
+
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            // A file saved before the Colour input has one input fewer; see StoredInputs.
+            return ColourInput.ReadComponent(this, reader, base.Read, ColourInput.SectionDescription);
         }
 
         public override GH_Exposure Exposure => GH_Exposure.secondary;

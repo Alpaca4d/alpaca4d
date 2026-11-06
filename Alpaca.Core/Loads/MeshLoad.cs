@@ -14,6 +14,15 @@ namespace Alpaca4d.Loads
     {
         public int? Id { get; set; }
         public IShell Element { get; set; }
+
+        /// <summary>
+        /// Text naming the shells the load goes on, read as the result filters read it: an ElementId,
+        /// a wildcard over them, an element tag, or "regex:...". Looked at only when there is no
+        /// <see cref="Element"/>; with neither, the load goes on every shell. A mesh given one
+        /// ElementId on ASD Shell is loaded whole by that name, every face of it.
+        /// </summary>
+        public string Filter { get; set; }
+
         public Vector3d GlobalForce { get; set; }
         public Vector3d LocalForce { get; set; }
         public int Ndf { get; set; }
@@ -29,7 +38,7 @@ namespace Alpaca4d.Loads
                 var pointsLoads = new List<PointLoad>();
                 var indexes = this.Element.IndexNodes;
                 var numberOfPoints = indexes.Count;
-                var meshArea = Rhino.Geometry.AreaMassProperties.Compute(this.Element.Mesh).Area;
+                var meshArea = Alpaca4d.Utils.MeshArea(this.Element.Mesh);
                 foreach (var nodeId in indexes)
                 {
                     var forceX = this.GlobalForce.X * meshArea / numberOfPoints;
@@ -65,6 +74,18 @@ namespace Alpaca4d.Loads
         public Vector3d LocalToGlobal(Vector3d force)
         {
             return new Vector3d();
+        }
+
+        /// <summary>
+        /// The shells out of <paramref name="shells"/> the load goes on: its own <see cref="Element"/>,
+        /// the ones its <see cref="Filter"/> names, or with neither all of them.
+        /// </summary>
+        public List<IShell> AppliedTo(IEnumerable<IShell> shells)
+        {
+            if (this.Element != null)
+                return new List<IShell> { this.Element };
+
+            return Alpaca4d.Result.ElementFilter.Named(this.Filter, shells);
         }
 
         public void SetTag(Model model)

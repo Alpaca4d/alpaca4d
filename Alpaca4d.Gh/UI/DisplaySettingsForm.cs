@@ -6,12 +6,13 @@ using Eto.Forms;
 namespace Alpaca4d.UI
 {
     /// <summary>
-    /// Settings ▸ Display: the colours Model View and View Results draw their text and loads in.
+    /// Settings ▸ Display: the colours Model View draws its text and loads in.
     ///
     /// Global rather than an input on each component, because it is a preference about the
     /// viewport, not about a model: white ids that read on a dark background vanish on Rhino's
     /// default grey one, and that is true of every definition at once. A colour applies as soon as
-    /// it is picked and is kept in settings.json for the next session.
+    /// it is picked and is kept in settings.json for the next session. Model View draws its text
+    /// on a white plate, so a dark colour reads on any background.
     /// </summary>
     public class DisplaySettingsForm : Form
     {
@@ -37,9 +38,9 @@ namespace Alpaca4d.UI
             Row(layout, DisplayItem.PointLoads, "Point loads");
             Row(layout, DisplayItem.LineLoads, "Line loads");
             Row(layout, DisplayItem.AreaLoads, "Area loads");
-
-            layout.AddRow(Heading("View Results"));
-            Row(layout, DisplayItem.Values, "Values");
+            Row(layout, DisplayItem.Gravity, "Gravity");
+            Row(layout, DisplayItem.Masses, "Masses");
+            Row(layout, DisplayItem.Values, "Result values");
 
             var reset = new Button { Text = "Reset to defaults" };
             reset.Click += (sender, e) =>

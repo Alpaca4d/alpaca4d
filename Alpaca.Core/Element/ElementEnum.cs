@@ -24,6 +24,7 @@ namespace Alpaca4d.Element
         ShellNLDKGT,
         ShellDKGT,
         FourNodeTetrahedron,
-        SSPBrick
+        SSPBrick,
+        TenNodeTetrahedron
     }
 }

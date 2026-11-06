@@ -214,6 +214,149 @@ class SteelCheckTest
         Check(u.Governing == "BucklingY" || u.Governing == "BucklingZ", $"buckling governs: {u.Governing}");
     }
 
+    // ---------------------------------------------------------------- published: lateral-torsional buckling and 6.3.3
+
+    static void EccsCriticalMoment()
+    {
+        // ECCS No. 119, Worked Example 5, as SOFiSTiK verification DCE-EN24 (2024) reproduces it: an
+        // IPE 500 in S235, L = 3.75 m between fork supports, My,Ed = −100 kNm at both ends and 199 kNm
+        // at mid-span (qz = 170 kN/m) at the shear centre. A = 115.5 cm², Iz = 2142 cm⁴, It = 88.57 cm⁴,
+        // Iw = 1236e3 cm⁶, Wpl,y = 2194 cm³, E = 210000 and G = 81000 N/mm². Printed: N_cr,z = 3157 kN,
+        // λ̄z = 0.927, χz = 0.644 (curve b); M_cr,0 = 895 kNm under uniform moment; C1 = 1.194
+        // "determined by eigenvalue analysis" (1.200 in ECCS 119); λ̄LT = 0.695; χLT = 0.787 by the
+        // general case, curve b. The example goes on with Annex A, which is not what this does.
+        Section("Published: ECCS 119 Example 5 (SOFiSTiK DCE-EN24), IPE 500, critical moment");
+
+        double e = 210e6, g = 81e6, iz = 2142e-8, it = 88.57e-8, iw = 1236e3 * 1e-12, l = 3.75;
+        double fy = 235 * MPa, a = 115.5e-4, wpl = 2194e-6;
+
+        double ncrZ = Ec3.CriticalForce(e, iz, l);
+        Printed(ncrZ, "3157", "N_cr,z [kN]");
+        double lamZ = Ec3.Slenderness(a, fy, ncrZ);
+        Printed(lamZ, "0.927", "λ̄z");
+        Printed(Ec3.Reduction(lamZ, Ec3.Imperfection(BucklingCurve.b)), "0.644", "χz, curve b");
+
+        double mcr0 = CriticalMoment.Multiplier(l, 1.0, 0.0, 0.0, 0.0, 0.0, e, iz, iw, g, it);
+        Printed(mcr0, "895", "M_cr,0 under a uniform moment [kNm]");
+
+        // M(t) = −100 + 4 × 299 t (1 − t): the parabola through −100, 199 and −100 kNm.
+        double mcr = CriticalMoment.Multiplier(l, -100.0, 1196.0, -1196.0, 170.0, 0.0, e, iz, iw, g, it) * 199.0;
+        Close(mcr / mcr0, 1.194, 1e-3, "C1 of that diagram, against SOFiSTiK's eigenvalue analysis");
+
+        double lamLT = Ec3.SlendernessLt(wpl, fy, mcr);
+        Printed(lamLT, "0.695", "λ̄LT");
+        Check(Ec3.CurveLtGeneral(true, true, 500.0 / 200.0) == BucklingCurve.b, "Table 6.4: rolled I with h/b = 2.5 > 2, curve b");
+        Printed(Ec3.ReductionLt(lamLT, Ec3.Imperfection(BucklingCurve.b), 0.2, 1.0), "0.787", "χLT by the general case 6.3.2.2");
+    }
+
+    static void SchneiderBeamColumn()
+    {
+        // Schneider, Bautabellen für Ingenieure (21st edition, 2014), Example 8-41, as SOFiSTiK
+        // verification DCE-EN29 (2024) reproduces it: an HEA 200 column in S235, 8 m, pinned at both
+        // ends and held sideways at mid-length, N_Ed = 300 kN and q = 4 kN/m on the top flange
+        // (zp = −9.5 cm), γM1 = 1.1. A fy = 1264.3 kN, Wpl,y fy = 100.9 kNm, iy = 8.28 cm, iz = 4.98 cm,
+        // Iz = 1340 cm⁴. Printed: λ̄y = 1.029, χy = 0.58 (curve b); λ̄z = 0.855, χz = 0.63 (curve c);
+        // N_cr,z = 1736 kN; M_cr = 220.9 kNm, λ̄LT = 0.676, curve b, χLT = 0.88 by 6.3.2.3; Cmy = 0.95,
+        // CmLT = 0.80; kyy = 1.292, kzy = 0.936; (6.61) 0.96 and (6.62) 0.79.
+        Section("Published: Schneider 8-41 (SOFiSTiK DCE-EN29), HEA 200 beam-column, Annex B");
+
+        double lamY = 800 / (8.28 * 93.9), lamZ = 400 / (4.98 * 93.9);
+        Printed(lamY, "1.029", "λ̄y = L_cr / (iy λ1)");
+        Printed(lamZ, "0.855", "λ̄z, held at mid-length");
+        Printed(Ec3.Reduction(lamY, Ec3.Imperfection(BucklingCurve.b)), "0.58", "χy, curve b");
+        Printed(Ec3.Reduction(lamZ, Ec3.Imperfection(BucklingCurve.c)), "0.63", "χz, curve c");
+        Printed(Ec3.CriticalForce(21000, 1340, 400), "1736", "N_cr,z [kN], in kN and cm");
+
+        double lamLT = Math.Sqrt(100.9 / 220.9);
+        Printed(lamLT, "0.676", "λ̄LT = √(Wpl fy / M_cr)");
+        Check(Ec3.CurveLtRolled(true, 190.0 / 200.0) == BucklingCurve.b, "Table 6.5: rolled, h/b = 0.95 ≤ 2, curve b");
+        Printed(Ec3.ReductionLt(lamLT, Ec3.Imperfection(BucklingCurve.b), 0.4, 0.75), "0.88", "χLT by 6.3.2.3, λ̄LT,0 = 0.4, β = 0.75");
+
+        // Cmy over the whole span: nothing at the ends, 32 kNm at mid-span. CmLT over each half: nothing
+        // at the support, 32 kNm at the restraint and 24 kNm half way between.
+        double cmy = Ec3.EquivalentMoment(0.0, 1.0, 32.0), cmLT = Ec3.EquivalentMoment(32.0, 0.0, 24.0);
+        Printed(cmy, "0.95", "Cmy, Table B.3 with αh = 0");
+        Printed(cmLT, "0.80", "CmLT, Table B.3 with αs = 0.75");
+
+        // The example carries on with χ as printed.
+        double ny = 300 * 1.1 / (0.58 * 1264.3), nz = 300 * 1.1 / (0.63 * 1264.3);
+        var k = Ec3.AnnexB(true, 1.029, 0.855, ny, nz, cmy, 1.0, cmLT, true, SteelShape.I);
+        Printed(k.Kyy, "1.292", "kyy, capped at Cmy (1 + 0.8 ny)");
+        Printed(k.Kzy, "0.936", "kzy, Table B.2");
+        double my = 32.0 / (0.88 * 100.9 / 1.1);
+        Printed(ny + k.Kyy * my, "0.96", "(6.61)");
+        Printed(nz + k.Kzy * my, "0.79", "(6.62)");
+
+        // End to end, through Alpaca4d's own HEA 200 - drawn without its root radii, so A is 5105 mm²
+        // against 5380 and Wpl 5% low, and the member reads a few percent worse than the book's, on the
+        // safe side. M_cr is the energy solution for each 4 m half between fork supports: 256 kNm, above
+        // the book's 220.9, whose load height term is DIN 18800's fixed 0.5 zp, the same for every
+        // diagram - where in each half most of the moment comes from the reaction, not from the load
+        // the top flange carries. At the shear centre the two agree: C1 1.336 here, ζ 1.35 there.
+        var hea = new ISection("HEA200", 0.190, 0.200, 0.010, 0.200, 0.010, 0.0065, Steel("S235"));
+        var s = SteelSection.Of(hea, (SteelGrade)hea.Material.Grade, Fabrication.Rolled);
+        var forces = new List<SectionForces>
+        {
+            new SectionForces(-300, 16, 0, 0, 0, 0),
+            new SectionForces(-300, 8, 0, 0, 0, 24),
+            new SectionForces(-300, 0, 0, 0, 0, 32),
+            new SectionForces(-300, -8, 0, 0, 0, 24),
+            new SectionForces(-300, -16, 0, 0, 0, 0),
+        };
+        var member = new SteelMember(8.0) { BucklingLengthY = 4.0, LateralTorsionalLength = 4.0, Load = LoadPosition.Destabilising };
+        var u = SteelCheck.Run(s, forces, member, 1.0, 1.1);
+
+        Check(u.Report.Contains("Cmy = 0.95,") && u.Report.Contains("CmLT = 0.8,"), "Cmy and CmLT from the member's own diagram, as the book has them");
+        Check(u.Report.Contains("C1 = 1.336"), "C1 of each half, at the shear centre, 1.336 against the book's ζ = 1.35");
+        Close(u.InteractionZ.Value, 0.96, 0.06, "(6.61), InteractionZ for an I, against the book's 0.96");
+        Check(u.InteractionZ.Value >= 0.96, "and above it, as the smaller section has it");
+        Close(u.InteractionY.Value, 0.79, 0.06, "(6.62), InteractionY, against the book's 0.79");
+        Check(u.Governing == "InteractionZ", $"(6.61) governs: {u.Governing}");
+    }
+
+    static void CriticalMoments()
+    {
+        // The energy solution against what it can be held to exactly, and against the coefficients
+        // everyone uses. An IPE 300 as the catalogue has it, kN and m.
+        Section("Critical moment: closed forms and published coefficients");
+
+        double e = 210e6, g = 80.77e6, iz = 603.8e-8, it = 20.12e-8, iw = 125.9e-9;
+        foreach (double l in new[] { 3.0, 6.0, 10.0 })
+        {
+            double exact = Math.PI / l * Math.Sqrt(e * iz * g * it * (1 + Math.PI * Math.PI * e * iw / (g * it * l * l)));
+            double mcr = CriticalMoment.Multiplier(l, 1.0, 0.0, 0.0, 0.0, 0.0, e, iz, iw, g, it);
+            Close(mcr, exact, 1e-9, $"L = {l} m, uniform moment: (π/L) √(E Iz G It (1 + π² E Iw / G It L²))");
+        }
+
+        double l6 = 6.0, uniform = CriticalMoment.Multiplier(l6, 1.0, 0.0, 0.0, 0.0, 0.0, e, iz, iw, g, it);
+
+        // A uniform load, M(t) = 4 t (1 − t) at its peak of 1: C1 = 1.127 (ENV 1993-1-1 Table F.1.2),
+        // 1.13 (NCCI SN003).
+        double q = 8.0 / (l6 * l6);
+        double udl = CriticalMoment.Multiplier(l6, 0.0, 4.0, -4.0, q, 0.0, e, iz, iw, g, it);
+        Close(udl / uniform, 1.127, 5e-3, "uniform load at the shear centre: C1");
+
+        // End moments M and M/2: C1 = 1.323 (ENV Table F.1.1), 1.31 (SN003).
+        Close(CriticalMoment.Multiplier(l6, 1.0, -0.5, 0.0, 0.0, 0.0, e, iz, iw, g, it) / uniform, 1.323, 1e-2, "ψ = 0.5: C1");
+
+        // On the top flange, against the three-factor formula with C1 = 1.127, C2 = 0.454.
+        double zg = 0.15, pz = Math.PI * Math.PI * e * iz / (l6 * l6);
+        double three = 1.127 * pz * (Math.Sqrt(iw / iz + l6 * l6 * g * it / (Math.PI * Math.PI * e * iz) + Math.Pow(0.454 * zg, 2)) - 0.454 * zg);
+        double top = CriticalMoment.Multiplier(l6, 0.0, 4.0, -4.0, q, zg, e, iz, iw, g, it);
+        Close(top, three, 1e-2, "uniform load on the top flange, against C1 = 1.127, C2 = 0.454");
+        Check(CriticalMoment.Multiplier(l6, 0.0, 4.0, -4.0, q, -zg, e, iz, iw, g, it) > udl, "and hung from the bottom flange, higher");
+
+        // Reversed end moments with a top-flange load between them, the hardest case tried: the terms
+        // the check uses against thirty.
+        double terms = CriticalMoment.Multiplier(l6, -1.0, 6.0, -6.0, 12.0 / (l6 * l6), zg, e, iz, iw, g, it);
+        double thirty = CriticalMoment.Multiplier(l6, -1.0, 6.0, -6.0, 12.0 / (l6 * l6), zg, e, iz, iw, g, it, 0.0, 30);
+        Close(terms, thirty, 1e-4, $"{CriticalMoment.Terms} sine terms hold M_cr to 0.01%");
+        Close(CriticalMoment.Multiplier(l6, 1.0, -2.0, 0.0, 0.0, 0.0, e, iz, iw, g, it),
+              CriticalMoment.Multiplier(l6, 1.0, -2.0, 0.0, 0.0, 0.0, e, iz, iw, g, it, 0.0, 30), 1e-4, "and for ψ = −1");
+
+        Check(double.IsPositiveInfinity(CriticalMoment.Multiplier(l6, 0.0, 0.0, 0.0, 0.0, 0.0, e, iz, iw, g, it)), "no moment, no buckling");
+    }
+
     // ---------------------------------------------------------------- Alpaca4d's shapes
 
     static void IShape()
@@ -376,9 +519,14 @@ class SteelCheckTest
         Close(u.ShearY.Value, vMax / vpl, 1e-12, "ShearY = V / (Av fy/√3) at the support");
         Close(u.Combined.Value, mMax / mpl, 1e-12, "Combined, with no axial force, is the bending");
         Check(u.BucklingY == 0.0 && u.BucklingZ == 0.0, "no compression, no buckling");
-        Check(u.Governing == "BendingZ", $"bending governs: {u.Governing}");
-        Check(u.Report.Contains("x = 0.5 L") && u.Report.Contains("Not checked: lateral-torsional buckling"),
+        Check(u.Governing == "LTB", $"unrestrained over 6 m, lateral-torsional buckling governs: {u.Governing}");
+        Check(u.Report.Contains("x = 0.5 L") && u.Report.Contains("Not checked: torsional and torsional-flexural buckling"),
               "the report says where, and what it does not cover");
+
+        // Held sideways every 0.5 m, M_Ed / M_cr ≤ λ̄LT,0² and 6.3.2.2(4) lets buckling be ignored: what
+        // is left is the cross-section, at γM1.
+        var held = SteelCheck.Run(s, udl, new SteelMember(6.0) { LateralTorsionalLength = 0.5 }, 1.0, 1.0, new[] { 0, 0.25, 0.5, 0.75, 1.0 });
+        Close(held.LateralTorsional.Value, held.BendingZ.Value, 1e-9, "held sideways every 0.5 m: LTB is the bending check");
 
         // With the report off nothing is written, and nothing else changes.
         var quiet = SteelCheck.Run(s, udl, 6.0, 1.0, 1.0, new[] { 0, 0.25, 0.5, 0.75, 1.0 }, report: false);
@@ -453,6 +601,198 @@ class SteelCheckTest
               $"a beam with 20 kN of compression is checked, and with N ≤ 0.04 Ncr its buckling too: class {lightBeam.Class}");
     }
 
+    /// <summary>χLT of 6.3.2.3 by hand: λ̄LT,0 = 0.4, β = 0.75, at most 1 and 1/λ̄².</summary>
+    static double ChiLtRolled(double lam, double alpha)
+    {
+        double phi = 0.5 * (1 + alpha * (lam - 0.4) + 0.75 * lam * lam);
+        double chi = 1 / (phi + Math.Sqrt(phi * phi - 0.75 * lam * lam));
+        return Math.Min(1.0, Math.Min(chi, 1 / (lam * lam)));
+    }
+
+    /// <summary>M_cr under a uniform moment between fork supports, doubly symmetric, in closed form.</summary>
+    static double McrUniform(double e, double g, double iLat, double it, double iw, double l)
+    {
+        return Math.PI / l * Math.Sqrt(e * iLat * g * it * (1 + Math.PI * Math.PI * e * iw / (g * it * l * l)));
+    }
+
+    static void LateralTorsionalMembers()
+    {
+        Section("Members: lateral-torsional buckling of an IPE 300 in S355, by hand");
+
+        double h = 0.300, b = 0.150, tf = 0.0107, tw = 0.0071, hw = h - 2 * tf;
+        var ipe = new ISection("IPE300", h, b, tf, b, tf, tw, Steel("S355"));
+        var s = SteelSection.Of(ipe, (SteelGrade)ipe.Material.Grade, Fabrication.Rolled);
+        double e = 210e6, g = 80.77e6, fy = s.Fy, w = s.WplZ;
+
+        double it = (2 * b * tf * tf * tf + hw * tw * tw * tw) / 3;
+        double iw = tf * b * b * b / 12 * (h - tf) * (h - tf) / 2;
+        Close(s.It, it, 1e-12, "It = (2 b tf³ + hw tw³)/3 with sharp corners - not ISection.J, which is Iy + Iz");
+        Close(s.Iw, iw, 1e-12, "Iw = If (h − tf)²/2, If = tf b³/12");
+        Check(s.LtRolledMethod && s.CurveLT == BucklingCurve.b, "rolled, h/b = 2: 6.3.2.3, curve b (Table 6.5)");
+        Check(s.MajorIsZ && s.LateralInertia == s.Iy, "bending about z buckles sideways against Iy");
+
+        // A uniform moment over 6 m between fork supports: M_cr in closed form, then 6.3.2.3 by hand.
+        double m = 80.0;
+        var uniform = Enumerable.Range(0, 5).Select(_ => new SectionForces(0, 0, 0, 0, 0, m)).ToList();
+        double mcr = McrUniform(e, g, s.Iy, it, iw, 6.0);
+        double chi = ChiLtRolled(Math.Sqrt(w * fy / mcr), 0.34);
+        var u = SteelCheck.Run(s, uniform, 6.0);
+        Close(u.LateralTorsional.Value, m / (chi * w * fy), 1e-9, $"uniform moment: M / (χLT Wpl fy), M_cr = {mcr:0.0} kNm in closed form, χLT = {chi:0.000}");
+        Check(u.Governing == "LTB", $"and it governs: {u.Governing}");
+
+        // Longer than the member - a beam that is only part of an unrestrained length - its peak is
+        // taken as uniform over all of L_LT.
+        var longer = SteelCheck.Run(s, uniform, new SteelMember(6.0) { LateralTorsionalLength = 9.0 });
+        double chi9 = ChiLtRolled(Math.Sqrt(w * fy / McrUniform(e, g, s.Iy, it, iw, 9.0)), 0.34);
+        Close(longer.LateralTorsional.Value, m / (chi9 * w * fy), 1e-9, "L_LT = 9 m on a 6 m member: its peak, uniform over 9 m");
+
+        // The uniform load of the Members section: where it acts, and how often the beam is held.
+        double mMax = 120.0, vMax = 80.0;
+        var udl = new List<SectionForces>
+        {
+            new SectionForces(0, vMax, 0, 0, 0, 0),
+            new SectionForces(0, vMax / 2, 0, 0, 0, 0.75 * mMax),
+            new SectionForces(0, 0, 0, 0, 0, mMax),
+            new SectionForces(0, -vMax / 2, 0, 0, 0, 0.75 * mMax),
+            new SectionForces(0, -vMax, 0, 0, 0, 0),
+        };
+        Func<SteelMember, double> At = member => SteelCheck.Run(s, udl, member).LateralTorsional.Value;
+        double centre = At(new SteelMember(6.0));
+        double onTop = At(new SteelMember(6.0) { Load = LoadPosition.Destabilising });
+        double hung = At(new SteelMember(6.0) { Load = LoadPosition.Stabilising });
+        Check(onTop > centre && centre > hung, $"on the top flange {onTop:0.000}, at the shear centre {centre:0.000}, hung below {hung:0.000}");
+
+        // The load goes towards −y here (Mz'' < 0), so on the top flange is on +y: flipping the load
+        // and the diagram together must change nothing, for a doubly symmetric section.
+        var flipped = udl.Select(f => new SectionForces(f.N, -f.Vy, f.Vz, f.T, f.My, -f.Mz)).ToList();
+        Close(SteelCheck.Run(s, flipped, new SteelMember(6.0) { Load = LoadPosition.Destabilising }).LateralTorsional.Value, onTop, 1e-9,
+              "the same load the other way, on the other flange: the same");
+
+        double third = At(new SteelMember(6.0) { LateralTorsionalLength = 2.0 });
+        double half = At(new SteelMember(6.0) { LateralTorsionalLength = 3.0 });
+        Check(centre > half && half > third, $"held at mid-span {half:0.000}, at the third points {third:0.000}");
+
+        Section("Members: what cannot buckle sideways");
+
+        var chs = new CircleCS("CHS", 0.1683, 0.005, Steel("S355"));
+        var tube = SteelCheck.Run(SteelSection.Of(chs, (SteelGrade)chs.Material.Grade, Fabrication.Rolled),
+                                  Enumerable.Range(0, 5).Select(_ => new SectionForces(0, 0, 0, 0, 0, 20)).ToList(), 6.0);
+        Check(tube.LateralTorsional == 0.0 && tube.Max.HasValue, "a tube: LTB is zero, and the member is checked");
+
+        // An RHS bent about its strong axis can still buckle sideways, if it is long and narrow enough:
+        // Bredt's It, no warping, and the general case 6.3.2.2 with curve d, by hand.
+        var rhs = new RectangleHollowCS("RHS", 0.100, 0.200, 0.010, 0.010, 0.010, Steel("S355"));
+        var r = SteelSection.Of(rhs, (SteelGrade)rhs.Material.Grade, Fabrication.Rolled);
+        double am = (0.100 - 0.010) * (0.200 - 0.010);
+        Close(r.It, 4 * am * am / (2 * 0.190 / 0.010 + 2 * 0.090 / 0.010), 1e-12, "It = 4 Am² / ∮ds/t");
+        Check(r.MajorIsZ && !r.TorsionallyDeformable && r.Iw == 0.0 && r.CurveLT == BucklingCurve.d && !r.LtRolledMethod,
+              "stiffer about z, closed (Table B.1), no warping, the general case with curve d");
+        double rMcr = Math.PI / 6.0 * Math.Sqrt(e * r.Iy * g * r.It);
+        double rLam = Math.Sqrt(r.WplZ * r.Fy / rMcr);
+        double rPhi = 0.5 * (1 + 0.76 * (rLam - 0.2) + rLam * rLam);
+        double rChi = Math.Min(1.0, 1 / (rPhi + Math.Sqrt(rPhi * rPhi - rLam * rLam)));
+        var box = SteelCheck.Run(r, Enumerable.Range(0, 5).Select(_ => new SectionForces(0, 0, 0, 0, 0, 50)).ToList(), 6.0);
+        Close(box.LateralTorsional.Value, 50 / (rChi * r.WplZ * r.Fy), 1e-9,
+              $"an RHS 200 x 100 x 10 over 6 m: M_cr = {rMcr:0} kNm, λ̄LT = {rLam:0.00}, χLT = {rChi:0.000}");
+        var shortBox = SteelCheck.Run(r, Enumerable.Range(0, 5).Select(_ => new SectionForces(0, 0, 0, 0, 0, 50)).ToList(), 1.0);
+        Close(shortBox.LateralTorsional.Value, 50 / (r.WplZ * r.Fy), 1e-9, "over 1 m, λ̄LT ≤ 0.2: the bending check, at γM1");
+
+        var wide = new RectangleHollowCS("wide", 0.300, 0.100, 0.008, 0.008, 0.008, Steel("S355"));
+        Check(!SteelSection.Of(wide, (SteelGrade)wide.Material.Grade, Fabrication.Rolled).MajorIsZ, "a box wider than it is deep is stiffer about y");
+
+        Section("Members: an I with unequal flanges in S235, monosymmetric");
+
+        // The larger flange on top, at +y: a positive Mz compresses it.
+        double hl = 0.30, bt = 0.20, tt = 0.015, bb = 0.12, tb = 0.010, twl = 0.008;
+        var lop = new ISection("lop", hl, bt, tt, bb, tb, twl, Steel("S235"));
+        var ls = SteelSection.Of(lop, (SteelGrade)lop.Material.Grade, Fabrication.Rolled);
+        double cy = ls.Stress.CentroidY;
+        double yt = hl / 2 - tt / 2 - cy, yb = -hl / 2 + tb / 2 - cy;
+        double ift = tt * bt * bt * bt / 12, ifb = tb * bb * bb * bb / 12;
+        Close(ls.ShearCentre, (ift * yt + ifb * yb) / (ift + ifb), 1e-12, "shear centre between the flanges, nearer the stiffer one");
+        Close(ls.Iw, ift * ifb / (ift + ifb) * (yt - yb) * (yt - yb), 1e-12, "Iw = If1 If2 / (If1 + If2) hs²");
+
+        // β by hand from the three plates: ∫ y (y² + z²) dA of a rectangle is w (y2⁴ − y1⁴)/4 + (y2² − y1²)/2 · (z2³ − z1³)/3.
+        Func<double, double, double, double> Plate = (y1, y2, width) =>
+        {
+            double z1 = -width / 2, z2 = width / 2;
+            return width * (Math.Pow(y2, 4) - Math.Pow(y1, 4)) / 4 + (y2 * y2 - y1 * y1) / 2 * (Math.Pow(z2, 3) - Math.Pow(z1, 3)) / 3;
+        };
+        double wagner = Plate(hl / 2 - tt - cy, hl / 2 - cy, bt) + Plate(-hl / 2 + tb - cy, hl / 2 - tt - cy, twl) + Plate(-hl / 2 - cy, -hl / 2 + tb - cy, bb);
+        double beta = wagner / ls.Iz - 2 * ls.ShearCentre;
+        Close(ls.Monosymmetry, beta, 1e-9, "β = (1/Iz) ∫ y (y² + z²) dA − 2 y0");
+        Check(ls.Monosymmetry < 0, "negative: a positive Mz compresses the larger flange, which holds it up");
+
+        // A uniform moment, in closed form: M_cr = Pz [−β/2 + √((β/2)² + Iw/Iz + G It L² / π² E Iz)].
+        double ll = 5.0, pz = Math.PI * Math.PI * e * ls.Iy / (ll * ll);
+        double mono = pz * (-beta / 2 + Math.Sqrt(beta * beta / 4 + ls.Iw / ls.Iy + g * ls.It * ll * ll / (Math.PI * Math.PI * e * ls.Iy)));
+        double up = CriticalMoment.Multiplier(ll, 1.0, 0.0, 0.0, 0.0, 0.0, e, ls.LateralInertia, ls.Iw, g, ls.It, ls.Monosymmetry);
+        double down = CriticalMoment.Multiplier(ll, -1.0, 0.0, 0.0, 0.0, 0.0, e, ls.LateralInertia, ls.Iw, g, ls.It, ls.Monosymmetry);
+        Close(up, mono, 1e-9, "uniform moment, monosymmetric, against the closed form");
+        Check(up > down, $"the larger flange compressed {up:0.0} kNm, the smaller {down:0.0} kNm");
+        Check(ls.CurveLT == BucklingCurve.d && !ls.LtRolledMethod, "the general case: welded, h/b by the narrower flange = 2.5, curve d");
+
+        var bent = SteelCheck.Run(ls, Enumerable.Range(0, 5).Select(_ => new SectionForces(-100, 0, 0, 0, 0, 50)).ToList(), 5.0);
+        Check(bent.LateralTorsional.HasValue && !bent.InteractionY.HasValue && bent.Missing.Contains("InteractionY") && bent.Max == null,
+              "in compression and bending: LTB is checked, 6.3.3 - for doubly symmetric sections only - is not, and there is no Max");
+        var pushed = SteelCheck.Run(ls, Enumerable.Range(0, 5).Select(_ => new SectionForces(-100, 0, 0, 0, 0, 0)).ToList(), 5.0);
+        Check(pushed.InteractionY == 0.0 && pushed.Max.HasValue, "in compression alone there is nothing for 6.3.3 to add, and it is checked");
+    }
+
+    static void BendingAndCompression()
+    {
+        Section("Members: an HE 300 B-like column in S355 under N and Mz, 6.3.3 by hand");
+
+        // Class 2 by its flanges. N = 1000 kN, Mz = 100 kNm uniform, every length 5 m.
+        var hea = new ISection("HE300B", 0.300, 0.300, 0.019, 0.300, 0.019, 0.011, Steel("S355"));
+        var c = SteelSection.Of(hea, (SteelGrade)hea.Material.Grade, Fabrication.Rolled);
+        double e = 210e6, g = 80.77e6, l = 5.0, n = 1000, m = 100, fy = c.Fy, a = c.A;
+        var forces = Enumerable.Range(0, 5).Select(_ => new SectionForces(-n, 0, 0, 0, 0, m)).ToList();
+        var u = SteelCheck.Run(c, forces, l);
+        Check(u.Checked && u.BucklingClass == 2, $"class 2 for buckling: {u.BucklingClass}");
+
+        // The standard's y is the major axis, Alpaca4d's z.
+        double lamY = Math.Sqrt(a * fy / (Math.PI * Math.PI * e * c.Iz / (l * l)));
+        double lamZ = Math.Sqrt(a * fy / (Math.PI * Math.PI * e * c.Iy / (l * l)));
+        double chiY = Ec3.Reduction(lamY, Ec3.Imperfection(c.CurveZ)), chiZ = Ec3.Reduction(lamZ, Ec3.Imperfection(c.CurveY));
+        double ny = n / (chiY * a * fy), nz = n / (chiZ * a * fy);
+        Close(u.BucklingZ.Value, ny, 1e-12, "N / (χy A fy), about the major axis: BucklingZ");
+
+        // A uniform moment: Cmy = CmLT = 0.6 + 0.4 ψ = 1. h/b = 1: curve b for LTB.
+        double chiLT = ChiLtRolled(Math.Sqrt(c.WplZ * fy / McrUniform(e, g, c.Iy, c.It, c.Iw, l)), 0.34);
+        double my = m / (chiLT * c.WplZ * fy);
+        double kyy = 1.0 * Math.Min(1 + (lamY - 0.2) * ny, 1 + 0.8 * ny);
+        double kzy = Math.Max(1 - 0.1 * lamZ / (1.0 - 0.25) * nz, 1 - 0.1 / (1.0 - 0.25) * nz);
+        if (lamZ < 0.4) kzy = Math.Min(0.6 + lamZ, 1 - 0.1 * lamZ / (1.0 - 0.25) * nz);
+
+        Close(u.InteractionZ.Value, ny + kyy * my, 1e-9, $"(6.61) = ny + kyy My/(χLT Wpl fy), kyy = {kyy:0.000}: InteractionZ, χ about local z");
+        Close(u.InteractionY.Value, nz + kzy * my, 1e-9, $"(6.62) = nz + kzy My/(χLT Wpl fy), kzy = {kzy:0.000} (Table B.2): InteractionY");
+        Check(u.Governing.StartsWith("Interaction"), $"and an interaction governs: {u.Governing}");
+
+        // Sway: Cm = 0.9 in place of 1.
+        var sway = SteelCheck.Run(c, forces, new SteelMember(l) { Sway = true });
+        Check(sway.Report.Contains("Cmy = 0.9,") && sway.InteractionZ < u.InteractionZ, "a sway frame: Cmy = 0.9 (Table B.3)");
+
+        // A buckling length longer than the member: its diagram is not the one that matters, so Cm = 1.
+        var bent = new List<SectionForces>
+        {
+            new SectionForces(-n, 0, 0, 0, 0, m), new SectionForces(-n, 0, 0, 0, 0, m / 2), new SectionForces(-n, 0, 0, 0, 0, 0),
+            new SectionForces(-n, 0, 0, 0, 0, -m / 2), new SectionForces(-n, 0, 0, 0, 0, -m),
+        };
+        var own = SteelCheck.Run(c, bent, new SteelMember(l));
+        var part = SteelCheck.Run(c, bent, new SteelMember(l) { BucklingLengthZ = 2 * l });
+        Check(own.Report.Contains("Cmy = 0.4,") && part.Report.Contains("Cmy = 1,"),
+              "end moments M and −M: Cmy = 0.6 − 0.4 = 0.2, at least 0.4; with L_cr twice the member, 1");
+
+        // No compression, bending about one axis only: 6.3.2 is the whole of it.
+        var beam = SteelCheck.Run(c, Enumerable.Range(0, 5).Select(_ => new SectionForces(0, 0, 0, 0, 0, m)).ToList(), l);
+        Check(beam.InteractionY == 0.0 && beam.InteractionZ == 0.0, "a beam with no axial force: interactions zero");
+
+        // No compression but bending about both axes: (6.62) puts LTB and minor axis bending together.
+        var biaxial = SteelCheck.Run(c, Enumerable.Range(0, 5).Select(_ => new SectionForces(0, 0, 0, 0, 30, m)).ToList(), l);
+        Check(biaxial.InteractionY > beam.LateralTorsional && biaxial.InteractionY > 0.0, "bending about both axes with no compression: 6.3.3 still applies");
+    }
+
     // ---------------------------------------------------------------- the whole chain
 
     class StubBeam : IBeam
@@ -470,6 +810,8 @@ class SteelCheckTest
         public void SetTags() { }
         public void SetTopologyRTree(Model model) { }
         public string WriteTcl() => "";
+        public IBeam WithSection(IUniaxialSection section) =>
+            new StubBeam { Id = Id, ElementId = ElementId, Section = section, BeamIntegration = new Alpaca4d.BeamIntegration.NewtonContes(section, BeamIntegration?.IntegrationPoint ?? 5) };
     }
 
     static void Chain(string folder)
@@ -522,6 +864,14 @@ class SteelCheckTest
 
         Check(all[2].Type == "Unknown" && !all[2].Checked && all[2].Max == null,
               "beam 3, whose material has no steel grade, is reported and left unchecked");
+
+        // The same through the overload that takes each member's lengths: beam 1's minor axis buckling
+        // over 6 m rather than 3.
+        var members = new[] { new SteelMember(3.0) { BucklingLengthY = 6.0 }, new SteelMember(3.0), new SteelMember(3.0) };
+        var held = Utilisations.Of(model, 0, members, new DesignSettings());
+        double lam = Math.Sqrt(c.A * c.Fy / (Math.PI * Math.PI * 210e6 * c.Iy / 36.0));
+        Close(held[0].BucklingY.Value, 400 / (Ec3.Reduction(lam, Ec3.Imperfection(c.CurveY)) * c.A * c.Fy), 1e-6, "beam 1 BucklingY with L_cr,y = 6 m");
+        Close(held[0].BucklingZ.Value, u.BucklingZ.Value, 1e-12, "and BucklingZ as before");
     }
 
     static void Main(string[] args)
@@ -531,11 +881,16 @@ class SteelCheckTest
         DesignersGuideBendingAndCompression();
         StructvilleBiaxial();
         DesignersGuideTube();
+        EccsCriticalMoment();
+        SchneiderBeamColumn();
+        CriticalMoments();
         IShape();
         UnequalI();
         BoxAndTube();
         Grades();
         Members();
+        LateralTorsionalMembers();
+        BendingAndCompression();
         Chain(args.Length > 0 ? args[0] : ".");
 
         Console.WriteLine();

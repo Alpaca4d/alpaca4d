@@ -20,5 +20,10 @@ namespace Alpaca4d.Generic
         public int? JNode { get; set; }
         public System.Drawing.Color Color { get; set; }
 
+        /// <summary>
+        /// The same beam - curve, axes, integration, releases, ElementId - with another section. A new
+        /// beam, this one left as it is: Grasshopper hands the same object to every component downstream.
+        /// </summary>
+        public IBeam WithSection(IUniaxialSection section);
     }
 }

@@ -33,15 +33,9 @@ namespace Alpaca4d.Element
         public void SetNodeTag(Model model)
         {
             if (this.Ndf == 3)
-            {
-                this.Id = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointThreeNDF, new List<Point3d>() { this.Pos }, model.Tollerance)[0] + 1;
-                //this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
-            }
+                this.Id = Alpaca4d.Utils.NodeSearch(model.NodeIndexThreeNDF, new[] { this.Pos })[0] + 1;
             else // ndf == 6
-            {
-                this.Id = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d>() { this.Pos }, model.Tollerance)[0] + 1 + model.UniquePointsThreeNDF.Count();
-                //this.Id = model.CloudPointSixNDF.ClosestPoint(this.Pos) + 1 + model.UniquePointsThreeNDF.Count();
-            }
+                this.Id = Alpaca4d.Utils.NodeSearch(model.NodeIndexSixNDF, new[] { this.Pos })[0] + 1 + model.UniquePointsThreeNDF.Count;
         }
 
         /// <summary>

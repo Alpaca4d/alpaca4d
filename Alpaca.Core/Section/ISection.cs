@@ -15,20 +15,20 @@ namespace Alpaca4d.Section
         public int? Id { get; set; } = IdGenerator.GenerateId();
         public IUniaxialMaterial Material { get; set; }
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double TopWidth { get; set; }
         public double BottomWidth { get; set; }
         public double TopFlangeThickness { get; set; }
         public double BottomFlangeThickness { get; set; }
         public double Height { get; set; }
         public double Web { get; set; }
-        public double Area
-        {
-            get
-            {
-                double area = Rhino.Geometry.AreaMassProperties.Compute(Brep).Area;
-                return area;
-            }
-        }
+        public double Area => this.Outline.Area;
+
+        private readonly MeasuredOutline _outline = new MeasuredOutline();
+
+        private MeasuredOutline Outline => _outline.Of(
+            new[] { this.Height, this.TopWidth, this.TopFlangeThickness, this.BottomWidth, this.BottomFlangeThickness, this.Web },
+            () => this.Brep);
 
 
         // Shear area factors, as OpenSees reads them: alphaY scales the shear stiffness for Vy and
@@ -37,23 +37,9 @@ namespace Alpaca4d.Section
         // shear about its strong axis - a 2 m HEA300 cantilever deflected 7.6 mm against 8.5 mm.
         public double AlphaY => ((this.Height - this.TopFlangeThickness - this.BottomFlangeThickness)*this.Web)/this.Area;
         public double AlphaZ => (this.TopWidth * this.TopFlangeThickness + this.BottomWidth * this.BottomFlangeThickness)/this.Area;
-        public double Izz
-        {
-            get
-            {
-                double iZZ = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).CentroidCoordinatesMomentsOfInertia.X;
-                return iZZ;
-            }
-        }
+        public double Izz => this.Outline.Izz;
 
-        public double Iyy
-        {
-            get
-            {
-                double iYY = Rhino.Geometry.AreaMassProperties.Compute(this.Brep).CentroidCoordinatesMomentsOfInertia.Y;
-                return iYY;
-            }
-        }
+        public double Iyy => this.Outline.Iyy;
 
         public double J
         {

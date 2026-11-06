@@ -32,8 +32,9 @@ namespace Alpaca4d.Gh
             "Solves the eigenvalue problem of the model and returns its modes, eigenvalues, periods " +
             "and frequencies.\n" +
             "It needs no Analysis Settings - an eigenvalue problem has nothing to converge. Connect " +
-            "the assembled model rather than an analysed one, then feed the solved model to Nodal " +
-            "Displacements to read a mode shape.\n" +
+            "the assembled model, or an analysed one for the modes of the model it was analysed from - " +
+            "Section Optimiser's last design, say. Feed the solved model to Nodal Displacements to read " +
+            "a mode shape.\n" +
             "The modal report - masses, centre of mass, participation factors and mass ratios - is in " +
             "the Modal Report menu below the component.",
             "Alpaca4d", "07_Analysis")
@@ -82,7 +83,9 @@ namespace Alpaca4d.Gh
             mngr.RegisterUnit(unit);
 
             unit.RegisterInputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
-                "The assembled model, from Assemble Model. Not from Run Analysis - that clears the OpenSees domain when it finishes, leaving nothing to solve.",
+                "The model, from Assemble Model, or an analysed one, from Run Analysis, Section Optimiser or Linear Buckling. An analysed " +
+                "model is solved as it was before it was analysed - from Section Optimiser, its last design - and unloaded: what the " +
+                "analysis found does not change the modes.",
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_Integer(), "Vibration Modes", "Vibration Modes",
@@ -95,7 +98,7 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item, new GH_String("-genBandArpack"));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
-            unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel", "The solved model. Feed it to Nodal Displacements to read a mode shape.");
+            unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel", "The solved model. Feed it to Nodal Displacements or View Results to read a mode shape, scaled so that its largest translation is 1.");
             unit.RegisterOutputParam(new Param_Number(), "Eigenvalues", "Eigenvalues", "One eigenvalue per mode, lowest first. Each is omega squared, in rad²/s².");
             unit.RegisterOutputParam(new Param_Number(), "Period", "Period", $"One period per mode, longest first [{Units.Time}]");
             unit.RegisterOutputParam(new Param_Number(), "Frequencies", "Frequencies", "One frequency per mode, lowest first, in Hz.");
@@ -136,15 +139,14 @@ namespace Alpaca4d.Gh
             // An analysed model is not a model any more: Run Analysis ends the script it
             // hands on with "wipe", which clears the OpenSees domain. Appending the eigen
             // block to that would call eigen on an empty domain - ArpackSolver fails with
-            // "N must be positive" and no eigenvalue is ever set. Modal analysis belongs
-            // on its own branch, straight off the assembled model.
-            if (model.IsAnalysed)
+            // "N must be positive" and no eigenvalue is ever set. The model it was analysed
+            // from is solved instead.
+            model = model.Unanalysed();
+            if (model == null)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                    "This AlpacaModel has already been analysed. Connect the Natural Vibration Analysis " +
-                    "to the AlpacaModel output of the Assemble component, not to the output of Run Analysis: " +
-                    "Run Analysis clears the OpenSees domain when it finishes, so the eigen analysis would " +
-                    "find nothing to solve.");
+                    "This AlpacaModel has been analysed, and does not carry the model it was analysed from. " +
+                    "Connect the Natural Vibration Analysis to the AlpacaModel output of Assemble Model.");
                 return;
             }
 
@@ -155,6 +157,7 @@ namespace Alpaca4d.Gh
             // create a shallow copy
             var analysisModel = model.ShallowCopy();
             analysisModel.Tcl = new List<string>(analysisModel.Tcl);
+            analysisModel.BeforeAnalysis = model;
 
             bool fileExist = OnPingDocument().IsFilePathDefined;
             if (!fileExist)
@@ -165,16 +168,20 @@ namespace Alpaca4d.Gh
             var currentDir = System.IO.Path.GetDirectoryName(filePath);
             System.IO.Directory.SetCurrentDirectory(currentDir);
 
-            string recorderName = "recorder_eigen.mpco";
-            analysisModel.ModalAnalysisReportFile = "ModalReport.txt";
+            // A deck, a recorder and a report of its own for every run: the mode shapes and the
+            // report are read back later, by Nodal Displacements and Modal Analysis Report, so models
+            // solved side by side must not share them. See AnalysisFiles.
+            var files = AnalysisFiles.For(this, DA);
+            string recorderName = files.OwnFile("recorder_eigen", ".mpco");
+            analysisModel.ModalAnalysisReportFile = files.OwnFile("ModalReport", ".txt");
 
-            analysisModel.FileName = System.IO.Path.GetFullPath("AlpacaModel");
+            analysisModel.FileName = files.OwnFile("AlpacaModel_eigen", ".tcl");
 
             // Recorder. Mode shapes only, whatever Assemble Model was given: its recorders are
             // chosen for Run Analysis, and an eigen analysis has no steps for them to record.
             if (model.Recorders != null && model.Recorders.Count > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    $"The recorders from Assemble Model are for Run Analysis. The mode shapes are recorded to {recorderName} as always.");
+                    $"The recorders from Assemble Model are for Run Analysis. The mode shapes are recorded to {System.IO.Path.GetFileName(recorderName)} as always.");
             analysisModel.Recorders = new List<IRecorder>();
             var recorder = Alpaca4d.Recorder.MpcoEigen(recorderName);
             analysisModel.IsModal = true;
@@ -183,9 +190,15 @@ namespace Alpaca4d.Gh
             analysisModel.Recorders.Add(recorder);
             analysisModel.Tcl.Add(recorder.WriteTcl());
 
+            // ARPACK (-genBandArpack) does its shift-invert solves with the system set here: Mumps on
+            // every core where the OpenSees has it, BandSPD where not. Left unset, OpenSees falls back
+            // on ProfileSPD, a single-core profile solver. -fullGenLapack has a dense solver of its own.
+            if (solver.IndexOf("fullGenLapack", StringComparison.OrdinalIgnoreCase) < 0)
+                analysisModel.Tcl.Add(new Alpaca4d.SystemEquation("Auto").WriteTcl());
+
             // Settings
             analysisModel.Tcl.Add(Alpaca4d.Eigen.WriteTcl(solver, vibrationNumber));
-            analysisModel.Tcl.Add($"modalProperties -file \"{analysisModel.ModalAnalysisReportFile}\" -unorm\n");
+            analysisModel.Tcl.Add($"modalProperties -file {TclPath.Write(analysisModel.ModalAnalysisReportFile)} -unorm\n");
             analysisModel.Tcl.Add("record\nwipe");
 
             analysisModel.Serialise();
@@ -206,7 +219,8 @@ namespace Alpaca4d.Gh
 
             if (exitCode != 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Analysis Failed: OpenSees exited with an error. See log for details.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, Alpaca4d.Element.TenNodeTetrahedron.SolverTooOld(stderr) ??
+                    "Analysis Failed: OpenSees exited with an error. See log for details.");
                 return;
             }
 

@@ -24,7 +24,7 @@ namespace Alpaca4d.Gh
         /// </summary>
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
-            pManager.AddGenericParameter("ShellElement", "ShellElement", "By Default, the load will be applied to all the shell elements.", GH_ParamAccess.item);
+            pManager.AddGenericParameter(Target, Target, LoadTarget.Description("shells"), GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddVectorParameter("Force", "Force", $"[{Units.Force}/{Units.Length}²]", GH_ParamAccess.item);
         }
@@ -44,17 +44,28 @@ namespace Alpaca4d.Gh
         /// to store data in output parameters.</param>
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            Generic.IShell element = null;
-            DA.GetData(0, ref element);
+            if (!LoadTarget.Read(this, DA, 0, "the shells from ASD Shell", out Generic.IShell element, out string filter))
+                return;
 
             var force = Vector3d.Zero;
             DA.GetData(1, ref force);
 
             bool local = false;
-            var meshLoad = new Alpaca4d.Loads.MeshLoad(element, force, null, local);
+            var meshLoad = new Alpaca4d.Loads.MeshLoad(element, force, null, local) { Filter = filter };
 
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, meshLoad);
+        }
+
+        private const string Target = "Shell|Id";
+
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            if (!base.Read(reader))
+                return false;
+
+            LoadTarget.Rename(Params.Input[0], "ShellElement", Target, LoadTarget.Description("shells"));
+            return true;
         }
 
 

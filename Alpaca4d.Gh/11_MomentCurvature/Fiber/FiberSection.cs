@@ -23,7 +23,10 @@ namespace Alpaca4d.Gh
 
         public FiberSection()
           : base("Fiber Section (Alpaca4d)", "FiberSection",
-            "Collects fibre points, layers and patches into one section.\nThe green y and blue z arrows are the section's local axes: y along world X, z along world Y, the way OpenSees writes a fibre.",
+            "Collects fibre points, layers and patches into one section.\nThe green y and blue z arrows are the section's local axes: y along world X, z along world Y, the way OpenSees writes a fibre. " +
+            "They are drawn at the area centroid of the fibres, the point moments are taken about. My and Mz - in Moment Curvature, Interaction Domain and its views - " +
+            "are moments about y and z by the right-hand rule, the beam's axis x coming out of the drawing (towards you in Top view): positive My stretches the +z side, " +
+            "positive Mz the -y side.",
             "Alpaca4d", "MomentCurvature_βeta")
         {
             // Draw a Description Underneath the component

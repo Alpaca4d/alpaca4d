@@ -64,6 +64,65 @@ own: what a batten carries depends on the batten spacing, which the section does
 OpenSees does not resolve shear over a beam section, so these are checked against the formulas
 only, worked out independently of the rectangles.
 
+## Point by point
+
+What the table above reports is each section's worst. View Results, with Extruded beams on, paints
+the stress at every point of the section's surface instead (`BeamSectionStress.SurfaceAt`), so one
+side of a beam bent and pushed can be seen to work harder than the other. A point is given with the
+way the surface runs there, and the shear is the one running along the surface - a free surface
+carries no other.
+
+| shape | τ from V at a point | τ from T at a point |
+| --- | --- | --- |
+| rectangle | Jourawski's parabola each way, 1.5·V/A at the middle of a side, nothing at the corners | Saint-Venant's series (Timoshenko & Goodier §109), scaled to the section's τT at the middle of the long sides |
+| round bar, tube | the peak turned to run round the surface: full where the surface runs along V, nothing where it faces it | T·r/Ip, r the outer or the inner radius |
+| I, two angles | thin-walled shear flow: the wall cut across its thickness at the point, V·S/(I·t) of what that frees | T·t/J on each wall's faces, dying away into a free end's corners |
+| box | the flow round a closed cell that does not twist it, ∮q/t ds = 0 | Bredt, T/(2·Am·t) in each wall |
+
+Direct stress is exact, σ = N/A − Mz·y/Iz + My·z/Iy at the point.
+
+Shear and torsion are signed along the surface, so on one face of a wall they add and on the other
+they take away, and Von Mises at a point is √(σ² + 3τ²) of what actually meets there - not the
+bound of the table above. Signing them needs OpenSees' convention for Vy, which is not the one its
+name suggests: Vy is dMz/dx, and with a positive Mz compressing +y that makes it the shear acting
+down -y. Checked on a cantilever: a tip load of +10 along y reads Vy = −10, one of +20 along z reads
+Vz = +20, a torque of +7 reads T = +7.
+
+How the walls of an open section join decides the flow near the joint. A wall ending on the face of
+another - a web on a flange - hangs off the whole edge they share, so the flange's flow turns into
+the web across the web's thickness rather than at its centre line. Two walls lying alongside each
+other - a pair of angles back to back, or across their links - are tied at the heel, where the short
+legs meet them, which is the shortest way across and what exact elasticity shows two angles touching
+do.
+
+### Against exact elasticity, point by point
+
+`fe_check.py`, "On the surface": sectionproperties' stress a hair inside the surface. Steel, ν = 0.3.
+
+| | exact | Alpaca4d | |
+| --- | --- | --- | --- |
+| I 340, Vy, web face at the centroid | 3.4597 MPa | 3.4591 | |
+| I 340, Vy, flange underside 55 out | 0.5867 | 0.5758 | thin walls, 1.9% |
+| I 340, Vz, flange top over the web | 3.6569 | 3.7221 | 1.8% |
+| I 340, T, web face | 10.537 | 10.714 | 1.7% safe, J = Σbt³/3 |
+| I 340, everything at once, web face, von Mises | 12.457 | 12.504 | |
+| I 340, everything at once, top of a flange tip, von Mises | 21.380 | 21.378 | the bound above says 23.57 |
+| box, unequal flanges, Vy, side face at the centroid | 4.0062 | 3.9867 | |
+| box, unequal flanges, Vz, the bottom's middle | 5.2123 | 5.1004 | the closed cell's own flow |
+| **box, T, side face (10 thick)** | 0.9868 | 0.9169 | **exact 7.6% higher** |
+| **box, T, top face (16 thick)** | 0.6873 | 0.5731 | **exact 20% higher** |
+| CHS 168.3 × 8, V, side | 4.7759 | 4.9561 | 3.6% safe |
+| bar 100, V, side | 1.5684 | 1.6977 | 7.6% safe |
+| rectangle 200 × 400, Vy, side face's middle | 0.1947 | 0.1875 | exact 3.8% higher |
+| **rectangle 200 × 400, Vz across the depth, top face's middle** | 0.2733 | 0.1875 | **exact 46% higher** |
+| rectangle, T, long side's middle, short side's middle, long side 150 up | 0.2541, 0.2021, 0.1689 | 0.2546, 0.2024, 0.1693 | |
+
+Bredt is the average through a wall; on its outer face a thick wall's exact stress is higher by
+about T·t/J, which is what the box's two rows are. A rectangle sheared across its long side is a wide
+beam, where Jourawski's uniform shear across the cut is far off at the faces - the same is true of
+the section's own τV. Both are beam theory, and pinned so that a change of formula shows. Where walls
+meet in a sharp re-entrant corner, exact elasticity is singular and nothing here follows it.
+
 ## Sections with no shape
 
 An Elastic Section is a list of properties with no geometry behind it. Its beams give σN and
@@ -149,6 +208,11 @@ the same size as the fibre mesh's own error in I, which the check prints beside 
 - exact elasticity from sectionproperties, with the known gap in shear on round sections pinned;
 - the recovered direct stress against OpenSees fibre stresses, at corners of two lopsided sections
   and at every fibre of a bar, a tube and an IPE 300;
+- point by point: direct stress against its formula and the section's own σmax and σmin at the
+  outline's corners; shear and torsion against their formulas on every shape, with their signs -
+  which way along the surface, and that they add on one face of a wall and take away on the other;
+  a thin strip's torsion at the middle of its short side (Catalan's G over π²/8 of the long side's);
+  and nineteen points against exact elasticity, the known gaps pinned;
 - `Read.BeamStresses` on a real MPCO file written the way Alpaca4d writes a beam, with a different
   value on every force so that a force read into the wrong slot reads as the wrong stress;
 - that an Elastic Section beam is marked as having no shape and still reads σN.

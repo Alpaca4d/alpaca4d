@@ -84,6 +84,7 @@ namespace Alpaca4d.Section
         public const int MinLayers = 3;
 
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public List<ShellLayer> Layers { get; set; } = new List<ShellLayer>();
         public int? Id { get; set; } = IdGenerator.GenerateId();
 

@@ -35,6 +35,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Material", "Material", "Material the section is made of. Connect an elastic uniaxial material.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddParameter(ColourInput.Make(ColourInput.SectionDescription));
         }
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -63,7 +64,14 @@ namespace Alpaca4d.Gh
 
             var section = new Alpaca4d.Section.RectangleHollowCS(secName, width, height, web, topFlange, bottomFlange, material);
 
+            section.Color = ColourInput.Read(this, DA);
             DA.SetData(0, section);
+        }
+
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            // A file saved before the Colour input has one input fewer; see StoredInputs.
+            return ColourInput.ReadComponent(this, reader, base.Read, ColourInput.SectionDescription);
         }
 
         public override GH_Exposure Exposure => GH_Exposure.primary;

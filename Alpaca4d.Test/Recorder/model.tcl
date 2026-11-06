@@ -47,6 +47,14 @@ node 15 0 0 2
 node 16 1 0 2
 fix 15 1 1 1 1 1 1
 element forceBeamColumn 8 15 16 1 HingeRadau 1 0.1 1 0.1 1
+
+# A truss, as Truss writes one: a corotTruss with a material of its own, tension only here.
+node 17 0 0 4
+node 18 1 0 4
+fix 17 1 1 1 1 1 1
+fix 18 0 1 1 1 1 1
+uniaxialMaterial Elastic 9 2.0e11 0.0 0.0
+element corotTruss 9 17 18 0.01 9 -rho 0.0
 model basic -ndm 3 -ndf 3
 nDMaterial ElasticIsotropic 5 3.0e7 0.2 2500.0
 # SSPbrick
