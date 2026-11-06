@@ -45,6 +45,7 @@ public partial class TrussCheck
             Console.WriteLine("  [ .. ] spring, bearing, gap written");
 
             LineLoads();
+            SelfWeight();
             PanelAssembled();
             TrussMeetsBeam();
             SupportsOnTrussNodes();
@@ -191,6 +192,53 @@ public partial class TrussCheck
                   $"and the supports take 6 kN each ({Reaction(model, supports[0]).Z:G6})");
             Check(Near(Reaction(model, supports[2]).Z + Reaction(model, supports[3]).Z, 10.0, 1e-6),
                   "and 10 kN in all under the sloped one");
+        }
+    }
+
+    static void SelfWeight()
+    {
+        Section("Self-weight: along a beam, on the ends of a truss");
+        {
+            // One element 6 m long, pinned at one end and on a roller at the other, under its own weight alone.
+            Point3d a = new Point3d(0, 0, 0), b = new Point3d(6, 0, 0);
+            var beam = Beam(a, b);
+            var supports = new List<Support>
+            {
+                Held(a, true, true, true, true, false, false),
+                Held(b, false, true, true, false, false, false),
+            };
+            var model = Assembled(new List<IElement> { beam }, supports, Pattern(new Gravity(1.0, new Alpaca4d.TimeSeries.Linear(1.0))));
+
+            double w = 0.2 * 0.4 * Rho * 9.81 / 1000.0, l = 6.0;
+            var pattern = Lines(string.Join("", model.Tcl.Skip(model.LoadPatternTclStart))).ToList();
+            var uniform = pattern.Where(t => t[0] == "eleLoad").ToList();
+            Check(uniform.Count == 1 && uniform[0].Contains("-beamUniform") && !pattern.Any(t => t[0] == "load"),
+                  "a beam's weight goes on as a uniform load along it, not on its ends");
+            var local = uniform.Single().SkipWhile(t => t != "-beamUniform").Skip(1).Select(Num).ToList();
+            Check(Near(Math.Sqrt(local.Sum(x => x * x)), w, 1e-9), $"of its weight per metre, {w:G6} kN/m ({string.Join(" ", local.Select(x => x.ToString("G6")))} in local axes)");
+
+            Check(Solve(model, "selfweight", out var log), "it solves");
+            Check(Near(Reaction(model, supports[0]).Z, w * l / 2.0, 1e-6) && Near(Reaction(model, supports[1]).Z, w * l / 2.0, 1e-6),
+                  $"the supports take w L / 2 each, {w * l / 2.0:G6} kN ({Reaction(model, supports[0]).Z:G6})");
+            var read = Read.ForceBeamColumn(model, Read.StepCount(model) - 1);
+            // The middle of five Lobatto sections; on its ends the beam bent under none of its weight.
+            double middle = Math.Max(Math.Abs(read.mz[0][2]), Math.Abs(read.my[0][2]));
+            Check(Near(middle, w * l * l / 8.0, 1e-6), $"and a beam of one element bends under it, w L² / 8 at midspan ({middle:G6} against {w * l * l / 8.0:G6} kN·m)");
+        }
+        {
+            var bar = Bar(new Point3d(0, 0, 0), new Point3d(4, 0, 0), 0.01);
+            var supports = new List<Support>
+            {
+                Held(new Point3d(0, 0, 0), true, true, true, false, false, false),
+                Held(new Point3d(4, 0, 0), false, true, true, false, false, false),
+            };
+            var model = Assembled(new List<IElement> { bar }, supports, Pattern(new Gravity(1.0, new Alpaca4d.TimeSeries.Linear(1.0))));
+
+            double half = 0.01 * Rho * 9.81 / 1000.0 * 4.0 / 2.0;
+            var pattern = Lines(string.Join("", model.Tcl.Skip(model.LoadPatternTclStart))).ToList();
+            var loads = pattern.Where(t => t[0] == "load").ToList();
+            Check(!pattern.Any(t => t[0] == "eleLoad") && loads.Count == 2 && loads.All(t => Near(Num(t[4]), -half)),
+                  $"a truss's goes half on each end, {half:G6} kN: it has no bending to carry it along it");
         }
     }
 
