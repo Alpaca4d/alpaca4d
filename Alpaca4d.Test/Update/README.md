@@ -25,6 +25,7 @@ so the real ones are never read or written, then checks:
 | installed by hand into Grasshopper's Libraries | the folders of other plugins beside it are not looked in; its own is |
 | adding a license | the user folder is made when there is none, and picking the file already in use changes nothing |
 | settings after an update | the newest `settings.json` is brought over, and a path set afterwards is saved in the user folder |
+| a `settings.json` from before only picked colours were kept | the old defaults in it, white ids among them, give way to the new dark ones, a colour picked by hand stays, and it is saved again with the picked colours only |
 
 ## What is not checked here
 

@@ -9,6 +9,7 @@
 // Everything happens in a folder of the test's own: the package folders, the user folder and the
 // files in them are made up here, so the real ones are never read or written.
 using System;
+using System.Drawing;
 using System.IO;
 using System.Runtime.CompilerServices;
 
@@ -168,7 +169,28 @@ class UpdateTest
         AlpacaSettings.OpenSeesPath = "/opt/OpenSees/bin/OpenSees";
         Check(File.ReadAllText(mine).Contains("/opt/OpenSees/bin/OpenSees"), "where a path set afterwards is saved");
         Check(File.ReadAllText(previous).Contains("OpenSees3.7.1"), "leaving the earlier version's file as it was");
+
+        // A file from before only the colours picked were kept: every colour in it, the old
+        // defaults among them, as the colour picker on a Mac handed them back.
+        File.WriteAllText(mine, "{ \"OpenSeesPath\": \"/opt/OpenSees/bin/OpenSees\", \"Colours\": { \"NodeIds\": \"#FFFEFF\", " +
+                                "\"AreaLoads\": \"#FF5D00\", \"SectionNames\": \"#000000\", \"Values\": \"#000000\" } }");
+        AlpacaSettings.Load();
+        Check(Same(AlpacaSettings.Colour(DisplayItem.NodeIds), AlpacaSettings.DefaultColour(DisplayItem.NodeIds)) &&
+              Same(AlpacaSettings.Colour(DisplayItem.AreaLoads), AlpacaSettings.DefaultColour(DisplayItem.AreaLoads)),
+              "the old defaults in an older file give way to the new ones");
+        Check(Same(AlpacaSettings.Colour(DisplayItem.SectionNames), Color.Black), "a colour picked in it is kept");
+
+        AlpacaSettings.SetColour(DisplayItem.LineLoads, Color.FromArgb(1, 2, 3));
+        string saved = File.ReadAllText(mine);
+        Check(saved.Contains("\"Version\": 2") && saved.Contains("SectionNames") && saved.Contains("LineLoads") &&
+              !saved.Contains("NodeIds") && !saved.Contains("Values"), "saved again, with the colours picked only");
+        AlpacaSettings.Load();
+        Check(Same(AlpacaSettings.Colour(DisplayItem.LineLoads), Color.FromArgb(1, 2, 3)) && Same(AlpacaSettings.Colour(DisplayItem.SectionNames), Color.Black) &&
+              Same(AlpacaSettings.Colour(DisplayItem.NodeIds), AlpacaSettings.DefaultColour(DisplayItem.NodeIds)),
+              "and read back as they were");
     }
+
+    static bool Same(Color a, Color b) => a.ToArgb() == b.ToArgb();
 
     static bool Equal(byte[] a, byte[] b)
     {
