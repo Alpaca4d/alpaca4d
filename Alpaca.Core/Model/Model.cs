@@ -1405,31 +1405,46 @@ namespace Alpaca4d
             return (Math.Abs(diagonal.X) + Math.Abs(diagonal.Y) + Math.Abs(diagonal.Z)) / 3.0;
         }
 
-        private List<PointLoad> CreateGravityLoad(Alpaca4d.Loads.Gravity gravityLoad = null)
+        /// <summary>
+        /// The loads OpenSees is given for <paramref name="gravityLoad"/>, on an assembled model: a
+        /// uniform load down along each beam, its weight per metre, a point load on each end of a
+        /// truss, half its weight each, and on each node of a shell or a solid, its share of the
+        /// element's. Public so that Model View draws what is analysed.
+        /// </summary>
+        public List<ILoad> CreateGravityLoad(Alpaca4d.Loads.Gravity gravityLoad = null)
         {
-            var gravityPointLoad = new List<Alpaca4d.Loads.PointLoad>();
+            var gravityPointLoad = new List<ILoad>();
 
             double? mass = 0.00;
             foreach (var item in this.Elements)
             {
-                if (item.Type == ElementType.Beam)
+                // A zero length section is said to be a beam too, but has no length to weigh.
+                if (item.Type == ElementType.Beam && item is IBeam beam)
                 {
-                    var beam = (IBeam)item;
                     var length = beam.Curve.GetLength();
                     var massDens = beam.Section.Area * beam.Section.Material.Rho * 9.81 / 1000.0;
                     mass += (massDens * length);
-                    if (gravityLoad != null)
-                    {
-                        var gravityPointLoadStart = new Alpaca4d.Loads.PointLoad((int)beam.INode, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, (double)-(massDens * length / 2)), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
-                        var gravityPointLoadEnd = new Alpaca4d.Loads.PointLoad((int)beam.JNode, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, (double)-(massDens * length / 2)), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
+                    if (gravityLoad == null)
+                        continue;
 
-                        gravityPointLoadStart.Ndf = 6;
-                        gravityPointLoadEnd.Ndf = 6;
-                        gravityPointLoadStart.Pos = this.UniquePoints[(int)beam.INode-1];
-                        gravityPointLoadEnd.Pos = this.UniquePoints[(int)beam.JNode-1];
-                        gravityPointLoad.Add(gravityPointLoadStart);
-                        gravityPointLoad.Add(gravityPointLoadEnd);
+                    // Along the beam, as it carries it, so that a beam of one element bends under
+                    // its own weight: on its ends, it bent under none of it.
+                    if (!(beam is Truss))
+                    {
+                        gravityPointLoad.Add(new Alpaca4d.Loads.LineLoad(beam, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, -(double)massDens), gravityLoad.TimeSeries));
+                        continue;
                     }
+
+                    // A truss has no bending to carry it with: half on each end, as a line load on it is.
+                    var gravityPointLoadStart = new Alpaca4d.Loads.PointLoad((int)beam.INode, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, (double)-(massDens * length / 2)), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
+                    var gravityPointLoadEnd = new Alpaca4d.Loads.PointLoad((int)beam.JNode, gravityLoad.Factor * new Rhino.Geometry.Vector3d(0, 0, (double)-(massDens * length / 2)), new Rhino.Geometry.Vector3d(0, 0, 0), gravityLoad.TimeSeries);
+
+                    gravityPointLoadStart.Ndf = 6;
+                    gravityPointLoadEnd.Ndf = 6;
+                    gravityPointLoadStart.Pos = this.UniquePoints[(int)beam.INode-1];
+                    gravityPointLoadEnd.Pos = this.UniquePoints[(int)beam.JNode-1];
+                    gravityPointLoad.Add(gravityPointLoadStart);
+                    gravityPointLoad.Add(gravityPointLoadEnd);
                 }
 
                 if (item.Type == ElementType.Shell)
