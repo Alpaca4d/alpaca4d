@@ -26,7 +26,7 @@ TOPICS = [
 ]
 # Posts that should wait, and why; matched against the start of a case's id.
 HOLD = {
-    "playground/": "The Playground page isn't live yet: it still reads as a sketch and is hidden from search.",
+    "playground/": "The Playground page still says only the River lesson is ready, and is hidden from search engines.",
     "twisted-ring": "No page on the website yet, and no analysis behind it.",
 }
 # Things to know before posting, matched the same way.
@@ -39,8 +39,7 @@ NOTES = {
 }
 STILL, VIDEO = (".png", ".jpg", ".jpeg", ".gif"), (".mp4", ".mov")
 # Shown at the top of the page while it holds; empty when there is nothing to say.
-NOTICE = ("The links in the first comments go live once the website is pushed: the new example, how-to and "
-          "Playground pages are not on alpaca4d.github.io yet.")
+NOTICE = ""
 
 
 def section(text, name):
