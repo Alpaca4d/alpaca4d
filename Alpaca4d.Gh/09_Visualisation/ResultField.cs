@@ -52,7 +52,7 @@ namespace Alpaca4d.Gh
 
         private static readonly string[] DisplacementNames = { "Magnitude", "Ux", "Uy", "Uz" };
         private static readonly string[] BeamForceNames = { "N", "Vy", "Vz", "Torsion", "My", "Mz" };
-        private static readonly string[] ShellForceNames = { "fxx", "fyy", "fxy", "mxx", "myy", "mxy", "vxz", "vyz" };
+        private static readonly string[] ShellForceNames = { "pxx", "pyy", "pxy", "mxx", "myy", "mxy", "vxz", "vyz" };
         private static readonly string[] ShellStressNames = { "σ11", "σ22", "σ12", "σ23", "σ31", "VonMises" };
         // Index notation, because the frame is the Axes dropdown's to choose: the solver reports in
         // the global axes, and Axes can turn the six components into the element's own, taken from

@@ -414,7 +414,7 @@ class ViewResultsTest
         {
             // These the reader does return in the offered order, which is why they are taken
             // straight off the tuple.
-            var expected = new[] { "fxx", "fyy", "fxy", "mxx", "myy", "mxy", "vxz", "vyz" };
+            var expected = new[] { "pxx", "pyy", "pxy", "mxx", "myy", "mxy", "vxz", "vyz" };
             Check(ComponentNames("ShellForce").SequenceEqual(expected),
                   "the three membrane, the three bending, then the two transverse shears");
         }
