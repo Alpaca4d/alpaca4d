@@ -62,6 +62,26 @@ class MassUnits
         Console.WriteLine($"  [{(clean ? "PASS" : "FAIL")}] node line carries no mass of its own");
         if (!clean) fails++;
 
+        // --- two masses on one node add up ------------------------------------
+        // "mass" sets a node's mass, so Assemble writes one line per node with the masses on it
+        // summed: two Mass Points on one node used to keep only the last. The nodes are put in
+        // by hand, as Assemble would, so this runs without Rhino.
+        var model = new Model();
+        model.NodeIndexSixNDF = new NodeIndex(0.001);
+        model.NodeIndexSixNDF.Add(new Point3d(0, 0, 0));
+        model.NodeIndexSixNDF.Add(new Point3d(4, 0, 0));
+        model.UniquePointsSixNDF = model.NodeIndexSixNDF.Points;
+        model.Mass.Add(new MassLoad(new Point3d(4, 0, 0), new Vector3d(60, 60, 60), Vector3d.Zero));
+        model.Mass.Add(new MassLoad(new Point3d(4, 0, 0.0005), new Vector3d(80, 80, 80), new Vector3d(1, 2, 3)));
+        model.Mass.Add(new MassLoad(new Point3d(0, 0, 0), new Vector3d(100, 100, 100), Vector3d.Zero));
+        typeof(Model).GetMethod("WriteMasses", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                     .Invoke(model, null);
+        Console.WriteLine($"  {string.Join("  ", model.Tcl).Replace("\n", "  ").Trim()}");
+        Check("mass lines, one per node", model.Tcl.Count, 2);
+        Check("node 1: the 100 kg alone", Field(model.Tcl[0], 2), 0.1);
+        Check("node 2: 60 + 80 kg", Field(model.Tcl[1], 2), 0.14);
+        Check("node 2: rotational terms added too", Field(model.Tcl[1], 7), 0.003);
+
         // --- beam mass per unit length, the path that was already right ---
         double area = 0.4 * 0.1;
         Check("beam -mass for A.rho", ModelMass.FromKg(area * RHO), 0.314);
