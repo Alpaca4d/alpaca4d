@@ -305,7 +305,88 @@ twospan() {
   $P anim "$OUT/twospan/two-span-beam-deflecting-frames" "$d/two-span-beam-deflecting" 40 900 15 0
 }
 
-ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell"
+curvedbeam() {
+  local d=$M/section-optimiser/curved-beam f
+  mkdir -p "$d"
+  for f in sections sections-front; do
+    trim curvedbeam/curved-beam-$f "$d/curved-beam-$f.png" 0 12
+  done
+  canvas curvedbeam/curved-beam-canvas "$d/grasshopper-definition.png"
+  pair "$d/curved-beam-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/curved-beam-sections.png"
+}
+
+beamgrid() {
+  local d=$M/section-optimiser/beam-grid f
+  mkdir -p "$d"
+  for f in sections displacement; do
+    trim beamgrid/beam-grid-$f "$d/beam-grid-$f.png" 0 12
+  done
+  canvas beamgrid/beam-grid-canvas "$d/grasshopper-definition.png"
+  pair "$d/beam-grid-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/beam-grid-sections.png"
+}
+
+# The docs' how-to guides: a folder per picture, and a copy beside its guide in the docs.
+howto() {
+  local f d docs=$M/../doc/how-to
+  for f in supports releases wind buckling; do
+    d=$M/how-to/$f
+    mkdir -p "$d"
+    trim howto/$f "$d/$f.png" 0 12
+  done
+  cp "$M/how-to/supports/supports.png" "$docs/supports-and-releases/supports.png"
+  cp "$M/how-to/releases/releases.png" "$docs/supports-and-releases/releases.png"
+  cp "$M/how-to/wind/wind.png" "$docs/loading/wind.png"
+  cp "$M/how-to/buckling/buckling.png" "$docs/analysis/buckling.png"
+  # Model View's page: every kind of load on one frame, and its own weight alone.
+  d=$M/model-view/loads
+  mkdir -p "$d"
+  trim howto/loads "$d/loads.png" 0 12
+  trim howto/own-weight "$d/own-weight.png" 0 12
+  cp "$d/loads.png" "$d/own-weight.png" "$M/../doc/basics/visualisation/model-view/"
+}
+
+# The six conventional structures: each one's loads, deformed shape and GIF, its canvas beside its
+# deformed shape, and the tower's first mode - and the example's pictures in examples/<slug>/.
+structures() {
+  local slug d
+  for slug in truss-roof-hall steel-tower roof-canopy vertical-truss-facade barrel-vault horizontal-truss-facade; do
+    d=$M/structures/$slug
+    mkdir -p "$d"
+    trim structures/$slug-loads "$d/$slug-loads.png" 0 12
+    trim structures/$slug-deformed "$d/$slug-deformed.png" 0 12
+    $P anim "$OUT/structures/$slug-deforming-frames" "$d/$slug-deforming" 40 900 15 0
+    if [ -d "$OUT/structures/$slug-mode-frames" ]; then
+      trim structures/$slug-mode "$d/$slug-mode.png" 0 12
+      $P anim "$OUT/structures/$slug-mode-frames" "$d/$slug-mode" 40 900 15 0
+    fi
+    canvas structures/$slug-canvas "$d/grasshopper-definition.png"
+    # The example's page: the deformed shape first, the loads second, and the GIFs.
+    local e=$M/../examples/$slug
+    cp "$d/$slug-deformed.png" "$e/$slug.png"
+    cp "$d/$slug-loads.png" "$e/$slug-2.png"
+    cp "$d/$slug-deforming.gif" "$e/$slug-deforming.gif"
+    [ -f "$d/$slug-mode.gif" ] && cp "$d/$slug-mode.gif" "$e/$slug-mode.gif"
+  done
+}
+
+# The five earthquakes: each one's still at its worst, the MP4 of it shaking in real time - ten frames a
+# second, a frame every 0.1 s - and a lighter GIF, its canvas, and the example's pictures.
+earthquakes() {
+  local slug d e
+  for slug in girder-bridge-earthquake cable-stayed-bridge-earthquake arch-bridge-earthquake building-earthquake earthquake-city; do
+    d=$M/earthquakes/$slug
+    e=$M/../examples/$slug
+    mkdir -p "$d" "$e"
+    trim earthquakes/$slug "$d/$slug.png" 0 12
+    # The still again, its charts under it, and the frames, each with its charts.
+    $P stack "$d/$slug-2.png" "$d/$slug.png" "$OUT/earthquakes/$slug-chart.png" 0
+    $P animcharts "$OUT/earthquakes/$slug-frames" "$OUT/earthquakes/$slug-charts" "$d/$slug-shaking" 40 900 10 0
+    canvas earthquakes/$slug-canvas "$d/grasshopper-definition.png"
+    cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-shaking.mp4" "$e/"
+  done
+}
+
+ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done

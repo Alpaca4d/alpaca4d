@@ -3,6 +3,8 @@
     python3 post.py trim in.png out.png [margin] [max_width] [grow] # cut to what is drawn
     python3 post.py anim frames_dir out_base [margin] [width] [fps] [hold]
                                                                     # out_base.gif + out_base.mp4
+    python3 post.py animcharts frames_dir charts_dir out_base [margin] [width] [fps] [hold]
+                                                                    # the same, each frame's charts under it
     python3 post.py pair out.png left.png right.png [height]        # side by side, both as tall
     python3 post.py stack out.png top.png bottom.png [gap]          # bottom scaled to top's width
 """
@@ -87,6 +89,30 @@ def anim(frames, base, margin=40, width=900, fps=12, hold=2):
     print("%d frames -> %s.gif, %s.mp4" % (len(files), base, base))
 
 
+def animcharts(frames, charts, base, margin=40, width=900, fps=10, hold=2):
+    """anim, with the charts of each frame under it, from a folder of their own with the same names:
+    the frames cut to what is drawn over all of them, the charts scaled to the same width."""
+    files = sorted(glob.glob(os.path.join(frames, "*.png")))
+    w, h = size(files[0])
+    pattern, under = os.path.join(frames, "%03d.png"), os.path.join(charts, "%03d.png")
+    f, cw, ch = crop_filter(box(pattern), w, h, margin)
+    for kind, wide in (("gif", width), ("mp4", max(width * 2, 1600))):
+        graph = ("[0]" + BACKGROUND + "," + f + ",scale=%d:-2:flags=lanczos[a];" % wide +
+                 "[1]format=rgb24,scale=%d:-2:flags=lanczos[b];[a][b]vstack" % wide)
+        if hold:
+            graph += ",tpad=stop_mode=clone:stop_duration=%d" % hold
+        inputs = ["-framerate", str(fps), "-i", pattern, "-framerate", str(fps), "-i", under]
+        if kind == "gif":
+            graph += ",split[p][q];[p]palettegen=stats_mode=full[pal];[q][pal]paletteuse=dither=sierra2_4a"
+            r = run(inputs + ["-filter_complex", graph, "-loop", "0", base + ".gif"])
+        else:
+            r = run(inputs + ["-filter_complex", graph, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                              "-movflags", "+faststart", base + ".mp4"])
+        if r.returncode:
+            raise SystemExit(r.stderr[-800:])
+    print("%d frames with their charts -> %s.gif, %s.mp4" % (len(files), base, base))
+
+
 def stack(dst, top, bottom, gap=40):
     tw, th = size(top)
     r = run(["-i", top, "-i", bottom, "-filter_complex",
@@ -113,6 +139,9 @@ if __name__ == "__main__":
     elif cmd == "anim":
         anim(a[0], a[1], int(a[2]) if len(a) > 2 else 40, int(a[3]) if len(a) > 3 else 900, int(a[4]) if len(a) > 4 else 12,
              int(a[5]) if len(a) > 5 else 2)
+    elif cmd == "animcharts":
+        animcharts(a[0], a[1], a[2], int(a[3]) if len(a) > 3 else 40, int(a[4]) if len(a) > 4 else 900,
+                   int(a[5]) if len(a) > 5 else 10, int(a[6]) if len(a) > 6 else 2)
     elif cmd == "pair":
         pair(a[0], a[1], a[2], int(a[3]) if len(a) > 3 else 1400)
     elif cmd == "stack":

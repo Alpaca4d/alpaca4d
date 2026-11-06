@@ -99,6 +99,11 @@ public static class Shots
                     case "tower": list = Tower(); break;
                     case "bridgelines": list = BridgeLines(); break;
                     case "twospan": list = TwoSpan(); break;
+                    case "curvedbeam": list = CurvedBeam(); break;
+                    case "beamgrid": list = BeamGrid(); break;
+                    case "howto": list = HowTo(); break;
+                    case "structures": list = Structures(); break;
+                    case "earthquakes": list = Earthquakes(); break;
                     case "plates": list = Plates(); break;
                     case "kangaroo": list = Kangaroo(); break;
                     case "nerviflatslab": list = NerviFlatSlab(); break;
@@ -519,8 +524,12 @@ public static class Shots
 
     static Guid lastViewport = Guid.Empty;
 
-    /// <summary>The view on the background grey, at Width x Height, with screen items scaled to the capture.</summary>
-    static void Shoot(RhinoView view, string name)
+    /// <summary>
+    /// The view on the background grey, at Width x Height times <paramref name="scale"/>, with screen
+    /// items scaled to the capture: a still for a page at 2, so that it stays sharp once trimmed to the
+    /// model, and the frames of an animation at 1.
+    /// </summary>
+    static void Shoot(RhinoView view, string name, double scale = 1)
     {
         var mode = WhiteMode();
         view.ActiveViewport.DisplayMode = mode;
@@ -529,7 +538,7 @@ public static class Shots
         RhinoApp.Wait();
         var capture = new ViewCapture
         {
-            Width = Width, Height = Height, ScaleScreenItems = true,
+            Width = (int)(Width * scale), Height = (int)(Height * scale), ScaleScreenItems = true,
             DrawAxes = false, DrawGrid = false, DrawGridAxes = false, TransparentBackground = false,
         };
         // The first capture of a viewport can come before the mode takes hold: grey, not white.
@@ -1092,8 +1101,8 @@ public static class Shots
                 foreach (var t in new[] { cantilever, simple }) ((IGH_PreviewObject)t).Hidden = true;
                 pc = Preview(Welded(Out(cantilever, "Surface"), Beside(cantilever, 120, 0)), LightBlue, Beside(cantilever, 300, 0));
                 ps = Preview(Welded(Out(simple, "Surface"), Beside(simple, 120, 0)), LightBlue, Beside(simple, 300, 0));
-                vc = Symbols(cantilever.Params.Input[0].Sources[0], Beside(cantilever, 120, 300), 5, 3);
-                vs = Symbols(simple.Params.Input[0].Sources[0], Beside(simple, 120, 300), 8, 4);
+                vc = Symbols(cantilever.Params.Input[0].Sources[0], Beside(cantilever, 120, 300), 1, 3);
+                vs = Symbols(simple.Params.Input[0].Sources[0], Beside(simple, 120, 300), 1, 4);
                 foreach (var t in doc.Objects.OfType<GH_BooleanToggle>().Where(t => t.NickName.StartsWith("Run")))
                 {
                     t.Value = true;
@@ -1171,7 +1180,7 @@ public static class Shots
                 topology = Components(TopologyId).First();
                 ((IGH_PreviewObject)topology).Hidden = true;
                 surfacePreview = Preview(Welded(Out(topology, "Surface"), Beside(topology, 120, 160)), LightBlue, Beside(topology, 300, 160));
-                modelView = Symbols(topology.Params.Input[0].Sources[0], Beside(topology, 120, 300), 2, 2);
+                modelView = Symbols(topology.Params.Input[0].Sources[0], Beside(topology, 120, 300), 1, 2);
                 Find<GH_BooleanToggle>("Run").Value = true;
                 Find<GH_BooleanToggle>("Run").ExpireSolution(true);
             }),
@@ -1321,25 +1330,7 @@ public static class Shots
             Do("deflecting", () =>
             {
                 ShowOnly(deformed, legend, supports);
-                var scale = Field(deformed, "_slDeformScale");
-                var value = scale.GetType().GetProperty("Value");
-                double full = Convert.ToDouble(value.GetValue(scale));
-                // Framed at full deflection, so that the beam stays in the picture throughout.
-                var view = Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis);
-                string folder = "two-span-beam-deflecting-frames";
-                Directory.CreateDirectory(Path.Combine(outDir, folder));
-                int frames = 40;
-                for (int k = 0; k < frames; k++)
-                {
-                    value.SetValue(scale, full * 0.5 * (1 - Math.Cos(2 * Math.PI * k / frames)));
-                    deformed.ExpireSolution(false);
-                    doc.NewSolution(false);
-                    Shoot(view, Path.Combine(folder, k.ToString("D3")));
-                }
-                value.SetValue(scale, full);
-                deformed.ExpireSolution(false);
-                doc.NewSolution(false);
-                Log($"  {frames} frames, deformation from 0 to {full} times and back");
+                Deforming(deformed, eye, "two-span-beam-deflecting-frames");
             }),
             Do("uniform", () =>
             {
@@ -1353,6 +1344,103 @@ public static class Shots
             }),
             Do("close", Close),
         };
+    }
+
+    // CurvedBeamOptimiser: a 12 m beam curving in a vertical plane, built in at its start, held up at two
+    // more points and cantilevering to a point load, sized element by element within the IPEs: the sized
+    // beam, a colour for each section, from above at an angle and from the front.
+    static List<(string, Func<bool>)> CurvedBeam()
+    {
+        var eye = new Vector3d(0.45, -1.6, 0.4);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open("CurvedBeamOptimiser.gh")),
+            Do("sections", () =>
+            {
+                Messages(Find<IGH_Component>("Each element"));
+                Messages(Find<IGH_Component>("Whole beam"));
+                var view = Components(ModelViewId).First();
+                Messages(view);
+                Canvas("curved-beam-canvas");
+                ShowOnly(view);
+                var box = Drawn();
+                Shoot(Aim(Grown(box, 0.05), eye, Vector3d.ZAxis), "curved-beam-sections");
+                Shoot(Front(box), "curved-beam-sections-front");
+            }),
+            Do("close", Close),
+        };
+    }
+
+    // BeamGridOptimiser: a 20 m square grid of beams on four pinned supports, every element sized on its
+    // own within its family: the sized grid, a colour for each section, and its displacement with the
+    // Legend, both from above a corner.
+    static List<(string, Func<bool>)> BeamGrid()
+    {
+        IGH_Component sections = null;
+        var eye = new Vector3d(-1.0, -1.35, 0.95);
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open("BeamGridOptimiser.gh")),
+            Do("sections", () =>
+            {
+                Messages(Find<IGH_Component>("Every element"));
+                sections = Components(ModelViewId).First(c => !DrawsResults(c));
+                Messages(sections);
+                Canvas("beam-grid-canvas");
+                ShowOnly(sections);
+                Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), "beam-grid-sections");
+            }),
+            Do("displacement", () =>
+            {
+                var displacement = Find<IGH_Component>("Displacement");
+                var legend = Components(LegendId).First();
+                Messages(displacement);
+                Log("  " + Info(displacement));
+                ShowOnly(displacement, legend);
+                Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), "beam-grid-displacement");
+            }),
+            Do("close", Close),
+        };
+    }
+
+    // ------------------------------------------------------------------ the docs' how-to guides
+
+    // HowToPictures.gh, here: four small models, each with a Model View of its own - the six kinds of
+    // support with their names, a portal frame with its beam pinned at both ends, a box of shell walls
+    // under wind, a portal frame's first buckling mode - each pictured alone, for its guide.
+    static List<(string, Func<bool>)> HowTo()
+    {
+        (string view, string[] also, string name, Vector3d eye)[] shots =
+        {
+            ("Supports view", new[] { "Support names" }, "supports", new Vector3d(0.12, -1.0, 0.22)),
+            ("Releases view", new string[0], "releases", new Vector3d(0.35, -1.0, 0.3)),
+            ("Wind view", new string[0], "wind", new Vector3d(-1.0, -1.25, 0.65)),
+            ("Buckling view", new[] { "Buckling at rest" }, "buckling", new Vector3d(0.35, -1.0, 0.3)),
+            ("Every load view", new string[0], "loads", new Vector3d(-0.6, -1.0, 0.75)),
+            ("Own weight view", new string[0], "own-weight", new Vector3d(-0.6, -1.0, 0.75)),
+        };
+        var list = new List<(string, Func<bool>)>
+        {
+            Do("open", () =>
+            {
+                Open(Path.Combine(here, "HowToPictures.gh"));
+                // Every warning and error, to know the models are what the pictures say.
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                    Messages(c);
+                Log("  load factors " + string.Join(", ", Values<GH_Number>(Out(Find<IGH_Component>("Linear Buckling"), "Load Factors")).Select(n => n.Value.ToString("G4", Inv))));
+            }),
+        };
+        foreach (var (view, also, name, eye) in shots)
+            list.Add(Do(name, () =>
+            {
+                var shown = new[] { Find<IGH_Component>(view) }.Concat(also.Select(n => Find<IGH_Component>(n))).ToArray();
+                ShowOnly(shown);
+                // Solved again, or Grasshopper's preview still draws what was shown before.
+                doc.NewSolution(false);
+                Shoot(Aim(Grown(Drawn(), 0.08), eye, Vector3d.ZAxis), name);
+            }));
+        list.Add(Do("close", Close));
+        return list;
     }
 
     static RhinoView Front(BoundingBox box)
@@ -1399,6 +1487,386 @@ public static class Shots
             else runs.Add((section, 1));
         var utilisation = Values<GH_Number>(Out(optimiser, "Utilisation")).Select(n => n.Value).DefaultIfEmpty(0).Max();
         Log($"  {string.Join(", ", runs.Select(r => $"{r.name} x{r.count}"))}; largest utilisation {utilisation:F3}");
+    }
+
+    // ------------------------------------------------------------------ conventional structures
+
+    /// <summary>
+    /// The six conventional structures of Tools/Examples/Structures.py, one after another: each one's
+    /// canvas, its loads, its deformed shape over the structure at rest and the GIF of it deforming -
+    /// and the tower's first mode as well.
+    /// </summary>
+    /// <summary>
+    /// How much larger than Width x Height a still with a Legend can be captured: past a size Rhino
+    /// captures in tiles, and the Legend, drawn on the screen, comes out in each of them.
+    /// </summary>
+    const double WithLegend = 1.6;
+
+    static List<(string, Func<bool>)> Structures()
+    {
+        (string file, string slug, string title, string deformed, Vector3d eye, double turn)[] all =
+        {
+            ("TrussRoofHall.gh", "truss-roof-hall", "Truss roof hall", "Hall deformed", new Vector3d(-1.0, -1.3, 0.8), 20),
+            ("SteelTower.gh", "steel-tower", "Steel tower", "Tower deformed", new Vector3d(-1.0, -1.25, 0.4), 30),
+            ("RoofCanopy.gh", "roof-canopy", "Roof canopy", "Canopy deformed", new Vector3d(-1.0, -1.4, 0.6), 20),
+            ("VerticalTrussFacade.gh", "vertical-truss-facade", "Vertical truss facade", "Facade deformed", new Vector3d(1.0, 0.9, 0.35), 0),
+            ("BarrelVault.gh", "barrel-vault", "Barrel vault", "Vault deformed", new Vector3d(-1.0, -1.3, 0.7), 20),
+            ("HorizontalTrussFacade.gh", "horizontal-truss-facade", "Horizontal truss facade", "Wind truss deformed", new Vector3d(-0.7, 1.0, 0.9), 0),
+        };
+        var list = new List<(string, Func<bool>)>();
+        foreach (var (file, slug, title, name, eye, turn) in all)
+        {
+            list.Add(Do(slug, () =>
+            {
+                Open(file);
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                    Messages(c);
+                var deformed = Find<IGH_Component>(name);
+                var legend = Find<IGH_Component>(name + " legend");
+                // A shell's at rest would hide its deformed shape: the vault has none.
+                var rest = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == title + " at rest");
+                var loads = Find<IGH_Component>(title + " loads");
+                Log("  " + Info(deformed));
+                Canvas(slug + "-canvas");
+
+                ShowOnly(loads);
+                doc.NewSolution(false);
+                Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-loads", 2);
+
+                var shown = new IGH_DocumentObject[] { deformed, legend, rest }.Where(o => o != null).ToArray();
+                ShowOnly(shown);
+                doc.NewSolution(false);
+                Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-deformed", WithLegend);
+                Deforming(deformed, eye, slug + "-deforming-frames", 40, turn);
+
+                var mode = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName.EndsWith("first mode"));
+                if (mode != null)
+                {
+                    var modes = doc.Objects.OfType<IGH_Component>().First(c => c.Name.StartsWith("Natural Vibration"));
+                    Log("  frequencies " + string.Join(", ", Values<GH_Number>(Out(modes, "Frequencies")).Select(n => n.Value.ToString("G4", Inv))) + " Hz");
+                    ShowOnly(new IGH_DocumentObject[] { mode, Find<IGH_Component>(mode.NickName + " legend"), rest }.Where(o => o != null).ToArray());
+                    doc.NewSolution(false);
+                    Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-mode", WithLegend);
+                    Deforming(mode, eye, slug + "-mode-frames", 40, turn);
+                }
+                Close();
+            }));
+        }
+        return list;
+    }
+
+    // ------------------------------------------------------------------ earthquakes
+
+    /// <summary>
+    /// The five structures of Tools/Examples/Structures.py shaken by El Centro: each one's canvas, the
+    /// still at the step it moves the most, with its charts on their own, and its frames through the
+    /// record, a frame every five steps - 0.1 s, so that ten frames a second play it as it happened -
+    /// each with its charts beside it in a folder of their own: the ground's acceleration, and how the
+    /// points the geometry watches move along the shaking (for the city, every building's roof).
+    /// </summary>
+    static List<(string, Func<bool>)> Earthquakes()
+    {
+        // eye: where the camera looks from; magnify: how much closer than the box of what is drawn.
+        (string file, string slug, string title, string view, Vector3d eye, double magnify, int along, string[] watched)[] all =
+        {
+            ("GirderBridgeEarthquake.gh", "girder-bridge-earthquake", "Girder bridge", "Girder shaking", new Vector3d(-1.4, -0.9, 0.6), 1.4, 1, new[] { "deck at mid-span" }),
+            ("CableStayedBridgeEarthquake.gh", "cable-stayed-bridge-earthquake", "Cable-stayed bridge", "Cable-stayed shaking", new Vector3d(-0.9, -1.3, 0.5), 1.25, 1, new[] { "deck at mid-span", "top of the pylon" }),
+            ("ArchBridgeEarthquake.gh", "arch-bridge-earthquake", "Arch bridge", "Arch shaking", new Vector3d(-1.3, -0.9, 0.5), 1.4, 1, new[] { "deck at the crown" }),
+            ("BuildingEarthquake.gh", "building-earthquake", "Office building", "Building shaking", new Vector3d(0.9, -1.3, 0.6), 1.3, 0, new[] { "roof" }),
+            ("EarthquakeCity.gh", "earthquake-city", "Tiny city", "City shaking", new Vector3d(0.8, -1.3, 0.75), 1.5, 0, null),
+        };
+        var list = new List<(string, Func<bool>)>();
+        foreach (var (file, slug, title, name, eye, magnify, along, watched) in all)
+        {
+            list.Add(Do(slug, () =>
+            {
+                Open(file);
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                    Messages(c);
+                var view = Find<IGH_Component>(name);
+                var legend = Find<IGH_Component>(name + " legend");
+                var rest = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == title + " at rest");
+                var step = doc.Objects.OfType<GH_NumberSlider>().First(x => x.NickName == "Step");
+                var record = Find<IGH_Component>("El Centro 1940");
+                int steps = Values<GH_Integer>(Out(record, "Steps")).Select(n => n.Value).FirstOrDefault();
+                Canvas(slug + "-canvas");
+
+                // What the charts plot: the record, and the watched points' movement every step.
+                var geometry = Find<IGH_Component>(title);
+                var times = Values<GH_Number>(Out(record, "Times")).Select(n => n.Value).ToArray();
+                var quake = new Quake
+                {
+                    Times = times,
+                    Ground = Values<GH_Number>(Out(record, "Accelerations")).Select(n => n.Value / 9.81).ToArray(),
+                    Along = "xyz"[along],
+                    Labels = watched,
+                    Dt = times.Length > 1 ? times[1] - times[0] : 0.02,
+                    Moves = Histories(Values<GH_Point>(Out(geometry, "Watch")).Select(p => p.Value).ToList(), along),
+                };
+                if (watched == null)
+                    quake.Storeys = Values<IGH_Goo>(Out(geometry, "Storeys")).Select(v => Convert.ToInt32(v.ScriptVariable(), Inv)).ToArray();
+                // Model View's step k is the history's k-th; one fewer of them than the record's samples
+                // means the first is the end of the first step.
+                quake.Offset = quake.Moves[0].Length > steps ? 0 : 1;
+                Log($"  {quake.Moves.Count} watched, {quake.Moves[0].Length} steps; the most along {quake.Along}, " +
+                    string.Join(", ", quake.Moves.Select(m => m.Max(Math.Abs).ToString("G4", Inv))) + " mm");
+
+                var shown = new IGH_DocumentObject[] { view, legend, rest }.Where(o => o != null).ToArray();
+                ShowOnly(shown);
+                // The step it moves the most, every fifth looked at. Info gives the Range when one is
+                // set, not what is drawn: it is taken off for the search and put back after.
+                var range = (GH_PersistentParam<GH_Interval>)In(view, "Range");
+                var colours = range.PersistentData.AllData(true).OfType<GH_Interval>().FirstOrDefault();
+                range.PersistentData.Clear();
+                range.ExpireSolution(false);
+                int worst = 0;
+                double most = -1.0;
+                for (int k = 0; k <= steps; k += 5)
+                {
+                    double largest = AtStep(step, k, view);
+                    if (largest > most) { most = largest; worst = k; }
+                }
+                if (colours != null) range.PersistentData.Append(colours);
+                range.ExpireSolution(false);
+                Log($"  {steps} steps; the most, {most:G4} mm, at step {worst}, {quake.Time(worst):F2} s");
+                AtStep(step, worst, view);
+                var eyeView = Aim(Grown(Drawn(), 0.08), eye, Vector3d.ZAxis, magnify: magnify);
+                Shoot(eyeView, slug, WithLegend);
+                Charts(Path.Combine(outDir, slug + "-chart.png"), quake, worst, WithLegend);
+
+                // The legend is made large enough for the still, captured larger than the screen; the
+                // frames, at the screen's size, take it smaller.
+                var legendScale = (GH_PersistentParam<GH_Number>)In(legend, "Scale");
+                legendScale.PersistentData.Clear();
+                legendScale.PersistentData.Append(new GH_Number(1.6));
+                legendScale.ExpireSolution(false);
+
+                Directory.CreateDirectory(Path.Combine(outDir, slug + "-frames"));
+                Directory.CreateDirectory(Path.Combine(outDir, slug + "-charts"));
+                int frame = 0;
+                for (int k = 0; k <= steps; k += 5, frame++)
+                {
+                    AtStep(step, k, view);
+                    Shoot(eyeView, Path.Combine(slug + "-frames", frame.ToString("D3")));
+                    Charts(Path.Combine(outDir, slug + "-charts", frame.ToString("D3") + ".png"), quake, k, 1);
+                }
+                Log($"  {frame} frames and their charts, 0 to {steps * 0.02:F1} s, a frame every 0.1 s");
+                Close();
+            }));
+        }
+        return list;
+    }
+
+    /// <summary>An earthquake's charts: the record, and how the watched points move.</summary>
+    class Quake
+    {
+        /// <summary>The record: its times, s, and the ground's acceleration then, g.</summary>
+        public double[] Times, Ground;
+        /// <summary>Each watched point's movement along the shaking, mm, a value a recorded step.</summary>
+        public List<double[]> Moves;
+        /// <summary>What each watched point is; none for the city, whose bars Storeys labels.</summary>
+        public string[] Labels;
+        public int[] Storeys;
+        public char Along;
+        public double Dt;
+        public int Offset;
+        public double Time(int k) => (k + Offset) * Dt;
+    }
+
+    /// <summary>
+    /// The movement along axis (0 x, 1 y, 2 z), in mm, of the nodes nearest to points, every recorded
+    /// step: read by a Nodal Displacements of the scene's own on Run Analysis's model, first unfiltered
+    /// for where the nodes are, then for those nodes' history; taken out again after.
+    /// </summary>
+    static List<double[]> Histories(List<Point3d> points, int axis)
+    {
+        var run = doc.Objects.OfType<IGH_Component>().First(c => c.ComponentGuid == new Guid("8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"));
+        var nodes = (IGH_Component)Instances.ComponentServer.EmitObject(new Guid("25085EAB-6C66-487E-B83B-BAB5AB02B1BB"));
+        nodes.CreateAttributes();
+        doc.AddObject(nodes, false);
+        try
+        {
+            nodes.Params.Input[0].AddSource(run.Params.Output[0]);
+            doc.NewSolution(false);
+            var at = Values<GH_Point>(Out(nodes, "Position")).Select(p => p.Value).ToList();
+            var tags = points.Select(p => Enumerable.Range(0, at.Count).OrderBy(i => at[i].DistanceToSquared(p)).First() + 1).ToList();
+            var history = (GH_PersistentParam<GH_Boolean>)In(nodes, "History");
+            history.PersistentData.Clear();
+            history.PersistentData.Append(new GH_Boolean(true));
+            var filter = (GH_PersistentParam<GH_Integer>)In(nodes, "NodeTag");
+            filter.PersistentData.Clear();
+            foreach (int tag in tags) filter.PersistentData.Append(new GH_Integer(tag));
+            // An input keeps the data it collected until it is expired itself.
+            history.ExpireSolution(false);
+            filter.ExpireSolution(false);
+            doc.NewSolution(false);
+            if (Out(nodes, "Displacement").VolatileData.PathCount < 2) throw new Exception("Nodal Displacements gave no history");
+            var tree = Out(nodes, "Displacement").VolatileData;
+            var moves = tags.Select(_ => new List<double>()).ToList();
+            foreach (var path in tree.Paths)
+            {
+                var branch = tree.get_Branch(path);
+                for (int i = 0; i < moves.Count && i < branch.Count; i++)
+                    moves[i].Add(((GH_Vector)branch[i]).Value[axis] * 1000.0);
+            }
+            return moves.Select(m => m.ToArray()).ToList();
+        }
+        finally { doc.RemoveObject(nodes, false); }
+    }
+
+    const string ChartFont = "Helvetica Neue";
+    static readonly Color ChartFaint = Color.FromArgb(208, 212, 217), ChartAxis = Color.FromArgb(226, 229, 232);
+    static readonly Color[] ChartLines = { LightBlue, Purple };
+
+    /// <summary>
+    /// The charts of step k, 2400 px wide times scale: the ground's acceleration over the record and,
+    /// under it, how the watched points move - for the city, a bar for each building's roof, lowest to
+    /// tallest, against the most it moves either way. Each line is drawn up to now over its whole
+    /// course in light grey, with now marked in orange.
+    /// </summary>
+    static void Charts(string path, Quake q, int k, double scale)
+    {
+        float s = (float)scale;
+        int w = (int)(2400 * s), h = (int)(880 * s);
+        int at = Math.Max(0, Math.Min(k, q.Moves[0].Length - 1));
+        using (var bitmap = new Bitmap(w, h))
+        using (var g = Graphics.FromImage(bitmap))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.Clear(Background);
+            var ground = new RectangleF(220 * s, 90 * s, w - 300 * s, 220 * s);
+            TimeChart(g, ground, q.Times, new List<double[]> { q.Ground }, q.Time(at), "Ground acceleration [g]",
+                      new[] { DarkTech }, null, "g", "0.0#", s, q.Storeys != null);
+            var below = new RectangleF(220 * s, 470 * s, w - 300 * s, 320 * s);
+            if (q.Storeys == null)
+            {
+                var times = Enumerable.Range(0, q.Moves[0].Length).Select(q.Time).ToArray();
+                TimeChart(g, below, times, q.Moves, q.Time(at), $"Displacement along {q.Along} [mm]", ChartLines, q.Labels, "mm", "0", s, true);
+            }
+            else
+                Bars(g, below, q, at, s);
+            bitmap.Save(path, ImageFormat.Png);
+        }
+    }
+
+    /// <summary>Series over times in r, symmetric about zero, each drawn up to t; labels name them, top right, with their value now.</summary>
+    static void TimeChart(Graphics g, RectangleF r, double[] times, List<double[]> series, double t, string title,
+                          Color[] colours, string[] labels, string unit, string format, float s, bool seconds)
+    {
+        double end = times[times.Length - 1], top = Nice(series.Max(v => v.Max(Math.Abs)) * 1.05);
+        Func<double, float> X = x => r.Left + (float)(x / end) * r.Width;
+        Func<double, float> Y = y => r.Top + r.Height / 2 - (float)(y / top) * r.Height / 2;
+        int now = Math.Max(0, Math.Min(times.Length - 1, (int)Math.Round((t - times[0]) / Math.Max(1e-9, times[1] - times[0]))));
+        using (var big = new Font(ChartFont, 42 * s, GraphicsUnit.Pixel))
+        using (var small = new Font(ChartFont, 32 * s, GraphicsUnit.Pixel))
+        using (var axis = new Pen(ChartAxis, 2 * s))
+        using (var ink = new SolidBrush(DarkTech))
+        {
+            Axes(g, r, top, format, Y, small, axis, ink, s);
+            if (seconds)
+                for (int second = 0; second <= (int)end; second += 2)
+                {
+                    var label = second + " s";
+                    var size = g.MeasureString(label, small);
+                    g.DrawString(label, small, ink, X(second) - size.Width / 2, r.Bottom + 12 * s);
+                }
+            g.DrawString(title, big, ink, r.Left - 8 * s, r.Top - 78 * s);
+            for (int i = 0; i < series.Count; i++)
+            {
+                var all = times.Select((x, j) => new PointF(X(x), Y(series[i][j]))).ToArray();
+                using (var faint = new Pen(ChartFaint, 3 * s)) g.DrawLines(faint, all);
+                if (now > 0)
+                    using (var pen = new Pen(colours[i % colours.Length], 5 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                        g.DrawLines(pen, all.Take(now + 1).ToArray());
+            }
+            using (var pen = new Pen(Orange, 3 * s)) g.DrawLine(pen, X(times[now]), r.Top - 8 * s, X(times[now]), r.Bottom + 8 * s);
+            for (int i = 0; i < series.Count; i++)
+                using (var dot = new SolidBrush(colours[i % colours.Length]))
+                    g.FillEllipse(dot, X(times[now]) - 10 * s, Y(series[i][now]) - 10 * s, 20 * s, 20 * s);
+            // Top right: each series' name and its value now, or, with no names, the value and the time.
+            float right = r.Right;
+            for (int i = series.Count - 1; i >= 0; i--)
+            {
+                var value = series[i][now].ToString(format, Inv) + " " + unit;
+                var text = labels == null ? value + "      t = " + times[now].ToString("0.0", Inv) + " s" : labels[i] + "  " + value;
+                var size = g.MeasureString(text, big);
+                right -= size.Width;
+                using (var brush = new SolidBrush(labels == null ? DarkTech : colours[i % colours.Length]))
+                    g.DrawString(text, big, brush, right, r.Top - 78 * s);
+                right -= 60 * s;
+            }
+        }
+    }
+
+    /// <summary>A bar for each building's roof, lowest to tallest: where it is at step k, over the most it moves either way.</summary>
+    static void Bars(Graphics g, RectangleF r, Quake q, int k, float s)
+    {
+        var order = Enumerable.Range(0, q.Storeys.Length).OrderBy(i => q.Storeys[i]).ThenBy(i => i).ToArray();
+        var peak = q.Moves.Select(m => m.Max(Math.Abs)).ToArray();
+        double top = Nice(peak.Max() * 1.05);
+        Func<double, float> Y = y => r.Top + r.Height / 2 - (float)(y / top) * r.Height / 2;
+        float slot = r.Width / order.Length, bar = slot * 0.56f;
+        using (var big = new Font(ChartFont, 42 * s, GraphicsUnit.Pixel))
+        using (var small = new Font(ChartFont, 32 * s, GraphicsUnit.Pixel))
+        using (var axis = new Pen(ChartAxis, 2 * s))
+        using (var ink = new SolidBrush(DarkTech))
+        using (var faint = new SolidBrush(ChartFaint))
+        using (var now = new SolidBrush(LightBlue))
+        {
+            Axes(g, r, top, "0", Y, small, axis, ink, s);
+            g.DrawString($"Roof displacement along {q.Along} [mm], lowest building to tallest", big, ink, r.Left - 8 * s, r.Top - 78 * s);
+            var key = "the most it moves";
+            var keySize = g.MeasureString(key, big);
+            g.FillRectangle(faint, r.Right - keySize.Width - 50 * s, r.Top - 66 * s, 34 * s, 34 * s);
+            g.DrawString(key, big, ink, r.Right - keySize.Width, r.Top - 78 * s);
+            for (int n = 0; n < order.Length; n++)
+            {
+                int i = order[n];
+                float x = r.Left + slot * (n + 0.5f);
+                g.FillRectangle(faint, x - bar / 2, Y(peak[i]), bar, Y(-peak[i]) - Y(peak[i]));
+                float y0 = Y(0), y1 = Y(q.Moves[i][Math.Min(k, q.Moves[i].Length - 1)]);
+                g.FillRectangle(now, x - bar / 2, Math.Min(y0, y1), bar, Math.Max(1, Math.Abs(y1 - y0)));
+                var label = q.Storeys[i].ToString(Inv);
+                var size = g.MeasureString(label, small);
+                g.DrawString(label, small, ink, x - size.Width / 2, r.Bottom + 12 * s);
+            }
+            var storeys = g.MeasureString("storeys", small);
+            g.DrawString("storeys", small, ink, r.Left - storeys.Width - 14 * s, r.Bottom + 12 * s);
+        }
+    }
+
+    /// <summary>Zero and the top either side, as lines across r, labelled on the left.</summary>
+    static void Axes(Graphics g, RectangleF r, double top, string format, Func<double, float> Y, Font font, Pen pen, Brush ink, float s)
+    {
+        foreach (double v in new[] { top, 0.0, -top })
+        {
+            g.DrawLine(pen, r.Left, Y(v), r.Right, Y(v));
+            var label = v.ToString(format, Inv);
+            var size = g.MeasureString(label, font);
+            g.DrawString(label, font, ink, r.Left - size.Width - 14 * s, Y(v) - size.Height / 2);
+        }
+    }
+
+    /// <summary>x, rounded up to 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten.</summary>
+    static double Nice(double x)
+    {
+        if (x <= 0) return 1;
+        double p = Math.Pow(10, Math.Floor(Math.Log10(x)));
+        foreach (double m in new[] { 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 })
+            if (m * p >= x * 0.9999) return m * p;
+        return 10 * p;
+    }
+
+    /// <summary>Puts the Step slider at <paramref name="k"/>, solves, and gives the largest displacement Model View draws there.</summary>
+    static double AtStep(GH_NumberSlider step, int k, IGH_Component view)
+    {
+        step.SetSliderValue((decimal)k);
+        doc.NewSolution(false);
+        // "Displacement - Magnitude [mm], step 12, min 0, max 4.996"
+        var info = Info(view);
+        int at = info.LastIndexOf("max ");
+        return at >= 0 && double.TryParse(info.Substring(at + 4), System.Globalization.NumberStyles.Float, Inv, out double v) ? v : 0.0;
     }
 
     // ------------------------------------------------------------------ stress lines on shells
@@ -1502,8 +1970,8 @@ public static class Shots
     }
 
     /// <summary>
-    /// Model View's load scale, in metres of arrow per kN: below the slider's own 0.1 too, which a
-    /// 500 kN load needs to be drawn a couple of metres long.
+    /// Model View's load scale, a share of the arrows it fits to the model: below the slider's own
+    /// 0.1 too.
     /// </summary>
     static void LoadScale(IGH_Component view, double scale)
     {
@@ -1593,6 +2061,47 @@ public static class Shots
     /// to start with, at the distance that frames it then: <paramref name="frames"/> frames into
     /// <paramref name="folder"/>. Zoomed afresh each frame, the model would breathe in and out.
     /// </summary>
+    /// <summary>
+    /// A structure deforming: <paramref name="results"/>, a Model View drawing it deformed, swung from
+    /// at rest to its full deformation and back, one frame each into <paramref name="folder"/>, for
+    /// publish.sh's anim to make a GIF and an MP4 of, looping. Framed from along <paramref name="eye"/>
+    /// at full deformation, so that nothing leaves the picture; with <paramref name="turn"/> degrees,
+    /// the camera also turns that far about the vertical through the middle, there and back. Show what
+    /// else should be in it first: a Legend, the supports, the model at rest. See the
+    /// deformation-pictures skill.
+    /// </summary>
+    static void Deforming(IGH_Component results, Vector3d eye, string folder, int frames = 40, double turn = 0)
+    {
+        var scale = Field(results, "_slDeformScale");
+        var value = scale.GetType().GetProperty("Value");
+        double full = Convert.ToDouble(value.GetValue(scale));
+        doc.NewSolution(false);
+        var view = Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis);
+        var vp = view.ActiveViewport;
+        var target = vp.CameraTarget;
+        var from = vp.CameraLocation - target;
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        for (int k = 0; k < frames; k++)
+        {
+            double swing = 0.5 * (1 - Math.Cos(2 * Math.PI * k / frames));
+            value.SetValue(scale, full * swing);
+            results.ExpireSolution(false);
+            doc.NewSolution(false);
+            if (turn != 0)
+            {
+                var turned = from;
+                turned.Rotate(turn * Math.PI / 180 * swing, Vector3d.ZAxis);
+                vp.SetCameraLocations(target, target + turned);
+                vp.CameraUp = Vector3d.ZAxis;
+            }
+            Shoot(view, Path.Combine(folder, k.ToString("D3")));
+        }
+        value.SetValue(scale, full);
+        results.ExpireSolution(false);
+        doc.NewSolution(false);
+        Log($"  {frames} frames, deformation from 0 to {full} times and back" + (turn != 0 ? $", turning {turn} degrees" : ""));
+    }
+
     static void Turning(BoundingBox box, Vector3d eye, string folder, int frames)
     {
         var view = Aim(box, eye, Vector3d.ZAxis);
@@ -1671,8 +2180,8 @@ public static class Shots
                 // Arrows about a metre long: 8 kN on each node of the wall, 500 kN on the deep
                 // beam. The slabs' uniform load is drawn as a sheet over them, hiding the lines:
                 // left out.
-                AddSymbols(plates['A'], PlateModel('A'), 0.1, 0.6);
-                AddSymbols(plates['B'], PlateModel('B'), 0.004, 0.8);
+                AddSymbols(plates['A'], PlateModel('A'), 1, 0.6);
+                AddSymbols(plates['B'], PlateModel('B'), 1, 0.8);
                 AddSymbols(plates['C'], PlateModel('C'), 0, 0.5);
                 AddSymbols(plates['D'], PlateModel('D'), 0, 0.5);
                 doc.NewSolution(false);
@@ -1732,7 +2241,7 @@ public static class Shots
                 pattern.RemoveSource(uniform);
                 pattern.ExpireSolution(false);
                 Slider("C point load [kN]", 300);
-                LoadScale(plates['C'].Symbols, 0.006);
+                LoadScale(plates['C'].Symbols, 1);
                 Loads(plates['C'].Symbols, true);
                 Reveal(plates['C'].All);
                 var view = Aim(Framed(0.02), slab, Vector3d.ZAxis);

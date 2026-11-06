@@ -41,9 +41,18 @@ MP4.
 | `musmeci` | `StressLinesMusmeciBridge.gh`, here: the Musmeci bridge, after the Basento viaduct - a membrane form-found by Kangaroo on paired footings over four spans, analysed as a concrete shell, its stress lines in its surface, a deck on its crowns; from three sides, the valley and under it; the form being found, the bridge spinning and walked through underneath, as GIF and MP4 | `principal-stress-lines/musmeci-bridge` |
 | `cornerslab` `roundumbrella` `roundslab` `candela` `groinvault` `palazzetto` `isler` `hexshell` | The principal stress lines studies, below | `principal-stress-lines/<study>` |
 | `twospan` | TwoSpanBeamOptimiser, a load on each span: the HEA element by element with the loads, the deformed shape extruded, the bending moment and the shear, each on its own; the beam deflecting as GIF and MP4; one HEA for the whole beam | `section-optimiser/two-span-beam` |
+| `curvedbeam` | CurvedBeamOptimiser: the curved beam sized element by element within the IPEs, a colour for each section, from above at an angle and from the front | `section-optimiser/curved-beam` |
+| `beamgrid` | BeamGridOptimiser: the beam grid sized element by element, a colour for each section, and its displacement with the Legend | `section-optimiser/beam-grid` |
+| `howto` | `HowToPictures.gh`, here: the six kinds of support, a frame with its beam pinned at both ends, a box of shell walls under wind, a frame's first buckling mode, and a frame with a slab under every kind of load and under its own weight alone | `how-to/<picture>`, and a copy beside its guide in `doc/how-to/`; `model-view/loads/`, and a copy in `doc/basics/visualisation/model-view/` |
+| `structures` | `TrussRoofHall.gh`, `SteelTower.gh`, `RoofCanopy.gh`, `VerticalTrussFacade.gh`, `BarrelVault.gh` and `HorizontalTrussFacade.gh` from `../Examples/Structures.py`: each one's loads, its deformed shape over it at rest, the GIF of it deforming, its canvas, and the tower's first mode | `structures/<slug>/`, and the example's pictures in `examples/<slug>/` |
+| `earthquakes` | The five earthquake definitions from `../Examples/Structures.py`: each one's canvas, the still at the step it moves the most, and a frame every 0.1 s through the record, which publish.sh plays at ten frames a second. Every frame has its charts, drawn in the scene: the ground's acceleration, and how the points the geometry's `Watch` output marks move along the shaking, read with a Nodal Displacements of the scene's own (for the city, a bar for each roof, lowest building to tallest); publish.sh stacks them under the frames, and under the still as `<slug>-2.png` | `earthquakes/<slug>/`, and the stills and the MP4 in `examples/<slug>/` |
 
 All of them take about 13 minutes on an M2 Pro, a quarter of it in `benchmarks`, which runs top3d's
 two problems for 200 iterations each; `plates` and `kangaroo` take about two minutes and one.
+
+A structure deforming - a GIF and an MP4 of it swinging from rest to its deformed shape, looping, and
+the still at full deformation - comes from `Deforming` in `Shots.cs`: the deformation-pictures skill
+says how to set up the definition and the scene.
 
 Every topology optimisation gets a GIF and an MP4 of its run, design by design, and its final
 design analysed in Von Mises stress: they are what gets shared most. Every principal stress lines
