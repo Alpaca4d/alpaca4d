@@ -338,6 +338,14 @@ def open_menus(c):
             menu.Expand()
 
 
+def menu_setting(c, field, prop, value):
+    """Sets a widget of a component's fold-out menus, found by its field, as a click on it would:
+    the component saves it with the file."""
+    c = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    setattr(c.GetType().GetField(field, flags).GetValue(c), prop, value)
+
+
 # ---------------------------------------------------------------- the beam
 
 # Columns in the order the data flows...
@@ -464,8 +472,10 @@ def build(doc):
     each_governing = panel(grid, "Governing", out(each, O_GOVERNING), 110, 420, RESULTS, EACH)
     each_mass = panel(grid, "Mass", out(each, O_MASS), 150, 60, VIEW, EACH)
     each_history = panel(grid, "History", out(each, O_HISTORY), 420, 90, VIEW, EACH, gap=10)
+    # Model View draws the sized beam, a colour for each section.
     view = component(grid, MODEL_VIEW, "Model View", None, VIEW, EACH, gap=10)
     wire(inp(view, 0), out(each, O_MODEL_OUT))
+    menu_setting(view, "_ddColourBy", "Value", 1)
 
     # 7 - One section for the whole beam: a design group over every element - ElementId "Beam" -
     # from a list of IPEs, tried in the order the list gives them.

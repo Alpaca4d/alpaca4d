@@ -487,8 +487,10 @@ def build(doc):
     mass = panel(grid, "Mass", out(optimiser, O_MASS), 150, 60, RESULTS, ALONG_X)
     converged = panel(grid, "Converged", out(optimiser, O_CONVERGED), 150, 30, RESULTS, ALONG_X, gap=10)
     history = panel(grid, "History", out(optimiser, O_HISTORY), 460, 110, RESULTS, ALONG_X, gap=10)
+    # The sized grid, a colour for each section.
     view = component(grid, MODEL_VIEW, "Model View", None, RESULTS, ALONG_Y)
     wire(inp(view, 0), out(optimiser, O_MODEL_OUT))
+    menu_setting(view, "_ddColourBy", "Value", 1)
     results = component(grid, MODEL_VIEW, "Model View", "Displacement", RESULTS, ALONG_Y, gap=10)
     wire(inp(results, 0), out(optimiser, O_MODEL_OUT))
     menu_setting(results, "_ckExtruded", "Active", False)

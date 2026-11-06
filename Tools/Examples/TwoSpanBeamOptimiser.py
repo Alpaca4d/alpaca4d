@@ -602,17 +602,12 @@ def build(doc):
     mass = panel(grid, "Mass", out(optimiser, O_MASS), 150, 60, VIEW, SIZING, gap=10)
     history = panel(grid, "History", out(optimiser, O_HISTORY), 420, 90, VIEW, SIZING, gap=10)
     # Model View draws the sized beam, a colour for each section, with its supports and the loads and
-    # what each is worth. Its Load Scale slider starts at 0.1, an arrow 1 m long for every 10 kN, which
-    # draws 200 kN as long as a span: it is opened down to 0.01, with two decimals, and set to 0.02,
-    # 1 m for every 50 kN.
+    # what each is worth, the loads drawn to fit the beam.
     view = component(grid, MODEL_VIEW, "Model View", None, VIEW, SIZING, gap=30)
     wire(inp(view, 0), out(optimiser, O_MODEL_OUT))
     menu_setting(view, "_ckShowSupports", "Active", True)
     menu_setting(view, "_ckShowLoads", "Active", True)
     menu_setting(view, "_ckShowLoadValues", "Active", True)
-    menu_setting(view, "_slLoadScale", "MinValue", 0.01)
-    menu_setting(view, "_slLoadScale", "NumDecimals", 2)
-    menu_setting(view, "_slLoadScale", "Value", 0.02)
     menu_setting(view, "_ddColourBy", "Value", 1)
 
     # 7 - The HEA named wherever it changes: Create Set numbers the sections, and each is compared
