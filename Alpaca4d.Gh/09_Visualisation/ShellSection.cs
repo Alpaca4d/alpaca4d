@@ -603,10 +603,7 @@ namespace Alpaca4d.Gh
                 double height = _slTextSize?.Value ?? 0.5;
                 var colour = AlpacaSettings.Colour(DisplayItem.Values);
                 foreach (var label in _labels)
-                {
-                    var plane = new Plane(label.Item1, args.Viewport.CameraX, args.Viewport.CameraY);
-                    args.Display.Draw3dText(label.Item2, colour, plane, height, "Arial", false, false);
-                }
+                    ViewportLabels.Draw(args.Display, args.Viewport, label.Item2, colour, label.Item1, height);
             }
         }
 

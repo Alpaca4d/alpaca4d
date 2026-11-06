@@ -53,7 +53,7 @@ namespace Alpaca4d.Gh
                 Copy(old._slTextSize, view._slTextSize);
                 Copy(old._slAxesSize, view._slAxesSize);
                 Copy(old._slReleaseSize, view._slReleaseSize);
-                Copy(old._slLoadScale, view._slLoadScale);
+                // Not the load scale: it was metres of arrow per kN, and is now a share of the fit.
                 Copy(old._slSupportScale, view._slSupportScale);
             };
 

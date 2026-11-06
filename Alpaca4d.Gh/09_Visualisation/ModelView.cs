@@ -924,6 +924,7 @@ namespace Alpaca4d.Gh
                         "Deformed shape needs an analysed model, from Run Analysis or another analysis. The model is drawn as it was built.");
             }
 
+            _drawnDisplacement = displacement;
             BuildModel(_filter, displacement);
 
             DA.SetData(2, $"Model - coloured by {ColourBy}");
@@ -1077,6 +1078,7 @@ namespace Alpaca4d.Gh
                 }
             }
 
+            _drawnDisplacement = displacement;
             Build(_filter, displacement);
 
             DA.SetDataList(2, _shown.Select(x => $"{x.Name} - {x.Field.Label} [{x.Unit.Symbol}], step {step}, min {x.Min:G4}, max {x.Max:G4}"));
@@ -1288,6 +1290,10 @@ namespace Alpaca4d.Gh
 
             if (_ghostJoined != null)
                 args.Display.DrawMeshShaded(_ghostJoined, new DisplayMaterial(GhostColour, 0.75));
+
+            // See-through too, and over the shells they stand off.
+            if (_ckShowLoads?.Active ?? false)
+                Loads().DrawSheets(args);
         }
 
         public override void DrawViewportWires(IGH_PreviewArgs args)
@@ -1333,11 +1339,7 @@ namespace Alpaca4d.Gh
                 towardsCamera.Unitize();
 
                 foreach (var label in _labels)
-                {
-                    // Squared to the camera, so a number reads from wherever the model is spun to.
-                    var plane = new Plane(label.Item1 + towardsCamera * label.Item3, args.Viewport.CameraX, args.Viewport.CameraY);
-                    args.Display.Draw3dText(label.Item2.ToString("G4"), colour, plane, height, "Arial", false, false);
-                }
+                    ViewportLabels.Draw(args.Display, args.Viewport, label.Item2.ToString("G4"), colour, label.Item1 + towardsCamera * label.Item3, height);
             }
 
             DrawOverlays(args);
@@ -1379,6 +1381,35 @@ namespace Alpaca4d.Gh
         }
 
         #endregion
+
+        /// <summary>
+        /// Saved with every Model View since its loads are drawn to fit the model, when Load scale
+        /// became a share of that fit rather than metres of arrow per kN.
+        /// </summary>
+        private const string FittedLoads = "FittedLoads";
+
+        public override bool Write(GH_IO.Serialization.GH_IWriter writer)
+        {
+            writer.SetBoolean(FittedLoads, true);
+            return base.Write(writer);
+        }
+
+        /// <summary>
+        /// A file from before <see cref="FittedLoads"/> holds a Load scale in metres per kN, 0.02 to
+        /// keep 50 kN a metre long, which would now shrink the fitted arrows by fifty: it opens at 1.
+        /// </summary>
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            bool read = base.Read(reader);
+            if (!reader.ItemExists(FittedLoads) && _slLoadScale != null)
+            {
+                _slLoadScale.MinValue = 0.1;
+                _slLoadScale.MaxValue = 10.0;
+                _slLoadScale.NumDecimals = 1;
+                _slLoadScale.Value = 1.0;
+            }
+            return read;
+        }
 
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
