@@ -285,7 +285,7 @@ def node_svg(component, icon_dir, names=False, open_all=False):
                    f'width="{ICON}" height="{ICON}" preserveAspectRatio="xMidYMid meet"/>')
     else:
         px = ox + label_cx + LABEL_FONT / 2 - 2
-        path_id = "label-" + component["type"]
+        path_id = "label-" + component["type"] + "-" + slug(component.get("unit") or "")
         out.append(f'<path id="{path_id}" fill="none" d="M {px} {oy + ports_h} L {px - 1} {oy}"/>')
         out.append(f'<text font-family="Overpass, sans-serif" font-weight="800" font-size="{LABEL_FONT}" fill="{DARK}">'
                    f'<textPath href="#{path_id}" startOffset="50%" text-anchor="middle">{html.escape(nick.upper())}</textPath></text>')
@@ -393,7 +393,8 @@ def main():
     for component in components:
         if wanted and component["type"] not in wanted:
             continue
-        name = slug(component["name"])
+        # A switcher component's other units: "support--elastic".
+        name = slug(component["name"]) + ("--" + slug(component["unit"]) if component.get("unit") else "")
         with open(os.path.join(out_dir, name + ".svg"), "w") as f:
             f.write(object_svg(component, icon_dir) if component.get("object") else node_svg(component, icon_dir, names))
         # A component with a menu that starts closed gets a second image with every menu open,

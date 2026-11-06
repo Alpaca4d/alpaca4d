@@ -9,9 +9,11 @@ using System.Text;
 using Grasshopper.Kernel;
 
 // Writes what the docs images need about every component shown in the toolbar - names, tab,
-// inputs and outputs, message - as JSON, and its 24 px icon as a PNG. Objects in the toolbar that
-// are linked by grips of their own rather than wires, such as Non-Linear Optimisation, come after
-// the components, with their grips in place of inputs and outputs.
+// inputs and outputs, message - as JSON, and its 24 px icon as a PNG. A switcher component's
+// other units follow it, each as an entry of its own with "unit" set, since each draws with its
+// own inputs, menus and icon. Objects in the toolbar that are linked by grips of their own rather
+// than wires, such as Non-Linear Optimisation, come after the components, with their grips in
+// place of inputs and outputs.
 class Export
 {
     static void Main(string[] args)
@@ -24,14 +26,17 @@ class Export
         {
             var c = (GH_Component)Activator.CreateInstance(type);
             if (c.Exposure == GH_Exposure.hidden) continue;
-            string icon = SaveIcon(c, outDir);
-            Func<IGH_Param, string> param = p => $"{{\"name\":{Q(p.Name)},\"nick\":{Q(p.NickName)},\"optional\":{(p.Optional ? "true" : "false")}}}";
-            entries.Add("{" +
-                $"\"type\":{Q(type.Name)},\"name\":{Q(c.Name)},\"nick\":{Q(c.NickName)},\"category\":{Q(c.Category)},\"subcategory\":{Q(c.SubCategory)}," +
-                $"\"message\":{Q(c.Message ?? "")},\"icon\":{Q(icon)}," +
-                $"\"inputs\":[{string.Join(",", c.Params.Input.Select(param))}],\"outputs\":[{string.Join(",", c.Params.Output.Select(param))}]," +
-                $"\"menus\":[{string.Join(",", MenusOf(c))}],\"button\":{Q(ButtonOf(c))}" +
-                "}");
+            entries.Add(Entry(c, outDir, ""));
+            foreach (var unit in OtherUnits(c))
+            {
+                // A switcher unregisters its unit's parameters as it switches, and writes to Rhino's
+                // command line when one still has a parent - which here is not there to write to.
+                // With the parents cleared, it sets them back itself.
+                foreach (var p in c.Params.Input.Concat(c.Params.Output))
+                    if (p.Attributes != null) p.Attributes.Parent = null;
+                c.GetType().GetMethod("SwitchUnit", new[] { typeof(string), typeof(bool), typeof(bool) }).Invoke(c, new object[] { unit.Item1, false, false });
+                entries.Add(Entry(c, outDir, unit.Item2));
+            }
         }
         foreach (var type in Types(gha).Where(IsCanvasObject).OrderBy(t => t.Name))
         {
@@ -48,13 +53,39 @@ class Export
         Console.WriteLine($"{entries.Count} components");
     }
 
-    // Saves the 24 px icon as icons/<type>.png and returns that path, or "" when there is none.
-    static string SaveIcon(GH_DocumentObject o, string outDir)
+    // A component as it is now, on its active unit; "unit" names that unit, as its drop-down shows
+    // it, for all but the one it is placed on.
+    static string Entry(GH_Component c, string outDir, string unit)
+    {
+        string icon = SaveIcon(c, outDir, unit);
+        Func<IGH_Param, string> param = p => $"{{\"name\":{Q(p.Name)},\"nick\":{Q(p.NickName)},\"optional\":{(p.Optional ? "true" : "false")}}}";
+        return "{" +
+            $"\"type\":{Q(c.GetType().Name)},\"unit\":{Q(unit)},\"name\":{Q(c.Name)},\"nick\":{Q(c.NickName)},\"category\":{Q(c.Category)},\"subcategory\":{Q(c.SubCategory)}," +
+            $"\"message\":{Q(c.Message ?? "")},\"icon\":{Q(icon)}," +
+            $"\"inputs\":[{string.Join(",", c.Params.Input.Select(param))}],\"outputs\":[{string.Join(",", c.Params.Output.Select(param))}]," +
+            $"\"menus\":[{string.Join(",", MenusOf(c))}],\"button\":{Q(ButtonOf(c))}" +
+            "}";
+    }
+
+    // The units of a switcher component other than the one it is placed on: each one's name, and
+    // the name its drop-down shows, which the docs use too.
+    static List<(string, string)> OtherUnits(GH_Component c)
+    {
+        if (!(Get(c, "EvalUnits") is System.Collections.IEnumerable units)) return new List<(string, string)>();
+        string active = Get(c, "ActiveUnit") is object a ? (string)Get(a, "Name") : null;
+        return units.Cast<object>()
+            .Select(u => ((string)Get(u, "Name"), (string)Get(u, "DisplayName") ?? (string)Get(u, "Name")))
+            .Where(u => u.Item1 != active).ToList();
+    }
+
+    // Saves the 24 px icon as icons/<type>.png, or icons/<type>--<unit>.png for a switcher's other
+    // unit, and returns that path, or "" when there is none.
+    static string SaveIcon(GH_DocumentObject o, string outDir, string unit = "")
     {
         try
         {
             if (o.Icon_24x24 == null) return "";
-            string icon = "icons/" + o.GetType().Name + ".png";
+            string icon = "icons/" + o.GetType().Name + (unit == "" ? "" : "--" + string.Concat(unit.Where(char.IsLetterOrDigit))) + ".png";
             o.Icon_24x24.Save(Path.Combine(outDir, icon), ImageFormat.Png);
             return icon;
         }

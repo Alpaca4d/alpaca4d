@@ -28,18 +28,23 @@ and `VB`; the script names each one it cannot find.
 1. **Export.cs** loads the plugin with Grasshopper's own types and writes every component shown
    in the toolbar to `components.json`, with its 24 px icon as a PNG. That covers the name,
    nickname, tab, inputs and outputs, message, the fold-out menus of extendable components, and
-   the button of those that draw one. Objects linked by grips of their own rather than wires,
+   the button of those that draw one. A switcher component, such as Support, is written once for
+   the unit it is placed on and once more for each of its other units, with `unit` set: each has
+   inputs, menus and an icon of its own. Objects linked by grips of their own rather than wires,
    such as Non-Linear Optimisation, come after the components: their grips are read from the
    `...Grip` points their attributes declare, and what they show over themselves from `Status`.
 2. **nodepen.py** turns each component into an SVG: `<slug>.svg` as it is placed, plus
-   `<slug>-open.svg` with every menu open for a component whose menus start closed.
+   `<slug>-open.svg` with every menu open for a component whose menus start closed. A switcher's
+   other units are `<slug>--<unit>.svg` (and `<slug>--<unit>-open.svg`), as `support--elastic.svg`.
 3. **render.mjs** renders them in Chromium, at twice their size and on a transparent
    background, into `doc/.gitbook/assets/components/`. It sizes the message tabs there, because
    only the browser knows how wide their text is, and stops if the fonts did not load.
 4. **docs.py** puts each image under its component's title line, ``` `Name (Alpaca4d)` — **Alpaca4d ▸ Tab** ```,
    as a GitBook `<figure>`, and the open image under it. A page documenting several components
    gets each image under its own title. Images from an earlier run are replaced, not added to.
-   Components with no page are listed at the end.
+   Components with no page are listed at the end. The other units' images are not placed on the
+   pages: the docs site (`docs-site/scripts/cards.mjs` in the website repository) shows each one
+   when the reader picks that unit's inputs.
 
 The images in the assets folder are deleted and drawn again each time, so a component that has
 been removed or renamed leaves nothing behind.

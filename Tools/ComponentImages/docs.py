@@ -48,7 +48,9 @@ OLD_FIGURE = re.compile(r"\n\n<figure><img src=\"[^\"]*" + re.escape(ASSETS.repl
 
 def main():
     data_file, doc_root = sys.argv[1:3]
-    components = {canonical(c["name"]): c for c in json.load(open(data_file))}
+    # A switcher's other units have images of their own, <name>--<unit>.png, which the docs site
+    # shows when a reader picks that unit's inputs; the page itself shows the one placed.
+    components = {canonical(c["name"]): c for c in json.load(open(data_file)) if not c.get("unit")}
     placed, pages = set(), []
     for folder, _, files in os.walk(doc_root):
         if ".gitbook" not in folder:
