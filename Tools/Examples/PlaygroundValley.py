@@ -31,7 +31,7 @@
 import System
 import Rhino
 import Grasshopper
-from Grasshopper.Kernel import GH_Document
+from Grasshopper.Kernel import GH_Document, GH_DataMapping
 from Grasshopper.Kernel.Special import GH_NumberSlider, GH_Group, GH_Panel, GH_BooleanToggle
 from Grasshopper.GUI.Base import GH_SliderAccuracy
 from System.Drawing import PointF, RectangleF, Color
@@ -434,6 +434,12 @@ def build(doc):
     wire(inp(assemble, 0), out(truss))
     wire(inp(assemble, 1), out(pin), out(roller), out(sideways))
     wire(inp(assemble, 2), out(pattern))
+    # Flattened: the bars come in on two branches - Explode puts the top chord's one level deeper than
+    # Shatter and Line put the rest - and so do the side supports, from Shift List and Move. Left as
+    # trees, Assemble Model would make a model of each branch: the top chord alone, and the rest
+    # without the joint the alpaca stands on.
+    inp(assemble, 0).DataMapping = GH_DataMapping.Flatten
+    inp(assemble, 1).DataMapping = GH_DataMapping.Flatten
 
     # 7 - Run: one static step, the default, and every bar drawn with its axial force N and its
     # value: red pulled, blue pushed. Assemble Model, Run Analysis and Model View in a line, in the

@@ -443,7 +443,10 @@ def build(doc):
     wire(inp(point_load, 1), out(direction))
     gravity = component(grid, GRAVITY, "Gravity Load", "Self-weight", LOADS, LOADING, gap=10)
     pattern = component(grid, LOAD_PATTERN, "Load Pattern", None, PATTERN, LOADING)
-    wire(inp(pattern, 1), out(point_load), out(gravity))
+    # Flattened: Point Load and Gravity Load hand out their loads on different paths, and in two
+    # branches Load Pattern would make two patterns, and Assemble two models - one loaded by the point
+    # load alone, the other by the self-weight alone.
+    flat(wire(inp(pattern, 1), out(point_load), out(gravity)))
 
     # 5 - Assembled once, for both optimisers. Each analyses it again in every iteration, with the
     # sections that iteration gives it: a static analysis in one step, which the optimiser sets up
