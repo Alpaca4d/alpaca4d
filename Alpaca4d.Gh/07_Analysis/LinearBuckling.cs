@@ -178,9 +178,10 @@ namespace Alpaca4d.Gh
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                     $"{deck.TransformsMadePDelta} beam transformation{(deck.TransformsMadePDelta == 1 ? " was" : "s were")} made " +
                     "PDelta for the analysis: that is what gives a beam a geometric stiffness.");
-            if (deck.Solids > 0)
+            if (deck.JointSolids > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    "Solid elements have no geometric stiffness in OpenSees: they stiffen the model without ever softening under load.");
+                    $"{deck.JointSolids} solid{(deck.JointSolids == 1 ? " is" : "s are")} of a joint band, a material marked as a surface connection, standing in for " +
+                    "springs spread over a joint: a slip across the band does not soften it, as it would not soften springs of no thickness.");
             if (deck.OneWayMaterials > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                     "Tension-only and compression-only bars and one-way springs are taken as they are at zero load, and linear: " +

@@ -18,8 +18,10 @@ namespace Alpaca4d
     /// which is what gives them a geometric stiffness, and may be split, because PDelta only sees
     /// the sway of each element's chord. No shell of OpenSees has the whole of its stress
     /// stiffness, so shells run linear, OpenSees reports their membrane forces under the load, and
-    /// <see cref="ShellStiffness"/> adds their stress stiffness to K_geo. Everything else in the
-    /// deck stays as it was.
+    /// <see cref="ShellStiffness"/> adds their stress stiffness to K_geo. No solid of OpenSees has
+    /// one either - SSPbrick and the tetrahedra are small-strain elements - so OpenSees reports
+    /// their stresses and <see cref="SolidStiffness"/> adds theirs. Everything else in the deck
+    /// stays as it was.
     ///
     /// Two runs. The first (<see cref="ExportDeck"/>) prints the matrices; the second
     /// (<see cref="ModesDeck"/>) writes the buckled shapes to an MPCO file as steps, one per mode,
@@ -29,6 +31,13 @@ namespace Alpaca4d
     {
         /// <summary>What the deck prints its findings behind, on lines of their own; see <see cref="Said"/>.</summary>
         public const string Label = "ALPACA4D_BUCKLING";
+
+        /// <summary>
+        /// The comment a Surface Connection's material writes before its line: the solids of that
+        /// material are a joint band standing in for springs spread over a horizontal joint, and their
+        /// stress stiffness is that of the joint (<see cref="SolidStressStiffness"/>).
+        /// </summary>
+        public const string JointMarker = "# Alpaca4d surface connection: a joint band";
 
         /// <summary>
         /// The most equations the matrices are printed dense for. OpenSees 3.8.0 can only hand them
@@ -75,6 +84,24 @@ namespace Alpaca4d
             public double[] LocalX;
         }
 
+        /// <summary>A solid of the deck, whose stress stiffness <see cref="SolidStiffness"/> adds.</summary>
+        public sealed class Solid
+        {
+            public int Tag;
+            /// <summary>Its nodes in the standard order: the eight corners of a brick, bottom face then top;
+            /// the four corners of a tetrahedron, then its edge nodes 1-2, 2-3, 3-1, 1-4, 2-4, 3-4.</summary>
+            public int[] Nodes;
+
+            /// <summary>
+            /// A brick that takes its strains at its centre alone, as SSPbrick does - its material
+            /// stiffness one point plus a stabilisation - and so its stress stiffness too.
+            /// </summary>
+            public bool OnePoint;
+
+            /// <summary>A solid of a joint band (<see cref="JointMarker"/>).</summary>
+            public bool Joint;
+        }
+
         /// <summary>The deck as the buckling analysis runs it, and what it takes to read the results back.</summary>
         public sealed class Deck
         {
@@ -100,7 +127,15 @@ namespace Alpaca4d
             /// <summary>The shells, run linear, whose stress stiffness is added to K_geo.</summary>
             public List<Shell> Shells { get; } = new List<Shell>();
 
-            public int Solids;
+            /// <summary>The solids - bricks and tetrahedra - whose stress stiffness is added to K_geo.</summary>
+            public List<Solid> Solids { get; } = new List<Solid>();
+
+            /// <summary>The materials marked as a Surface Connection's (<see cref="JointMarker"/>), by tag.</summary>
+            public HashSet<int> JointMaterials { get; } = new HashSet<int>();
+
+            /// <summary>The solids of a joint band, given the stress stiffness of a joint.</summary>
+            public int JointSolids;
+
             public int PatternsDropped;
 
             /// <summary>One-way materials - tension-only and compression-only bars, one-way and gap springs - made linear; see <see cref="Linearised"/>.</summary>
@@ -150,6 +185,7 @@ namespace Alpaca4d
             {
                 var text = new StringBuilder();
                 bool drop = false;
+                bool joint = false;   // the line before was the marker of a joint band's material
 
                 foreach (var line in Lines(tcl[e]))
                 {
@@ -157,9 +193,14 @@ namespace Alpaca4d
                     string indent = line.Substring(0, line.Length - line.TrimStart().Length);
                     if (t.Length == 0 || t[0].StartsWith("#"))
                     {
+                        if (line.Trim() == JointMarker)
+                            joint = true;
                         text.Append(line).Append('\n');
                         continue;
                     }
+                    if (joint && t[0] == "nDMaterial" && t.Length > 2 && int.TryParse(t[2], out int jointMaterial))
+                        deck.JointMaterials.Add(jointMaterial);
+                    joint = false;
 
                     switch (t[0])
                     {
@@ -299,12 +340,12 @@ namespace Alpaca4d
                     return LinearShell(deck, t);
 
                 case "SSPbrick":
+                case "stdBrick":
+                case "bbarBrick":
                 case "FourNodeTetrahedron":
                 case "TenNodeTetrahedron":
                 case "TenNodeTetrahedronStd":
-                case "stdBrick":
-                case "bbarBrick":
-                    deck.Solids++;
+                    NoteSolid(deck, t);
                     break;
 
                 case "forceBeamColumn":
@@ -316,6 +357,28 @@ namespace Alpaca4d
                     break;
             }
             return string.Join(" ", t) + "\n";
+        }
+
+        /// <summary>
+        /// A solid, noted so that <see cref="SolidStiffness"/> adds its stress stiffness; it runs as
+        /// it is. A solid of a joint band's material (<see cref="JointMarker"/>) is marked as one. TenNodeTetrahedron, unlike TenNodeTetrahedronStd, has nodes 9 and 10 the other way
+        /// round - on edges 3-4 and 2-4 - so they are swapped into the standard order here.
+        /// </summary>
+        private static void NoteSolid(Deck deck, string[] t)
+        {
+            int count = t[1].StartsWith("TenNode") ? 10 : t[1] == "FourNodeTetrahedron" ? 4 : 8;
+            var nodes = new int[count];
+            if (t.Length < 3 + count || !int.TryParse(t[2], out int tag) || Enumerable.Range(0, count).Any(i => !int.TryParse(t[3 + i], out nodes[i])))
+            {
+                deck.Warnings.Add($"Solid {(t.Length > 2 ? t[2] : "?")} could not be read, and has no stress stiffness in the analysis.");
+                return;
+            }
+            bool joint = t.Length > 3 + count && int.TryParse(t[3 + count], out int material) && deck.JointMaterials.Contains(material);
+            if (joint)
+                deck.JointSolids++;
+            if (t[1] == "TenNodeTetrahedron")
+                (nodes[8], nodes[9]) = (nodes[9], nodes[8]);
+            deck.Solids.Add(new Solid { Tag = tag, Nodes = nodes, OnePoint = t[1] == "SSPbrick", Joint = joint });
         }
 
         /// <summary>
@@ -543,7 +606,7 @@ namespace Alpaca4d
         /// <summary>Where the first run leaves the matrices and the equation numbers of the nodes.</summary>
         public sealed class Files
         {
-            public string KMat, KT, DofsMat, DofsT, ShellForces;
+            public string KMat, KT, DofsMat, DofsT, ShellForces, SolidStresses;
 
             public static Files In(string folder, string stem, bool sparse)
             {
@@ -555,10 +618,11 @@ namespace Alpaca4d
                     DofsMat = Path.Combine(folder, stem + "_dofs_mat.txt"),
                     DofsT = Path.Combine(folder, stem + "_dofs_t.txt"),
                     ShellForces = Path.Combine(folder, stem + "_shell_forces.txt"),
+                    SolidStresses = Path.Combine(folder, stem + "_solid_stresses.txt"),
                 };
             }
 
-            public IEnumerable<string> All => new[] { KMat, KT, DofsMat, DofsT, ShellForces };
+            public IEnumerable<string> All => new[] { KMat, KT, DofsMat, DofsT, ShellForces, SolidStresses };
         }
 
         /// <summary>
@@ -628,6 +692,7 @@ namespace Alpaca4d
                 PrintMatrix(files.KT, sparse) +
                 $"alpaca4dDofs {TclPath.Write(files.DofsT)}\n" +
                 PrintShellForces(deck, files.ShellForces) +
+                PrintSolidStresses(deck, files.SolidStresses) +
                 $"puts \"{Label} done\"\n" +
                 "wipe\n");
             return lines;
@@ -641,6 +706,23 @@ namespace Alpaca4d
             var tags = new StringBuilder();
             for (int i = 0; i < deck.Shells.Count; i++)
                 tags.Append(i % 20 == 0 ? "\n    " : " ").Append(deck.Shells[i].Tag);
+            return $"set f [open {TclPath.Write(path)} w]\n" +
+                   $"foreach e {{{tags}\n}} {{ puts $f \"$e [eleResponse $e stresses]\" }}\n" +
+                   "close $f\n";
+        }
+
+        /// <summary>
+        /// "tag sxx syy szz sxy syz sxz ..." per solid: its stresses, six to a point - one point for
+        /// an SSPbrick or a four node tetrahedron, eight for a stdBrick or bbarBrick, four for a ten
+        /// node tetrahedron.
+        /// </summary>
+        private static string PrintSolidStresses(Deck deck, string path)
+        {
+            if (deck.Solids.Count == 0)
+                return "";
+            var tags = new StringBuilder();
+            for (int i = 0; i < deck.Solids.Count; i++)
+                tags.Append(i % 20 == 0 ? "\n    " : " ").Append(deck.Solids[i].Tag);
             return $"set f [open {TclPath.Write(path)} w]\n" +
                    $"foreach e {{{tags}\n}} {{ puts $f \"$e [eleResponse $e stresses]\" }}\n" +
                    "close $f\n";
@@ -1082,6 +1164,242 @@ namespace Alpaca4d
                     k[a, b] += weight * (gx[a] * (n[0] * gx[b] + n[2] * gy[b]) + gy[a] * (n[2] * gx[b] + n[1] * gy[b]));
         }
 
+        /// <summary>Each solid's stresses by tag, six to a point, as many points as OpenSees reported.</summary>
+        public static Dictionary<int, double[][]> ReadSolidStresses(string path)
+        {
+            var stresses = new Dictionary<int, double[][]>();
+            foreach (var line in File.ReadLines(path))
+            {
+                var t = Tokens(line);
+                if (t.Length < 7 || (t.Length - 1) % 6 != 0 || !int.TryParse(t[0], out int tag))
+                    continue;
+                int points = (t.Length - 1) / 6;
+                var s = new double[points][];
+                for (int p = 0; p < points; p++)
+                {
+                    s[p] = new double[6];
+                    for (int k = 0; k < 6; k++)
+                        s[p][k] = Number(t[1 + 6 * p + k]);
+                }
+                stresses[tag] = s;
+            }
+            return stresses;
+        }
+
+        /// <summary>
+        /// The stress stiffness of the solids, as K_geo has it (K_mat − K_T), entry by equation:
+        /// k_ab = I ∫ ∇N_a · σ · ∇N_b dV for nodes a and b, σ the stress tensor under the load - the
+        /// same for each of the three translations, and nothing between them. A stress that
+        /// compresses makes it negative in K_T, and so positive in K_geo: that is what buckles. The
+        /// interpolation is the element's own, trilinear on a brick, linear or quadratic on a
+        /// tetrahedron, and so is the stress: constant on an SSPbrick and a four node tetrahedron,
+        /// at each of the four points of a ten node one. A stdBrick or bbarBrick gives eight points,
+        /// which are averaged. As for the shells, a solid's nodes must have equations of their own.
+        /// </summary>
+        public static (List<int> rows, List<int> columns, List<double> values) SolidStiffness(
+            Deck deck, Dictionary<int, double[][]> stresses, Dictionary<int, int[]> dofs)
+        {
+            var rows = new List<int>();
+            var columns = new List<int>();
+            var values = new List<double>();
+            foreach (var solid in deck.Solids)
+            {
+                if (!stresses.TryGetValue(solid.Tag, out var s))
+                    throw new InvalidDataException($"OpenSees reported no stresses for solid {solid.Tag}.");
+                var c = solid.Nodes.Select(tag => deck.Nodes.TryGetValue(tag, out var node)
+                    ? new[] { node.X, node.Y, node.Z }
+                    : throw new InvalidDataException($"Solid {solid.Tag} has a node, {tag}, the deck does not.")).ToArray();
+
+                var k = SolidStressStiffness(c, s, solid.OnePoint, solid.Joint);
+                int count = solid.Nodes.Length;
+                for (int a = 0; a < count; a++)
+                {
+                    if (!dofs.TryGetValue(solid.Nodes[a], out var da))
+                        continue;
+                    for (int b = 0; b < count; b++)
+                    {
+                        if (!dofs.TryGetValue(solid.Nodes[b], out var db))
+                            continue;
+                        for (int i = 0; i < 3 && i < da.Length; i++)
+                            for (int j = 0; j < 3 && j < db.Length; j++)
+                            {
+                                double v = k[3 * a + i, 3 * b + j];
+                                if (v == 0.0 || da[i] < 0 || db[j] < 0)
+                                    continue;
+                                rows.Add(da[i]);
+                                columns.Add(db[j]);
+                                values.Add(-v);
+                            }
+                    }
+                }
+            }
+            return (rows, columns, values);
+        }
+
+        /// <summary>
+        /// ∫ ∇N_a · σ · ∇N_b dV over one solid, nodes at <paramref name="c"/> in the order
+        /// <see cref="Solid.Nodes"/> keeps, its stresses (sxx syy szz sxy syz sxz) at the points
+        /// OpenSees reported them.
+        ///
+        /// A brick integrates it as it integrates its material stiffness: at 2 x 2 x 2 points, or, for
+        /// an SSPbrick (<paramref name="onePoint"/>), at its centre. Integrated at eight points there,
+        /// the stress stiffness softens the hourglass patterns of a long thin brick - a row of nodes
+        /// sliding to and fro along a wall of 50 x 5 mm bricks - which the brick's material stiffness,
+        /// taken at one point and stabilised, barely resists: the wall then "buckles" at a third of
+        /// its load, in a pattern no continuum has.
+        ///
+        /// On the three translations of each node, 3a + i: the same for each translation, except in a
+        /// joint band (<paramref name="joint"/>). A band t thick stands in for springs of no thickness
+        /// over a horizontal joint, and a slip δ across it, under a pressure σzz, would soften it by
+        /// σzz δ² / t: the band would buckle in shear at |σzz| = k_s t, a pressure that vanishes as the
+        /// band is made thinner, where springs never do. So its shear strains across the joint, γxz and
+        /// γyz, are taken out: σzz ((∂u/∂z)² − γxz²) for each horizontal u. What is left is the joint's
+        /// own: a slip along a joint that tilts lowers what is above it, σzz 2 (∂u/∂z)(∂w/∂x) with the
+        /// tilt of the joint, and the band sways with the wall over its height, σzz (∂w/∂x)².
+        /// </summary>
+        private static double[,] SolidStressStiffness(double[][] c, double[][] s, bool onePoint, bool joint)
+        {
+            int count = c.Length;
+            var h = new double[3 * count, 3 * count];
+            if (count == 8)
+            {
+                var sigma = Mean(s);
+                double[] xi = { -1, 1, 1, -1, -1, 1, 1, -1 }, eta = { -1, -1, 1, 1, -1, -1, 1, 1 }, zeta = { -1, -1, -1, -1, 1, 1, 1, 1 };
+                double g = 1 / Math.Sqrt(3);
+                var points = onePoint ? new[] { 0.0 } : new[] { -g, g };
+                double weight = onePoint ? 8.0 : 1.0;
+                foreach (var r in points)
+                    foreach (var q in points)
+                        foreach (var p in points)
+                        {
+                            var natural = new double[8][];
+                            for (int a = 0; a < 8; a++)
+                                natural[a] = new[]
+                                {
+                                    0.125 * xi[a] * (1 + eta[a] * q) * (1 + zeta[a] * r),
+                                    0.125 * eta[a] * (1 + xi[a] * p) * (1 + zeta[a] * r),
+                                    0.125 * zeta[a] * (1 + xi[a] * p) * (1 + eta[a] * q),
+                                };
+                            var (gradients, det) = Gradients(natural, c);
+                            AddSolidStress(h, gradients, sigma, weight * Math.Abs(det), joint);
+                        }
+            }
+            else if (count == 4)
+            {
+                // Volume coordinates L1, L2, L3 and L4 = 1 - L1 - L2 - L3 as the natural ones.
+                var natural = new[] { new[] { 1.0, 0, 0 }, new[] { 0, 1.0, 0 }, new[] { 0, 0, 1.0 }, new[] { -1.0, -1, -1 } };
+                var (gradients, det) = Gradients(natural, c);
+                AddSolidStress(h, gradients, Mean(s), Math.Abs(det) / 6, joint);
+            }
+            else if (count == 10)
+            {
+                // The four points TenNodeTetrahedron integrates at, point k nearest corner k: L_k = α,
+                // the others β. Its stresses come in that order.
+                double alpha = (5 + 3 * Math.Sqrt(5)) / 20, beta = (5 - Math.Sqrt(5)) / 20;
+                for (int k = 0; k < 4; k++)
+                {
+                    var l = new[] { beta, beta, beta, beta };
+                    l[k] = alpha;
+                    // dN/dL_j for each node, then dN/dξ_j = dN/dL_j - dN/dL_4.
+                    var byL = new double[10][];
+                    for (int a = 0; a < 4; a++)
+                    {
+                        byL[a] = new double[4];
+                        byL[a][a] = 4 * l[a] - 1;
+                    }
+                    var edges = new[] { (0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3) };
+                    for (int e = 0; e < 6; e++)
+                    {
+                        var (i, j) = edges[e];
+                        byL[4 + e] = new double[4];
+                        byL[4 + e][i] = 4 * l[j];
+                        byL[4 + e][j] = 4 * l[i];
+                    }
+                    var natural = byL.Select(d => new[] { d[0] - d[3], d[1] - d[3], d[2] - d[3] }).ToArray();
+                    var (gradients, det) = Gradients(natural, c);
+                    AddSolidStress(h, gradients, s.Length == 4 ? s[k] : Mean(s), Math.Abs(det) / 24, joint);
+                }
+            }
+            return h;
+        }
+
+        /// <summary>
+        /// The gradients ∂N_a/∂x of shape functions whose derivatives along the natural coordinates
+        /// are <paramref name="natural"/>, nodes at <paramref name="c"/>, and the determinant of the
+        /// Jacobian ∂x/∂ξ.
+        /// </summary>
+        private static (double[][] gradients, double det) Gradients(double[][] natural, double[][] c)
+        {
+            var j = new double[3, 3];   // j[r, x] = ∂x/∂ξ_r
+            for (int a = 0; a < c.Length; a++)
+                for (int r = 0; r < 3; r++)
+                    for (int x = 0; x < 3; x++)
+                        j[r, x] += natural[a][r] * c[a][x];
+            double det = j[0, 0] * (j[1, 1] * j[2, 2] - j[1, 2] * j[2, 1])
+                       - j[0, 1] * (j[1, 0] * j[2, 2] - j[1, 2] * j[2, 0])
+                       + j[0, 2] * (j[1, 0] * j[2, 1] - j[1, 1] * j[2, 0]);
+            var inverse = new double[3, 3];   // inverse[x, r] = ∂ξ_r/∂x
+            inverse[0, 0] = (j[1, 1] * j[2, 2] - j[1, 2] * j[2, 1]) / det;
+            inverse[0, 1] = (j[0, 2] * j[2, 1] - j[0, 1] * j[2, 2]) / det;
+            inverse[0, 2] = (j[0, 1] * j[1, 2] - j[0, 2] * j[1, 1]) / det;
+            inverse[1, 0] = (j[1, 2] * j[2, 0] - j[1, 0] * j[2, 2]) / det;
+            inverse[1, 1] = (j[0, 0] * j[2, 2] - j[0, 2] * j[2, 0]) / det;
+            inverse[1, 2] = (j[0, 2] * j[1, 0] - j[0, 0] * j[1, 2]) / det;
+            inverse[2, 0] = (j[1, 0] * j[2, 1] - j[1, 1] * j[2, 0]) / det;
+            inverse[2, 1] = (j[0, 1] * j[2, 0] - j[0, 0] * j[2, 1]) / det;
+            inverse[2, 2] = (j[0, 0] * j[1, 1] - j[0, 1] * j[1, 0]) / det;
+            var gradients = new double[c.Length][];
+            for (int a = 0; a < c.Length; a++)
+            {
+                gradients[a] = new double[3];
+                for (int x = 0; x < 3; x++)
+                    for (int r = 0; r < 3; r++)
+                        gradients[a][x] += inverse[x, r] * natural[a][r];
+            }
+            return (gradients, det);
+        }
+
+        /// <summary>
+        /// k(3a + i, 3b + i) += w ∇N_a · σ · ∇N_b, σ as (sxx syy szz sxy syz sxz); for a joint band,
+        /// less w σzz times what γxz² and γyz² give: see <see cref="SolidStressStiffness"/>.
+        /// </summary>
+        private static void AddSolidStress(double[,] k, double[][] g, double[] s, double weight, bool joint)
+        {
+            double sxx = s[0], syy = s[1], szz = s[2], sxy = s[3], syz = s[4], sxz = s[5];
+            for (int a = 0; a < g.Length; a++)
+            {
+                double tx = sxx * g[a][0] + sxy * g[a][1] + sxz * g[a][2];
+                double ty = sxy * g[a][0] + syy * g[a][1] + syz * g[a][2];
+                double tz = sxz * g[a][0] + syz * g[a][1] + szz * g[a][2];
+                for (int b = 0; b < g.Length; b++)
+                {
+                    double v = weight * (tx * g[b][0] + ty * g[b][1] + tz * g[b][2]);
+                    for (int i = 0; i < 3; i++)
+                        k[3 * a + i, 3 * b + i] += v;
+                    if (!joint)
+                        continue;
+                    // γxz = Σ (∂N/∂z u + ∂N/∂x w), γyz = Σ (∂N/∂z v + ∂N/∂y w); dofs 0 u, 1 v, 2 w.
+                    double f = -weight * szz;
+                    for (int across = 0; across < 2; across++)
+                    {
+                        k[3 * a + across, 3 * b + across] += f * g[a][2] * g[b][2];
+                        k[3 * a + across, 3 * b + 2] += f * g[a][2] * g[b][across];
+                        k[3 * a + 2, 3 * b + across] += f * g[a][across] * g[b][2];
+                        k[3 * a + 2, 3 * b + 2] += f * g[a][across] * g[b][across];
+                    }
+                }
+            }
+        }
+
+        private static double[] Mean(double[][] points)
+        {
+            var m = new double[6];
+            foreach (var p in points)
+                for (int k = 0; k < 6; k++)
+                    m[k] += p[k] / points.Length;
+            return m;
+        }
+
         private static double[] Plus(double[] a, double[] b) => new[] { a[0] + b[0], a[1] + b[1], a[2] + b[2] };
         private static double[] Minus(double[] a, double[] b) => new[] { a[0] - b[0], a[1] - b[1], a[2] - b[2] };
         private static double[] Scaled(double[] a, double f) => new[] { a[0] * f, a[1] * f, a[2] * f };
@@ -1384,7 +1702,8 @@ namespace Alpaca4d
                 // of a tie has none of its own for under Transformation.
                 var slaves = new HashSet<int>(deck.Ties.SelectMany(tie => tie.Slaves));
                 var tiedShells = deck.Shells.Where(shell => shell.Nodes.Any(slaves.Contains)).ToList();
-                constraints = deck.ChainedNodes.Count > 0 || tiedShells.Count > 0 ? Penalty(sparse) : "Transformation";
+                var tiedSolids = deck.Solids.Where(solid => solid.Nodes.Any(slaves.Contains)).ToList();
+                constraints = deck.ChainedNodes.Count > 0 || tiedShells.Count > 0 || tiedSolids.Count > 0 ? Penalty(sparse) : "Transformation";
                 if (deck.ChainedNodes.Count > 0)
                     deck.Warnings.Add(
                         $"Node{(deck.ChainedNodes.Count > 1 ? "s" : "")} {string.Join(", ", deck.ChainedNodes.Take(10))}" +
@@ -1395,6 +1714,11 @@ namespace Alpaca4d
                     deck.Warnings.Add(
                         $"Shell{(tiedShells.Count > 1 ? "s" : "")} {string.Join(", ", tiedShells.Take(10).Select(shell => shell.Tag))}" +
                         $"{(tiedShells.Count > 10 ? ", ..." : "")} {(tiedShells.Count > 1 ? "are" : "is")} tied, so the ties were enforced by " +
+                        "penalty. With the matrices printed dense that costs some accuracy on the tied nodes.");
+                else if (tiedSolids.Count > 0 && !sparse)
+                    deck.Warnings.Add(
+                        $"Solid{(tiedSolids.Count > 1 ? "s" : "")} {string.Join(", ", tiedSolids.Take(10).Select(solid => solid.Tag))}" +
+                        $"{(tiedSolids.Count > 10 ? ", ..." : "")} {(tiedSolids.Count > 1 ? "are" : "is")} tied, so the ties were enforced by " +
                         "penalty. With the matrices printed dense that costs some accuracy on the tied nodes.");
             }
             outcome.Constraints = constraints;
@@ -1446,6 +1770,19 @@ namespace Alpaca4d
                 catch (Exception ex) when (ex is IOException || ex is InvalidDataException)
                 {
                     outcome.Failure = "The shells' forces under the load could not be read: " + ex.Message + " See log.";
+                    return outcome;
+                }
+            }
+            if (deck.Solids.Count > 0)
+            {
+                try
+                {
+                    var (rows, columns, values) = SolidStiffness(deck, ReadSolidStresses(files.SolidStresses), matrices.Dofs);
+                    matrices.KGeo = matrices.KGeo.Plus(rows, columns, values);
+                }
+                catch (Exception ex) when (ex is IOException || ex is InvalidDataException)
+                {
+                    outcome.Failure = "The solids' stresses under the load could not be read: " + ex.Message + " See log.";
                     return outcome;
                 }
             }
