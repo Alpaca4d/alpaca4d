@@ -48,6 +48,9 @@ namespace Alpaca4d.Gh
         /// <summary>Iso-surfaces: each colour a band of values, not a point on a gradient. See <see cref="IsoBands"/>.</summary>
         private bool _banded;
 
+        /// <summary>What the values are multiplied by before a colour is picked for them: 1 but while Animate runs. See <see cref="SwingShare"/>.</summary>
+        private double _fade = 1.0;
+
         /// <summary>The length one unit of beam force is drawn at; see <see cref="DiagramUnit"/>.</summary>
         private double _diagramUnit;
 
@@ -213,7 +216,10 @@ namespace Alpaca4d.Gh
             "are painted point by point over it; drawn as lines, each section shows its worst.\n" +
             "A vibration or buckling mode is drawn at deformation scale 1 with its largest movement as far off " +
             "the model as the diagrams stand; any other displacement at true size. On a natural vibration or " +
-            "buckling model the scale runs from -2 to 2, so Animate swings the mode both ways.",
+            "buckling model the scale runs from -2 to 2, so Animate swings the mode both ways.\n" +
+            "While Animate runs, the colours grow with the deformation: the model at rest is all the colour of " +
+            "zero, and at the full swing it shows the result's own colours. The Legend and the values written " +
+            "stay as they are.",
             "Alpaca4d", "09_Visualisation")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
@@ -720,6 +726,36 @@ namespace Alpaca4d.Gh
             else StopAnimation();
 
             UpdateVisibility();
+
+            // Stopped wherever the swing had got to, the colours are faded to match it; drawn again,
+            // they show the result as it is.
+            if (!_ckAnimate.Active) ExpireSolution(true);
+        }
+
+        private bool Animating => _timer != null && _timer.Enabled;
+
+        /// <summary>
+        /// For scripts that make an animation frame by frame, setting the scale themselves, as the
+        /// marketing pictures do: the scale of the full swing, which fades the colours as Animate
+        /// does with it in place of the slider's end. 0, as it starts, leaves them to Animate.
+        /// </summary>
+        internal double _swingReach;
+
+        /// <summary>
+        /// While Animate runs, how far through its swing the deformation is: the scale over the
+        /// slider's end furthest from zero, so 0 at rest and 1 at the full deformation, and -1 at
+        /// the other end of a mode's -2 to 2. A result's colours are faded by it, so that the model
+        /// at rest is all one colour, the colour of zero, and the result's own colours come in as
+        /// it deforms. Without the animation 1: a scale picked by hand only draws the shape larger.
+        /// </summary>
+        private double SwingShare()
+        {
+            if (!(_ckDeformed?.Active ?? false) || _slDeformScale == null) return 1.0;
+
+            double reach = _swingReach > 0.0 ? _swingReach
+                : Animating ? Math.Max(Math.Abs(_slDeformScale.MinValue), Math.Abs(_slDeformScale.MaxValue))
+                : 0.0;
+            return reach > 0.0 ? _slDeformScale.Value / reach : 1.0;
         }
 
         private void StartAnimation()
@@ -950,6 +986,9 @@ namespace Alpaca4d.Gh
             public bool Banded;
             public double DiagramUnit;
 
+            /// <summary>What its values are multiplied by before they are coloured; see <see cref="SwingShare"/>.</summary>
+            public double Fade = 1.0;
+
             /// <summary>Whether its scale comes from Range rather than from what is drawn, and whether anything was drawn to fit it to.</summary>
             public bool Ranged, Drawn;
 
@@ -974,6 +1013,7 @@ namespace Alpaca4d.Gh
             _gradient = shown.Gradient;
             _banded = shown.Banded;
             _diagramUnit = shown.DiagramUnit;
+            _fade = shown.Fade;
         }
 
         /// <summary>
@@ -1026,6 +1066,7 @@ namespace Alpaca4d.Gh
             // somewhere else would paint it all one colour. Nor to elements another result colours.
             int painters = _shown.Count(x => x.Paints);
             int graded = 0;
+            double share = SwingShare();
             foreach (var shown in _shown)
             {
                 Use(shown);
@@ -1049,6 +1090,13 @@ namespace Alpaca4d.Gh
 
                 shown.Gradient = ColourScale.Stops(palette, shown.Min, shown.Max);
                 shown.Banded = (_ckBands?.Active ?? false) && shown.Graded;
+
+                // Animating, the colours on the elements grow with the swing, over the scale fitted
+                // above. A mode swung the other way turns a signed result round - the mode upside
+                // down is the result upside down - but not one that is never negative, a size such
+                // as |U| or Von Mises, which would only fall off the bottom of the scale. Arrows and
+                // diagrams do not grow, so their colours do not either.
+                shown.Fade = shown.Paints ? (shown.Min < 0.0 ? share : Math.Abs(share)) : 1.0;
 
                 if (shown.Family == ResultFamily.BeamForce)
                 {

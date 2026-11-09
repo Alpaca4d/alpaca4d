@@ -444,7 +444,8 @@ namespace Alpaca4d.Gh
 
             if (_banded)
             {
-                var stretches = IsoBands.Along(samples, _min, _max, _palette.Count);
+                var faded = _fade == 1.0 ? samples : samples.Select(x => Tuple.Create(x.Item1, x.Item2 * _fade)).ToList();
+                var stretches = IsoBands.Along(faded, _min, _max, _palette.Count);
                 if (Extrude(beam, start, end, stretches.SelectMany(x => new[] { x.Item1, x.Item2 }).ToList(),
                             stretches.SelectMany(x => new[] { _palette[x.Item3], _palette[x.Item3] }).ToList()))
                     return;
@@ -813,7 +814,7 @@ namespace Alpaca4d.Gh
 
             if (_banded)
             {
-                _beamSolids.Add(IsoBands.Paint(mesh, values, _palette, _min, _max));
+                _beamSolids.Add(IsoBands.Paint(mesh, Faded(values), _palette, _min, _max));
             }
             else
             {
@@ -900,7 +901,7 @@ namespace Alpaca4d.Gh
 
             if (_banded)
             {
-                _shaded.Add(IsoBands.Paint(mesh, corners, _palette, _min, _max));
+                _shaded.Add(IsoBands.Paint(mesh, Faded(corners), _palette, _min, _max));
             }
             else
             {
@@ -1043,8 +1044,14 @@ namespace Alpaca4d.Gh
             return _min;
         }
 
+        /// <summary>
+        /// The colour of a value on the scale, the value faded first while Animate runs (see
+        /// <see cref="SwingShare"/>). Only the colour: what is written on the model stays the value.
+        /// </summary>
         private Color Colour(double value)
         {
+            value *= _fade;
+
             if (_banded && _palette != null && _palette.Count > 0)
                 return _palette[ColourScale.Band(value, _min, _max, _palette.Count)];
 
@@ -1052,6 +1059,10 @@ namespace Alpaca4d.Gh
                 ? Alpaca4d.Colors.GetColor(value, _gradient)
                 : Color.Gray;
         }
+
+        /// <summary>Values to paint in bands, faded as <see cref="Colour"/> fades one.</summary>
+        private IList<double> Faded(IList<double> values) =>
+            _fade == 1.0 ? values : values.Select(x => x * _fade).ToList();
 
         /// <summary>
         /// A force diagram: the values stood off the beam in the plane the force acts in, closed
