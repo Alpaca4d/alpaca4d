@@ -64,4 +64,7 @@ scripts, raw captures) in the scratchpad.
   - unhook both in `finally`.
 - **A conduit stays enabled for good.** Restart Rhino before the next capture run, or the old
   run's geometry shows underneath.
+- **Viewport captures hang while the screen is locked** (seen 2026-11-07: a batch stopped at its
+  next capture when the screen locked). Before a long run, check that the screen will stay
+  unlocked; after a stall, quit that Rhino and run the rest of the scenes again.
 - **Licensed components** refuse without a licence in that Rhino, and open the License window.

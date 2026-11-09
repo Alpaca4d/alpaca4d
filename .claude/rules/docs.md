@@ -69,6 +69,9 @@ repository next to this one, `../alpaca4d.github.io/doc`.
     more pictures. The card's small picture is made from `<slug>.png` by the build. Run
     `Tools/GhCanvas/run.sh` for `<slug>-definition.json`, the definition the page draws under
     the picture.
+  - More definitions of one example (`examples/3d-printed-structure/` has four shapes) go in the
+    same folder, each linked alone on its line where the page describes it, `[name](name.gh)`: the
+    build attaches it there like the first.
   - `<slug>.md` starts with front matter: `order:` (its place in the gallery), `summary:` (one
     sentence, on the card and under the title) and `tags:`, from the filters `examples.mjs`
     lists (Beams & frames, Shells, Solids, Dynamics, Sections, Design checks, Optimisation,

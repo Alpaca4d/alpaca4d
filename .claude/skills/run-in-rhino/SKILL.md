@@ -21,9 +21,11 @@ description: Run Alpaca4d code, or real Grasshopper components, inside a live Rh
 
 ## Rhino
 
-- **Start one:** `open -na "Rhino 8" --args -nosplash -runscript="_StartScriptServer"`, then wait
-  until `rhinocode list` shows `rhinocode_remotepipe_<pid>`. Read only the lines starting with
-  `rhinocode`.
+- **Start one:** `open -na "Rhino 8" --args -ApplePersistenceIgnoreState YES -nosplash -runscript="_StartScriptServer"`,
+  then wait until `rhinocode list` shows `rhinocode_remotepipe_<pid>` (in the ID column; the line
+  starts with the pid). `-ApplePersistenceIgnoreState YES` stops macOS reopening the Untitled document
+  a Rhino that quit on its "keep this new document?" question leaves behind: reopening it stalls the
+  start behind an alert nobody sees, and that cannot be answered at all while the screen is locked.
 - **If a Rhino is already open:** a second one started beside it runs no scripts and quits by
   itself. Use the open one if `rhinocode list` shows it; otherwise ask the user to run
   `StartScriptServer` in it.
@@ -33,6 +35,19 @@ description: Run Alpaca4d code, or real Grasshopper components, inside a live Rh
   `RhinoApp.Exit(false)` from a `RhinoApp.Idle` handler. `_-Exit` and `RhinoApp.Exit()` can wait on
   a question nobody answers. Kill it only as a last resort: the next Rhino can then start with a
   dialog that stops its `-runscript`, and `rhinocode list` never shows it.
+  - Even then macOS asks whether to keep the new Untitled document. Click its Delete button:
+    `osascript -e 'tell application "System Events" to tell (first process whose unix id is <pid>) to click button "Delete" of splitter group 1 of sheet 1 of window "Untitled"'`.
+  - While the screen is locked, System Events sees no windows, so nothing can be clicked. Kill
+    that Rhino and its `RhinoMonitor`. The start flag above keeps the next start clean.
+- **Viewport captures stop while the screen saver runs** (seen 2026-11-07: Rhino idle at 0% CPU at
+  its next capture for 20 minutes). The lock screen alone does not stop them. The screen saver
+  starts after 300 s idle (`defaults -currentHost read com.apple.screensaver idleTime`), on the lock
+  screen too. While the screen is locked, `caffeinate -d` keeps it away and leaves the Mac locked;
+  `caffeinate -u -t 2` wakes a running one to the lock screen.
+  `ioreg -n Root -d1 | grep '"CGSSessionScreenIsLocked"=Yes'` tells you if the screen is locked.
+  Hold nothing while it is unlocked: that would keep an unattended Mac from locking. Give
+  Tools/Marketing/run.sh a `WAIT=` longer than the batch. Its default, 7200 s, is shorter than the
+  earthquakes and towers together.
 - **While Rhino runs, never build into the live Grasshopper folder.** Build with
   `-p:GrasshopperLibrariesPath=<scratch>`.
 

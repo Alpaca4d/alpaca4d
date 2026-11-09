@@ -54,8 +54,19 @@ Do("close", Close),
 - `Deforming` swings the deformation scale from 0 to its value and back, on a cosine, 40 frames by
   default, so the loop has no jump. It frames the view at full deformation, so nothing leaves the
   picture.
+- **The colours fade with the swing, in every deforming animation, mode shapes and buckling modes
+  too** (the user, 2026-11-07): at rest the model is all the colour of zero, at full deformation it
+  has the result's own colours, and in between each value is coloured times the share of the swing.
+  It is what Model View's Animate does. `Deforming` and `Vibrating` switch it on for their frames
+  with `FadeWithSwing` and off after, so the still at full deformation is the same as before. A
+  signed result (Uz, σx) turns round when a mode swings the other way; a size (|U|, Von Mises)
+  does not. It needs an Alpaca4d build that has Model View's `_swingReach`, deployed before Rhino
+  starts; with an older one the scene logs it and the colours stay full.
 - `turn: 30` also turns the camera 30 degrees about the vertical and back as it deforms. A slow turn
   reads well for a tower, a vault or a grid; keep it at 0 for a beam or a frame seen from the front.
+- **A buckling mode: never turn** (the user, 2026-11-07), and colour it by how far each point moves
+  in it on a jet gradient, dark blue to dark red, fed to Model View's Colors: `BucklingFrames` in
+  `Shots.cs` does both.
 - **The eye**, the direction from the model to the camera:
   - from the front and a little above for a beam or a frame: `(0.35, -1, 0.3)`;
   - from a corner and above for a grid, a roof or a vault: `(-1, -1.3, 0.9)`;
@@ -94,7 +105,8 @@ myexample() {
   use Alpaca4d's own drawing.
 - Show one result at a time; nothing on the canvas side.
 - Before publishing, look at the first frame, the middle one and the still: nothing cut off, the
-  legend readable, the deformation clear but not absurd.
+  legend readable, the deformation clear but not absurd. The first frame should be all one colour,
+  the colour of zero: if it is not, the colours did not fade.
 
 ## A time history
 
