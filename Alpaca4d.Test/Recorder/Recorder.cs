@@ -87,7 +87,7 @@ class RecorderTest
         }), "nodal results, in their saved order");
         Check(Recorder.ElementResultTypes.SequenceEqual(new[]
         {
-            "stresses", "section.force", "section.fiber.stress", "axialForce",
+            "stresses", "section.force", "section.fiber.stress", "axialForce", "section.deformation",
         }), "element results, in their saved order");
 
         // The boxes start ticked at these, so they have to be boxes.
@@ -156,6 +156,8 @@ class RecorderTest
                 ["section.force"] = beam.Concat(shells).ToArray(),
                 ["section.fiber.stress"] = beam.Concat(shells).ToArray(),
                 ["axialForce"] = new[] { "CorotTruss" },
+                // Model View's plastic hinges read the beams' out of it; the shells answer too.
+                ["section.deformation"] = beam.Concat(shells).ToArray(),
             };
 
             Check(expected.Keys.OrderBy(k => k).SequenceEqual(Recorder.ElementResultTypes.OrderBy(k => k)),
