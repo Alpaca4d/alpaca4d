@@ -21,7 +21,9 @@ namespace Alpaca4d
     /// <see cref="ShellStiffness"/> adds their stress stiffness to K_geo. No solid of OpenSees has
     /// one either - SSPbrick and the tetrahedra are small-strain elements - so OpenSees reports
     /// their stresses and <see cref="SolidStiffness"/> adds theirs. Everything else in the deck
-    /// stays as it was.
+    /// stays as it was. So a deck with no beam or truss - solids and shells only - gets nothing
+    /// from OpenSees under the load but their stresses, and prints K_mat alone
+    /// (<see cref="Deck.PrintsOnce"/>).
     ///
     /// Two runs. The first (<see cref="ExportDeck"/>) prints the matrices; the second
     /// (<see cref="ModesDeck"/>) writes the buckled shapes to an MPCO file as steps, one per mode,
@@ -123,6 +125,21 @@ namespace Alpaca4d
             public List<Tie> Ties { get; } = new List<Tie>();
 
             public int TransformsMadePDelta;
+
+            /// <summary>
+            /// The elements whose geometric stiffness OpenSees gives: beams, on their PDelta
+            /// transformation, corotational trusses, a link with -pDelta, and any element the rewrite
+            /// does not know.
+            /// </summary>
+            public int GeometricInOpenSees;
+
+            /// <summary>
+            /// Whether the deck prints K_mat alone. With no element of <see cref="GeometricInOpenSees"/>
+            /// - bricks, tetrahedra, shells, springs and links only - K_mat − K_geo as OpenSees prints
+            /// it is K_mat to the last digit, every stress stiffness being added in C#, so printing it
+            /// again under the load only doubles the slowest part of the analysis.
+            /// </summary>
+            public bool PrintsOnce => GeometricInOpenSees == 0;
 
             /// <summary>The shells, run linear, whose stress stiffness is added to K_geo.</summary>
             public List<Shell> Shells { get; } = new List<Shell>();
@@ -282,7 +299,7 @@ namespace Alpaca4d
         }
 
         /// <summary>
-        /// A one-way material as it is at zero load, and linear from there. The analysis prints the
+        /// A one-way material as it is at zero load, and linear from there. A deck with beams prints the
         /// stiffness twice, unloaded and loaded, and takes the difference for the geometric stiffness;
         /// a bar that goes slack under the reference load would lose its material stiffness between
         /// the two, and the difference would count it as geometric. So a tension-only or compression-only
@@ -350,10 +367,27 @@ namespace Alpaca4d
 
                 case "forceBeamColumn":
                 case "dispBeamColumn":
+                    deck.GeometricInOpenSees++;
                     if (divisions > 1)
                         return SplitBeam(deck, t, divisions, ref nextNode, ref nextElement, ref ndf);
                     if (t.Length > 4 && int.TryParse(t[2], out int tag) && int.TryParse(t[3], out int i) && int.TryParse(t[4], out int j))
                         deck.BeamEnds[tag] = new[] { i, j };
+                    break;
+
+                // No geometric stiffness in OpenSees: what it prints of them is the same under load.
+                case "zeroLength":
+                case "zeroLengthSection":
+                case "truss":
+                    break;
+
+                case "twoNodeLink":
+                    if (Array.IndexOf(t, "-pDelta") >= 0)
+                        deck.GeometricInOpenSees++;
+                    break;
+
+                default:
+                    // corotTruss, another beam on a transformation, or an element not known here.
+                    deck.GeometricInOpenSees++;
                     break;
             }
             return string.Join(" ", t) + "\n";
@@ -630,6 +664,11 @@ namespace Alpaca4d
         /// patterns, and a first-order step to the reference load - pseudo-time 1, which is load
         /// factor 1 - in which K_mat − K_geo is printed. First order, so the axial forces are the
         /// ones the buckling problem is defined with, and nothing has to converge.
+        ///
+        /// A deck that <see cref="Deck.PrintsOnce"/> prints K_mat alone, and with no step: printA
+        /// forms the stiffness itself. Its one step is the loaded one, for the stresses, and that
+        /// step factorises K_mat - its one Newton iteration starts from no load - so a failure there
+        /// is the mechanism a failed unloaded step would have been.
         /// </summary>
         /// <param name="constraints">The constraint handler. Transformation folds tied dofs into the
         /// retained node exactly; Penalty keeps every dof an equation of its own, at the price of
@@ -638,12 +677,21 @@ namespace Alpaca4d
         {
             var lines = new List<string>(deck.Model);
             bool measure = constraints.Trim() == "Penalty";
+            bool once = deck.PrintsOnce;
             string analysis =
+                // AMD numbers the equations to keep the factor small. SuperLU, which solves when
+                // Mumps is missing, factorises them in the order they are numbered - OpenSees gives
+                // it no ordering of its own - so Plain left the time to the order the nodes came
+                // in: an arch of bricks of 20 000 equations took 183 s numbered along its length
+                // and 600 s numbered at random, against 0.5 s with AMD. RCM did as well on solids
+                // but took 90 s and 6 GB on a building frame AMD solved in 0.8 s
+                // (Alpaca4d.Test/BucklingBeamBrick/README.md).
+                //
                 // One Newton iteration: a single solve from no load, so the state is first order,
                 // as the buckling problem defines it - and then the resisting forces at that state,
                 // which Linear never asks for: the forces the elements commit, and report, are
                 // those of the loaded state.
-                "numberer Plain\n" +
+                "numberer AMD\n" +
                 "test FixedNumIter 1 0\n" +
                 "algorithm Newton\n" +
                 "integrator LoadControl 0.0\n" +
@@ -674,10 +722,10 @@ namespace Alpaca4d
                 "    foreach n [getNodeTags] { puts $f \"$n [nodeDOFs $n]\" }\n" +
                 "    close $f\n" +
                 "}\n" +
-                $"system {(sparse ? "SparseGeneral" : "FullGeneral")}\n" +
+                (sparse ? SparseSolver : "system FullGeneral\n") +
                 (measure ? "constraints Penalty $alpaca4dPenalty $alpaca4dPenalty\n" : $"constraints {constraints}\n") +
                 analysis +
-                $"if {{[analyze 1] != 0}} {{ puts \"{Label} failed unloaded\"; exit }}\n" +
+                (once ? "initialize\n" : $"if {{[{Analyze(sparse)}] != 0}} {{ puts \"{Label} failed unloaded\"; exit }}\n") +
                 "set alpaca4dN [systemSize]\n" +
                 $"puts \"{Label} equations $alpaca4dN\"\n" +
                 (sparse ? "" : $"if {{$alpaca4dN > {DenseLimit}}} {{ puts \"{Label} too-large $alpaca4dN\"; exit }}\n") +
@@ -688,9 +736,8 @@ namespace Alpaca4d
             lines.Add(
                 "\n# ---- linear buckling: K_mat - K_geo under the reference load ----\n" +
                 "integrator LoadControl 1.0\n" +
-                $"if {{[analyze 1] != 0}} {{ puts \"{Label} failed loaded\"; exit }}\n" +
-                PrintMatrix(files.KT, sparse) +
-                $"alpaca4dDofs {TclPath.Write(files.DofsT)}\n" +
+                $"if {{[{Analyze(sparse)}] != 0}} {{ puts \"{Label} failed {(once ? "unloaded" : "loaded")}\"; exit }}\n" +
+                (once ? "" : PrintMatrix(files.KT, sparse) + $"alpaca4dDofs {TclPath.Write(files.DofsT)}\n") +
                 PrintShellForces(deck, files.ShellForces) +
                 PrintSolidStresses(deck, files.SolidStresses) +
                 $"puts \"{Label} done\"\n" +
@@ -731,9 +778,49 @@ namespace Alpaca4d
         private static string PrintMatrix(string path, bool sparse)
         {
             return sparse
-                ? $"printA -file {TclPath.Write(path)} -sparse 1 -precision 16\n"
+                ? $"alpaca4dPrintA {TclPath.Write(path)}\n"
                 : $"set f [open {TclPath.Write(path)} w]; puts $f [printA -ret]; close $f\n";
         }
+
+        private static string Analyze(bool sparse) => sparse ? "alpaca4dAnalyze" : "analyze 1";
+
+        /// <summary>The Mumps the sparse deck asks for: a symmetric matrix, every core.</summary>
+        private const string Mumps = "system Mumps -matrixType 1 -numThreads 0";
+
+        /// <summary>
+        /// How a deck that prints its matrices sparse solves its two steps. Mumps where this
+        /// OpenSees has it - a build made with it, see Tools/OpenSees - SuperLU (SparseGeneral)
+        /// where it has not. Mumps orders the equations itself and factorises on every core: the
+        /// unloaded and loaded solves of a column of 139 000 equations of bricks took 5 s, SuperLU
+        /// 74 s. Mumps keeps its matrix to itself, though, so to print one the deck puts SuperLU's
+        /// system in its place - which only assembles, not factorises - and Mumps back after.
+        /// Should Mumps fail, as it does when its workspace runs short, the step is solved again
+        /// with SuperLU: a failed step leaves the domain at the load of the last, so the load is
+        /// applied once. "solver" says which solved. Not UmfPack: it ran out of memory on that
+        /// column, numbered by AMD, as on frames and solids of 100 000 to 150 000 dofs
+        /// (Alpaca4d.Test/SolverChoice).
+        /// </summary>
+        private static readonly string SparseSolver =
+            $"set alpaca4dMumps [expr {{![catch {{{Mumps}}}]}}]\n" +
+            "if {!$alpaca4dMumps} { system SparseGeneral }\n" +
+            $"puts \"{Label} solver [expr {{$alpaca4dMumps ? \"Mumps\" : \"SuperLU\"}}]\"\n" +
+            "proc alpaca4dAnalyze {} {\n" +
+            "    global alpaca4dMumps\n" +
+            "    set result [analyze 1]\n" +
+            "    if {$result != 0 && $alpaca4dMumps} {\n" +
+            $"        puts \"{Label} solver SuperLU, as Mumps failed\"\n" +
+            "        set alpaca4dMumps 0\n" +
+            "        system SparseGeneral\n" +
+            "        set result [analyze 1]\n" +
+            "    }\n" +
+            "    return $result\n" +
+            "}\n" +
+            "proc alpaca4dPrintA {path} {\n" +
+            "    global alpaca4dMumps\n" +
+            "    if {$alpaca4dMumps} { system SparseGeneral; initialize }\n" +
+            "    printA -file $path -sparse 1 -precision 16\n" +
+            $"    if {{$alpaca4dMumps}} {{ {Mumps} }}\n" +
+            "}\n";
 
         /// <summary>
         /// A deck of two nodes that prints its matrix sparse. Builds of OpenSees after 3.8.0 write
@@ -800,9 +887,20 @@ namespace Alpaca4d
             public double Asymmetry;
         }
 
-        public static Matrices Read(Files files, bool sparse)
+        /// <param name="once">K_mat was printed alone (<see cref="Deck.PrintsOnce"/>): K_geo is left
+        /// empty, for the shells and solids to add theirs to.</param>
+        public static Matrices Read(Files files, bool sparse, bool once = false)
         {
             var kMat = sparse ? ReadSparse(files.KMat) : ReadDense(files.KMat);
+            if (once)
+                return new Matrices
+                {
+                    Asymmetry = kMat.Asymmetry(),
+                    KMat = kMat.Symmetrised(),
+                    KGeo = SparseMatrix.FromEntries(kMat.Size, new int[0], new int[0], new double[0], 0),
+                    Dofs = ReadDofs(files.DofsMat),
+                };
+
             var kT = sparse ? ReadSparse(files.KT) : ReadDense(files.KT);
             var dofsMat = ReadDofs(files.DofsMat);
             var dofs = ReadDofs(files.DofsT);
@@ -1650,6 +1748,10 @@ namespace Alpaca4d
 
             /// <summary>The constraint handler the analysis ran with.</summary>
             public string Constraints;
+
+            /// <summary>What solved the two steps, when the matrices were printed sparse: "Mumps", or
+            /// "SuperLU" - with why, when Mumps was there and failed. Null when printed dense.</summary>
+            public string Solver;
         }
 
         /// <summary>
@@ -1730,11 +1832,15 @@ namespace Alpaca4d
             string exportPath = Path.Combine(folder, stem + ".tcl");
             WriteDeck(exportPath, ExportDeck(deck, files, sparse, constraints));
             var (output, error, _) = run(exportPath);
-            outcome.Log = error + output;
+            // An OpenSees without Mumps says so when the deck asks for it; SuperLU solving instead
+            // is what the deck asks for then, as Auto does in Run Analysis.
+            outcome.Log = new SystemEquation("Auto").WithoutExpectedWarnings(error) + output;
 
             var said = Said(error + "\n" + output);
             if (said.TryGetValue("equations", out var n) && int.TryParse(n, out int equations))
                 outcome.Equations = equations;
+            if (said.TryGetValue("solver", out var solver))
+                outcome.Solver = solver;
 
             if (said.ContainsKey("too-large"))
             {
@@ -1752,13 +1858,13 @@ namespace Alpaca4d
                     : "OpenSees could not solve the step to the reference load. See log.";
                 return outcome;
             }
-            if (!said.ContainsKey("done") || !File.Exists(files.KT))
+            if (!said.ContainsKey("done") || !File.Exists(deck.PrintsOnce ? files.KMat : files.KT))
             {
                 outcome.Failure = "OpenSees stopped before printing the stiffness matrices. See log.";
                 return outcome;
             }
 
-            var matrices = Read(files, sparse);
+            var matrices = Read(files, sparse, deck.PrintsOnce);
             outcome.Asymmetry = matrices.Asymmetry;
             if (deck.Shells.Count > 0)
             {
