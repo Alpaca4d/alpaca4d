@@ -31,3 +31,7 @@ Alpaca4d.Test/Approved/*.received.txt
 
 # Licence files made ahead of time. Each works on any machine until its date - keep them out of this public repo.
 Alpaca4d.Utils/data_*.bin
+
+# Python caches, and the fibre output the Moment Curvature example writes next to itself
+__pycache__/
+Tools/Examples/FiberResults/
