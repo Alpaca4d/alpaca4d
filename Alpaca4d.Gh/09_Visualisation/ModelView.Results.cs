@@ -194,7 +194,8 @@ namespace Alpaca4d.Gh
                                shell.Section?.Thickness ?? 0.0);
 
             foreach (var brick in _model.Bricks)
-                BuildModelFace(brick.Mesh, brick.IndexNodes, filter.Matches(brick), displacement, _colours.Of(brick), 0.0);
+                BuildModelFace(brick.Mesh, brick.IndexNodes, filter.Matches(brick), displacement, _colours.Of(brick), 0.0,
+                               Corners(brick));
         }
 
         /// <summary>
@@ -203,7 +204,7 @@ namespace Alpaca4d.Gh
         /// offset it, rather than not at all.
         /// </summary>
         private void BuildModelFace(Mesh source, List<int?> nodes, bool kept, Dictionary<int, Vector3d> displacement,
-                                    Color colour, double thickness)
+                                    Color colour, double thickness, int solidCorners = 0)
         {
             if (source == null) return;
 
@@ -226,6 +227,23 @@ namespace Alpaca4d.Gh
 
             mesh.VertexColors.CreateMonotoneMesh(colour);
             _shaded.Add(mesh);
+            Edges(mesh, nodes, solidCorners);
+        }
+
+        /// <summary>
+        /// How many of a solid element's nodes are its corners, which come first: a ten node
+        /// tetrahedron's six others are on its edges.
+        /// </summary>
+        private static int Corners(IBrick brick) =>
+            brick is Alpaca4d.Element.TenNodeTetrahedron ? 4 : brick.Mesh?.Vertices.Count ?? 0;
+
+        /// <summary>
+        /// An element's edges, to draw: a shell's every one, from its mesh; a solid's - one with
+        /// <paramref name="corners"/> - only those on the outside of the solid.
+        /// </summary>
+        private void Edges(Mesh mesh, List<int?> nodes, int corners)
+        {
+            if (corners > 0 && _solidEdges.Add(mesh, nodes, corners)) return;
             _faceEdges.Add(mesh);
         }
 
@@ -305,7 +323,8 @@ namespace Alpaca4d.Gh
                           midEdge: shell.ElementClass == Alpaca4d.Element.ElementClass.ASDShellT3);
 
             foreach (var brick in _model.Bricks)
-                BuildFace(brick.Mesh, brick.Id, brick.IndexNodes, filter.Matches(brick), Painter(brick), displacement);
+                BuildFace(brick.Mesh, brick.Id, brick.IndexNodes, filter.Matches(brick), Painter(brick), displacement,
+                          solidCorners: Corners(brick));
 
             foreach (var reactions in _shown.Where(x => x.Family == ResultFamily.Reaction))
             {
@@ -816,7 +835,7 @@ namespace Alpaca4d.Gh
 
         /// <summary>A shell or a solid: ghosted, coloured by the result that colours it, or plain.</summary>
         private void BuildFace(Mesh source, int? tag, List<int?> nodes, bool kept, ShownResult painter,
-                               Dictionary<int, Vector3d> displacement, bool midEdge = false)
+                               Dictionary<int, Vector3d> displacement, bool midEdge = false, int solidCorners = 0)
         {
             if (source == null) return;
 
@@ -829,7 +848,7 @@ namespace Alpaca4d.Gh
             }
 
             mesh.VertexColors.Clear();
-            _faceEdges.Add(mesh);
+            Edges(mesh, nodes, solidCorners);
 
             double label = 0.0;
             double[] corners = null;

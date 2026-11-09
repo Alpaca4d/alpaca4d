@@ -41,6 +41,7 @@ namespace Alpaca4d.UI
             Row(layout, DisplayItem.Gravity, "Gravity");
             Row(layout, DisplayItem.Masses, "Masses");
             Row(layout, DisplayItem.Values, "Result values");
+            Row(layout, DisplayItem.Edges, "Element edges");
 
             var reset = new Button { Text = "Reset to defaults" };
             reset.Click += (sender, e) =>

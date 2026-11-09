@@ -69,6 +69,8 @@ namespace Alpaca4d.Gh
         // The elements' own faces, for their edges: with iso-surfaces on, what is shaded is cut
         // into bands, and its wires would draw every cut.
         private readonly List<Mesh> _faceEdges = new List<Mesh>();
+        // A solid's edges: its elements' own, on its outside only (see SolidEdges).
+        private readonly SolidEdges _solidEdges = new SolidEdges();
         private readonly List<Mesh> _ghostMeshes = new List<Mesh>();
         private readonly JoinedLines _ghostCurves = new JoinedLines();
         private readonly JoinedLines _curves = new JoinedLines();
@@ -802,6 +804,7 @@ namespace Alpaca4d.Gh
         {
             _shaded.Clear();
             _faceEdges.Clear();
+            _solidEdges.Clear();
             _ghostMeshes.Clear();
             _ghostCurves.Clear();
             _curves.Clear();
@@ -832,6 +835,7 @@ namespace Alpaca4d.Gh
             _diagramsJoined = Joined.Of(_diagrams);
             _beamSolidsJoined = Joined.Of(_beamSolids);
             _beamEdgesJoined = Joined.Of(_beamEdges);
+            _solidEdges.Join();
             _shaded.Clear();
             _faceEdges.Clear();
             _ghostMeshes.Clear();
@@ -1314,11 +1318,17 @@ namespace Alpaca4d.Gh
                 if (_ghostJoined != null)
                     args.Display.DrawMeshWires(_ghostJoined, ghostLine, 1);
 
+                // Black unless the display settings say otherwise: a softer grey keeps a tower of
+                // thousands of thin members from turning black under its edges.
+                var edges = AlpacaSettings.Colour(DisplayItem.Edges);
+
                 if (_faceEdgesJoined != null)
-                    args.Display.DrawMeshWires(_faceEdgesJoined, Color.Black, edge);
+                    args.Display.DrawMeshWires(_faceEdgesJoined, edges, edge);
+
+                _solidEdges.Draw(args.Display, edges, edge);
 
                 if (_beamEdgesJoined != null)
-                    args.Display.DrawMeshWires(_beamEdgesJoined, Color.Black, edge);
+                    args.Display.DrawMeshWires(_beamEdgesJoined, edges, edge);
             }
 
             if (_diagramsJoined != null)
