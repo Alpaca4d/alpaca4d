@@ -120,6 +120,25 @@ class BucklingCheck
 
         static string Local(double[] x) => x == null ? "" : $"-local {N(x[0])} {N(x[1])} {N(x[2])}";
 
+        /// <summary>The degrees of freedom of every node: 3 for a deck of solids.</summary>
+        public int Ndf = 6;
+
+        /// <summary>As SSPbrick.WriteTcl, with no body force: bottom face counter-clockwise, then the top.</summary>
+        public int Brick(int[] nodes, int mat)
+        {
+            int tag = ++element;
+            elements.Add($"element SSPbrick {tag} {string.Join(" ", nodes)} {mat}\n");
+            return tag;
+        }
+
+        /// <summary>As TenNodeTetrahedron.WriteTcl: corners, then the edge nodes 1-2, 2-3, 3-1, 1-4, 2-4, 3-4.</summary>
+        public int Tetrahedron(int[] nodes, int mat)
+        {
+            int tag = ++element;
+            elements.Add($"element TenNodeTetrahedronStd {tag} {string.Join(" ", nodes)} {mat}\n");
+            return tag;
+        }
+
         public void Tie(string tcl) => ties.Add(tcl + "\n");
 
         /// <summary>As LoadPattern.WriteTcl: its time series, then the pattern.</summary>
@@ -132,7 +151,7 @@ class BucklingCheck
 
         public (List<string> tcl, int patternStart, int nodes) Build()
         {
-            var tcl = new List<string> { "model BasicBuilder -ndm 3 -ndf 6\n" };
+            var tcl = new List<string> { $"model BasicBuilder -ndm 3 -ndf {Ndf}\n" };
             tcl.AddRange(nodes); tcl.AddRange(fixes); tcl.AddRange(materials); tcl.AddRange(sections);
             tcl.AddRange(elements); tcl.AddRange(ties);
             int start = tcl.Count;
@@ -167,7 +186,34 @@ class BucklingCheck
                                        Runner(openSees), constraints);
         if (outcome.Failure != null)
             Console.WriteLine("        (" + outcome.Failure + ")");
+        if (outcome.Solver != null)
+            Solvers[outcome.Solver] = Solvers.TryGetValue(outcome.Solver, out int count) ? count + 1 : 1;
         return outcome;
+    }
+
+    /// <summary>What solved the sparse runs of one OpenSees, and how many.</summary>
+    static readonly Dictionary<string, int> Solvers = new Dictionary<string, int>();
+
+    /// <summary>Whether this OpenSees has Mumps: a build made with it, see Tools/OpenSees.</summary>
+    static bool HasMumps(string openSees)
+    {
+        string deck = Path.Combine(Folder, "mumps_probe.tcl");
+        File.WriteAllText(deck, "if {[catch {system Mumps -matrixType 1}]} { puts \"MUMPS no\" } else { puts \"MUMPS yes\" }\n");
+        var said = Runner(openSees)(deck);
+        return (said.Item1 + said.Item2).Contains("MUMPS yes");
+    }
+
+    /// <summary>
+    /// Mumps solves the sparse decks where this OpenSees has it - or SuperLU, the step again, where
+    /// Mumps failed - and SuperLU where it has not.
+    /// </summary>
+    static void SolvedBy(string openSees)
+    {
+        bool mumps = HasMumps(openSees);
+        Console.WriteLine("Solvers");
+        Console.WriteLine("  " + string.Join(", ", Solvers.Select(kv => $"{kv.Key}: {kv.Value}")));
+        Check(mumps ? "Mumps solved, as this OpenSees has it, or SuperLU where Mumps failed" : "SuperLU solved, as this OpenSees has no Mumps",
+              Solvers.Count > 0 && Solvers.Keys.All(s => mumps ? s == "Mumps" || s.StartsWith("SuperLU, as Mumps failed") : s == "SuperLU"));
     }
 
     // ------------------------------------------------------------------ cases
@@ -232,6 +278,8 @@ class BucklingCheck
         var whole = Run(os, sparse, Column(ColumnSupports["pinned-pinned"].bottom, ColumnSupports["pinned-pinned"].top), 1, 1);
         Check("pinned-pinned, not split: no buckling mode", whole.Failure == null && whole.Factors.Length == 0,
               whole.Factors.Length > 0 ? F(whole.Factors[0]) : "");
+        Check("beams: K_mat and K_mat - K_geo both printed, OpenSees giving the beams' geometric stiffness",
+              !whole.Deck.PrintsOnce && whole.Deck.GeometricInOpenSees == 1);
     }
 
     /// <summary>A portal frame in the XZ plane, HEB 200 columns, IPE 300 beam, out of plane held.</summary>
@@ -505,6 +553,7 @@ class BucklingCheck
         var outcome = Run(os, sparse, new Plate(16, 16, 1, 1, plateFiber).Compressed(P).Deck, 1, 2);
         Check("1 x 1 m, 16 x 16 quads: every ASDShellQ4 run linear, its stress stiffness added",
               outcome.Deck.Shells.Count == 256 && !outcome.Deck.Model.Any(e => e.Contains("-corotational")));
+        Check("shells alone: K_mat printed once", outcome.Deck.PrintsOnce);
         Close("1 x 1 m, 16 x 16 quads, k = 4", outcome.Factors, 0, 4 * unit, 0.002);
         if (outcome.Shapes.Count > 0)
         {
@@ -731,11 +780,136 @@ class BucklingCheck
         outcome = Run(os, sparse, hanging, 4, 1);
         Check("a hanging column buckles under nothing", outcome.Failure == null && outcome.Factors.Length == 0);
 
+        // Printed once, the deck's one solve is the loaded step - of K_mat, from no load.
+        var floating = new Deck { Ndf = 3 };
+        var cube = Enumerable.Range(0, 8).Select(c => floating.Node(c == 1 || c == 2 || c == 5 || c == 6 ? 1 : 0,
+                                                                     c == 2 || c == 3 || c == 6 || c == 7 ? 1 : 0, c >= 4 ? 1 : 0)).ToArray();
+        floating.Brick(cube, floating.Isotropic());
+        floating.Pattern(cube.Skip(4).Select(n => $"load {n} 0 0 {N(-P / 4)}"));
+        outcome = Run(os, sparse, floating, 1, 1);
+        Check("a brick with no support, printed once, is a mechanism",
+              outcome.Deck.PrintsOnce && outcome.Factors.Length == 0 && outcome.Failure != null && outcome.Failure.Contains("mechanism"));
+
         if (!sparse)
         {
             outcome = Run(os, false, SquarePlate(32), 1, 1);
             Check($"dense refuses {outcome.Equations} equations (over {Buckling.DenseLimit})",
                   outcome.Failure != null && outcome.Equations > Buckling.DenseLimit);
+        }
+    }
+
+    // ------------------------------------------------------------------ solids
+
+    /// <summary>
+    /// A square column of solids b wide and L tall, its foot held at every node: k × k × n
+    /// SSPbricks, or each of those bricks cut into six ten node tetrahedra along its diagonal from
+    /// the first corner to the far one - which cuts every face the same way as its neighbour does.
+    /// Loaded by P spread over the top face as a bilinear face shares it, or by its own weight, γ
+    /// per volume, shared among each element's nodes as Assemble shares it.
+    /// </summary>
+    static Deck SolidColumn(double b, double L, int k, int n, bool tetrahedra, double top, double gamma)
+    {
+        var d = new Deck { Ndf = 3 };
+        int mat = d.Isotropic();
+        double dx = b / k, dz = L / n;
+        Func<double, double, double, int> node = (x, y, z) => d.Node(x - b / 2, y - b / 2, z);
+        var loads = new Dictionary<int, double>();
+        Action<int, double> add = (tag, f) => loads[tag] = (loads.TryGetValue(tag, out var v) ? v : 0.0) + f;
+
+        for (int i = 0; i < k; i++)
+            for (int j = 0; j < k; j++)
+                for (int m = 0; m < n; m++)
+                {
+                    double x0 = i * dx, y0 = j * dx, z0 = m * dz;
+                    var corner = new double[8][];
+                    for (int c = 0; c < 8; c++)
+                        corner[c] = new[] { x0 + (c == 1 || c == 2 || c == 5 || c == 6 ? dx : 0), y0 + (c == 2 || c == 3 || c == 6 || c == 7 ? dx : 0), z0 + (c >= 4 ? dz : 0) };
+                    if (!tetrahedra)
+                    {
+                        var tags = corner.Select(p => node(p[0], p[1], p[2])).ToArray();
+                        d.Brick(tags, mat);
+                        foreach (var t in tags)
+                            add(t, -gamma * dx * dx * dz / 8);
+                        continue;
+                    }
+                    foreach (var tet in new[] { new[] { 0, 1, 2, 6 }, new[] { 0, 2, 3, 6 }, new[] { 0, 3, 7, 6 }, new[] { 0, 7, 4, 6 }, new[] { 0, 4, 5, 6 }, new[] { 0, 5, 1, 6 } })
+                    {
+                        var p = tet.Select(c => corner[c]).ToArray();
+                        var tags = p.Select(q => node(q[0], q[1], q[2])).ToList();
+                        foreach (var edge in new[] { new[] { 0, 1 }, new[] { 1, 2 }, new[] { 2, 0 }, new[] { 0, 3 }, new[] { 1, 3 }, new[] { 2, 3 } })
+                        {
+                            double[] s = p[edge[0]], e = p[edge[1]];
+                            tags.Add(node((s[0] + e[0]) / 2, (s[1] + e[1]) / 2, (s[2] + e[2]) / 2));
+                        }
+                        d.Tetrahedron(tags.ToArray(), mat);
+                        double weight = gamma * dx * dx * dz / 6;
+                        for (int a = 0; a < 10; a++)
+                            add(tags[a], -weight * (a < 4 ? -1.0 / 20 : 1.0 / 5));
+                    }
+                }
+
+        for (int i = 0; i <= k; i++)
+            for (int j = 0; j <= k; j++)
+            {
+                d.Fix(node(i * dx, j * dx, 0), "1 1 1");
+                // A bilinear face gives each of its corners a quarter of its share of P.
+                double share = (i == 0 || i == k ? 0.5 : 1.0) * (j == 0 || j == k ? 0.5 : 1.0) / (k * k);
+                if (top != 0.0)
+                    add(node(i * dx, j * dx, L), -top * share);
+            }
+        if (tetrahedra)
+            for (int i = 0; i <= 2 * k; i++)
+                for (int j = 0; j <= 2 * k; j++)
+                    if (i % 2 == 1 || j % 2 == 1)
+                        d.Fix(node(i * dx / 2, j * dx / 2, 0), "1 1 1");
+        d.Pattern(loads.Where(l => l.Value != 0.0).Select(l => $"load {l.Key} 0 0 {N(l.Value)}"));
+        return d;
+    }
+
+    static void Solids(string os, bool sparse)
+    {
+        Console.WriteLine("Solids: their stress stiffness added from the stresses OpenSees reports");
+        const double b = 0.1, L = 2.0, gamma = 78.5;
+        double I = b * b * b * b / 12;
+        // With ν = 0.3 a solid column's E I is E I, the section free to change shape.
+        double euler = Math.PI * Math.PI * E * I / (4 * L * L) / P;
+        double greenhill = 7.837347 * E * I / (gamma * b * b * L * L * L);
+
+        var euler10 = Run(os, sparse, SolidColumn(b, L, 2, 20, false, P, 0.0), 1, 2);
+        Check("2 x 2 x 20 SSPbricks: each noted, none of them changed",
+              euler10.Deck.Solids.Count == 80 && euler10.Deck.Model.Any(e => e.Contains("element SSPbrick")));
+        Check("bricks alone: K_mat printed once", euler10.Deck.PrintsOnce);
+        Close("Euler, fixed-free, 2 x 2 x 20 SSPbricks", euler10.Factors, 0, euler, 0.02);
+        if (euler10.Factors.Length > 1)
+            Check($"two equal modes, one each way: {F(euler10.Factors[0])} and {F(euler10.Factors[1])}",
+                  Math.Abs(euler10.Factors[1] / euler10.Factors[0] - 1) < 1e-6);
+        var euler20 = Run(os, sparse, SolidColumn(b, L, 2, 40, false, P, 0.0), 1, 1);
+        Close("Euler, fixed-free, 2 x 2 x 40 SSPbricks", euler20.Factors, 0, euler, 0.01);
+        if (euler10.Factors.Length > 0 && euler20.Factors.Length > 0)
+        {
+            double richardson = (4 * euler20.Factors[0] - euler10.Factors[0]) / 3;
+            Check($"Euler extrapolated {F(richardson)} = {F(euler)}", Math.Abs(richardson / euler - 1) < 0.005, Pct(richardson, euler));
+        }
+
+        var weight = Run(os, sparse, SolidColumn(b, L, 2, 40, false, 0.0, gamma), 1, 1);
+        Close("Greenhill, under its own weight, 2 x 2 x 40 SSPbricks", weight.Factors, 0, greenhill, 0.01);
+        if (weight.Shapes.Count > 0)
+        {
+            // The foot stays where it is and the head sways furthest.
+            var shape = weight.Shapes[0];
+            var nodes = weight.Deck.Nodes;
+            double foot = shape.Where(s => nodes[s.Key].Z == 0).Max(s => Math.Abs(s.Value[0]) + Math.Abs(s.Value[1]));
+            double head = shape.Where(s => Math.Abs(nodes[s.Key].Z - L) < 1e-9).Max(s => Math.Max(Math.Abs(s.Value[0]), Math.Abs(s.Value[1])));
+            Check("its shape: the foot held, the head swaying 1", foot == 0.0 && Math.Abs(head - 1) < 1e-9, $"foot {foot:g3}, head {head:g6}");
+        }
+
+        var tets = Run(os, sparse, SolidColumn(b, L, 2, 20, true, 0.0, gamma), 1, 1);
+        if (tets.Failure != null && tets.Log.Contains("TenNodeTetrahedronStd"))
+            Console.WriteLine("  [skip] ten node tetrahedra: this OpenSees has no TenNodeTetrahedronStd");
+        else
+        {
+            Check("2 x 2 x 20 bricks cut into 480 ten node tetrahedra, each noted", tets.Deck.Solids.Count == 480 && tets.Deck.Solids.All(s => s.Nodes.Length == 10));
+            Close("Greenhill, under its own weight, ten node tetrahedra", tets.Factors, 0, greenhill, 0.01);
         }
     }
 
@@ -763,13 +937,17 @@ class BucklingCheck
             {
                 bool sparse = Buckling.CanPrintSparse(Folder, Runner(os));
                 Console.WriteLine($"\n=== {os}: matrices printed {(sparse ? "sparse" : "dense")} ===\n");
+                Solvers.Clear();
                 Columns(os, sparse);
                 Portals(os, sparse);
                 Greenhill(os, sparse);
                 Shells(os, sparse);
+                Solids(os, sparse);
                 Ties(os, sparse);
                 Edges(os, sparse);
                 Recorder(os, sparse);
+                if (sparse)
+                    SolvedBy(os);
             }
         }
         finally

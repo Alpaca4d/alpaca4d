@@ -2,6 +2,7 @@
 
     ./run.sh
     OPENSEES="/Applications/OpenSees3.8.0/bin/OpenSees /path/to/newer/OpenSees" ./run.sh
+    ./fallbacks.sh /path/to/OpenSees-with-Mumps   # also as if it had no Mumps, and with Mumps failing
 
 Checks `Alpaca4d.Buckling` and `Alpaca4d.BucklingSolver`, which Linear Buckling Analysis runs.
 OpenSees has no buckling analysis, but it prints its stiffness matrix: with no load that is K_mat,
@@ -26,11 +27,14 @@ component sends it: rewritten, both OpenSees runs, solved in C#, shapes rebuilt 
 | orthotropic plates, 10 : 1, with and without Local X, quads and triangles | the closed form with the stiff axis where Local X puts it |
 | a wall swaying in its own plane, a tube of shells | Euler: what shells softening in their own plane give |
 | a plate of 12 000 equations, sparse | k = 4 |
+| a column of 2 x 2 x 20 and 2 x 2 x 40 SSPbricks, a load on top | Euler, fixed-free, both ways at once, and extrapolated to within 0.5 %: the solids' stress stiffness, taken at each SSPbrick's centre as it takes its own stiffness |
+| the same column under its own weight, of SSPbricks and of ten node tetrahedra (an OpenSees that knows TenNodeTetrahedronStd) | Greenhill, and its shape: the foot held, the head swaying |
 | two cantilevers tied by an equalDOF | the load of one, and the slave head moving and turning as the master |
 | four cantilevers under a rigid diaphragm | weak sway, twist, strong sway |
 | the same with one head offset by a rigid link | the same factors: a chain of ties, so on penalty |
 | a column with no support, a hanging column, a plate of 6371 equations printed dense | a mechanism, nothing to buckle, refused |
 | the shapes on file | an MPCO step per mode, the split nodes numbered after the model's |
+| every run printed sparse | solved by Mumps where the OpenSees has it, by SuperLU where it has not, and by SuperLU again where Mumps failed |
 
 What it caught on the way:
 
