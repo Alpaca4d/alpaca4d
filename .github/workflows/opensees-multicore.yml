@@ -1,7 +1,8 @@
 name: Multi-core OpenSees
 
 # OpenSees with `system Mumps` in the single-process interpreter - 3.8.0, and master for the Ten
-# Node Tetrahedron, which needs OpenSees PR #1833 (16 October 2026): sequential MUMPS
+# Node Tetrahedron, which needs OpenSees PR #1833 (16 October 2026), with printA -binary, OpenSees
+# PR #1859, which writes the stiffness matrix for Linear Buckling: sequential MUMPS
 # (libseq, no MPI) built with OpenMP, so one OpenSees process factorises on several cores.
 # Windows x64 and macOS arm64 are built from the same patches (Tools/OpenSees), checked
 # against UmfPack, timed, and uploaded laid out as an install: bin/ and lib/tcl8.6.
@@ -34,8 +35,9 @@ jobs:
       matrix:
         opensees:
           - { name: "3.8.0", ref: v3.8.0 }
-          # master by its full hash, the commit the Ten Node Tetrahedron's checks were run on
-          - { name: master-d0ac447, ref: d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61, tet10: true }
+          # master 0d8b514 with printA -binary (OpenSees PR #1859, not merged yet), by its full hash:
+          # GitHub fetches it from OpenSees/OpenSees through refs/pull/1859/head
+          - { name: printA-binary-33cca59, ref: 33cca59f0442cad42589b5aab7150af8b7bfec1f, tet10: true, binary: true }
     steps:
       # The patches are LF; a CRLF checkout would not take them.
       - run: git config --global core.autocrlf false
@@ -144,6 +146,15 @@ jobs:
           python solver_check.py --mumps
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      # The matrix written in binary must read back as printA -sparse -ret gives it - on Windows
+      # too, where a file opened as text would turn every 0x0A byte into 0x0D 0x0A.
+      - name: printA -binary
+        if: matrix.opensees.binary
+        shell: pwsh
+        run: |
+          & dist\win\bin\OpenSees.exe Tools/OpenSees/printa-binary-check.tcl $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       # uploaded whatever the checks said, so a failure can be looked into
       - uses: actions/upload-artifact@v4
         if: always()
@@ -161,8 +172,9 @@ jobs:
       matrix:
         opensees:
           - { name: "3.8.0", ref: v3.8.0 }
-          # master by its full hash, the commit the Ten Node Tetrahedron's checks were run on
-          - { name: master-d0ac447, ref: d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61, tet10: true }
+          # master 0d8b514 with printA -binary (OpenSees PR #1859, not merged yet), by its full hash:
+          # GitHub fetches it from OpenSees/OpenSees through refs/pull/1859/head
+          - { name: printA-binary-33cca59, ref: 33cca59f0442cad42589b5aab7150af8b7bfec1f, tet10: true, binary: true }
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
@@ -240,6 +252,10 @@ jobs:
           OPENSEES: ${{ github.workspace }}/dist/mac/bin/OpenSees
         working-directory: Alpaca4d.Test/TenNodeTetrahedron
         run: python solver_check.py --mumps
+
+      - name: printA -binary
+        if: matrix.opensees.binary
+        run: dist/mac/bin/OpenSees Tools/OpenSees/printa-binary-check.tcl "$RUNNER_TEMP"
 
       - uses: actions/upload-artifact@v4
         if: always()

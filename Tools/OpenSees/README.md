@@ -53,9 +53,10 @@ calls, and MSVC's `/openmp` would pull in a second runtime (vcomp) beside Intel'
 ## Building
 
 **GitHub Actions** - push a branch with `Tools/OpenSees/**` changed, or run *Multi-core OpenSees*
-from the Actions tab. Each platform is built twice, from OpenSees 3.8.0 and from master d0ac447eb,
-checked (`SolverChoice/correctness.py`, then `multicore.py` on small and large models, and the
-master builds by `TenNodeTetrahedron/solver_check.py --mumps`) and uploaded as an artifact laid
+from the Actions tab. Each platform is built twice, from OpenSees 3.8.0 and from master 0d8b514 with
+`printA -binary` (33cca59, OpenSees PR #1859, not merged yet), checked (`SolverChoice/correctness.py`,
+then `multicore.py` on small and large models, and the master builds by
+`TenNodeTetrahedron/solver_check.py --mumps` and `printa-binary-check.tcl`) and uploaded as an artifact laid
 out like an OpenSees install, `bin/` and `lib/tcl8.6/init.tcl`, named after the OpenSees it was
 built from. The Windows job also
 fails if `OpenSees.exe` asks for any DLL but Windows' own and `libiomp5md.dll`; the Mac one if
@@ -75,6 +76,17 @@ to master as it is, and a master build since 16 October 2026 is what the Ten Nod
 master d0ac447eb, the commit the ten node tetrahedron's checks were run on:
 
     OPENSEES_REF=d0ac447eb93cbb9f8c8f63e75261dcc10e5c0b61 Tools/OpenSees/build-mac.sh ~/opensees-mumps-master
+
+The one in /Applications/OpenSeesLatest-Mumps-Binary is master 0d8b514 with `printA -binary`, which
+writes the stiffness matrix as raw arrays - 0.3 s instead of 21 s as text for 60 840 equations -
+from the branch of OpenSees PR #1859. GitHub serves that commit from OpenSees/OpenSees through
+`refs/pull/1859/head`, so it is fetched like any other:
+
+    OPENSEES_REF=33cca59f0442cad42589b5aab7150af8b7bfec1f Tools/OpenSees/build-mac.sh ~/opensees-mumps-binary
+
+`printa-binary-check.tcl <folder>` checks that an OpenSees has it: what it writes must read back as
+`printA -sparse -ret` gives it. An OpenSees without it ignores `-binary` and writes text, and the
+check fails.
 
 **A Windows machine** - `Tools\OpenSees\build-windows.bat [work dir] [out dir]`, from the
 *x64 Native Tools Command Prompt for VS 2022* with Intel oneAPI (oneMKL, ifx).
