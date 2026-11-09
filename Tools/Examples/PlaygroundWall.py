@@ -78,9 +78,10 @@ FLOOR = -50.0
 # Principal Stress Lines' inputs, by place, and where its field of lines starts: in the left pier.
 PSL_MODEL, PSL_SEED = 0, 2
 SEED = (1.0, 0.0, 1.75)
-# Model View's results, from 1: Shell stresses is the fourth, and sigma22 the second of its
-# components - the vertical stress, with the shells' Local X along the wall.
-SHELL_STRESSES, SIGMA_22 = 4, 1
+# Model View's results, from 1: Shell stresses is the fifth (after Displacement, Beam forces, Beam
+# stresses and Shell forces), and sigma22 the second of its components - the vertical stress, with
+# the shells' Local X along the wall.
+SHELL_STRESSES, SIGMA_22 = 5, 1
 # The start of the docs lesson, or the whole wall.
 START = System.Environment.GetEnvironmentVariable("START") == "1"
 
