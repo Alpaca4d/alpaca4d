@@ -73,6 +73,9 @@ namespace Alpaca4d
         ///                          layered sections
         ///   axialForce             Beam Forces of trusses - nothing else answers to it, so it
         ///                          costs nothing in a model without them
+        ///   section.deformation    Model View's plastic hinges and Pushover Analysis' Hinges -
+        ///                          the strain and curvatures of every beam section, from which a
+        ///                          fibre section's every strain follows
         ///
         /// Append only, for the same reason as <see cref="NodeResultTypes"/>.
         /// </summary>
@@ -82,6 +85,7 @@ namespace Alpaca4d
             "section.force",
             "section.fiber.stress",
             "axialForce",
+            "section.deformation",
         };
 
         public static readonly IReadOnlyList<string> StaticNodeResults = new[]
@@ -111,14 +115,42 @@ namespace Alpaca4d
             return $"recorder mpco {TclPath.Write(this.FileName)} -N {string.Join(" ", this.NodeResults)} -E {string.Join(" ", this.ElementResults)}\n";
         }
 
-        public static Recorder MpcoStatic(string filePath)
+        public static Recorder MpcoStatic(string filePath, Model model = null)
         {
-            return new Recorder(filePath, StaticNodeResults, DefaultElementResults);
+            return new Recorder(filePath, StaticNodeResults, ElementResultsFor(model));
         }
 
-        public static Recorder MpcoTransient(string filePath)
+        public static Recorder MpcoTransient(string filePath, Model model = null)
         {
-            return new Recorder(filePath, TransientNodeResults, DefaultElementResults);
+            return new Recorder(filePath, TransientNodeResults, ElementResultsFor(model));
+        }
+
+        /// <summary>
+        /// What Run Analysis records in the elements of <paramref name="model"/>: what the result
+        /// components read, and the section deformations as well when a beam is on a fibre section,
+        /// for its plastic hinges. Four numbers a station, which a model of elastic sections has no use for.
+        /// </summary>
+        private static List<string> ElementResultsFor(Model model)
+        {
+            var results = DefaultElementResults.ToList();
+            if (Alpaca4d.Result.PlasticHinges.HasFibreBeams(model))
+                results.Add("section.deformation");
+            return results;
+        }
+
+        /// <summary>
+        /// What Pushover Analysis records: the static set, and the beams' section deformations, for
+        /// their plastic hinges. Not the fibres' stresses unless the model has shells, which read their
+        /// stresses through the thickness from them: a beam on a fibre section answers too, with every
+        /// fibre at every station at every step, and on a frame of 28 beams pushed in 200 steps that
+        /// came to 23 MB of a 24 MB file that nothing reads.
+        /// </summary>
+        public static Recorder MpcoPushover(string filePath, Model model)
+        {
+            var elements = new List<string> { "stresses", "section.force", "section.deformation", "axialForce" };
+            if (model?.Shells != null && model.Shells.Count > 0)
+                elements.Add("section.fiber.stress");
+            return new Recorder(filePath, StaticNodeResults, elements);
         }
 
         public static Recorder MpcoEigen(string filePath)

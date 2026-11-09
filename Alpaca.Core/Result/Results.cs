@@ -461,6 +461,87 @@ namespace Alpaca4d.Result
             return (nNested, mzNested, vyNested, myNested, vzNested, tNested);
         }
 
+        /// <summary>The names OpenSees gives a beam section's deformations that a fibre section's strains follow from.</summary>
+        private static readonly string[] SectionDeformationNames = { "eps", "kappaZ", "kappaY" };
+
+        /// <summary>
+        /// Every beam's section deformations at <paramref name="step"/>, by element tag: for each
+        /// station, from the I end, the axial strain at the section's centroid and its curvatures about
+        /// local z and y - eps, kappaZ and kappaY as OpenSees names them, from which a fibre section's
+        /// every strain follows, eps - y kappaZ + z kappaY. Read from the recorder's
+        /// "section.deformation" group, which Pushover Analysis records, and Run Analysis for a model
+        /// with fibre sections; an exception names what to tick when the file has none.
+        /// </summary>
+        public static Dictionary<int, double[][]> SectionDeformations(Model alpacaModel, int step) =>
+            SectionDeformations(alpacaModel, new[] { step })[0];
+
+        /// <summary>As <see cref="SectionDeformations(Model, int)"/>, at each of <paramref name="steps"/>, the file opened once.</summary>
+        public static List<Dictionary<int, double[][]>> SectionDeformations(Model alpacaModel, IReadOnlyList<int> steps)
+        {
+            const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.deformation";
+            var results = steps.Select(_ => new Dictionary<int, double[][]>()).ToList();
+            string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
+
+            using var h5File = PureHDF.H5File.OpenRead(recorderPath);
+            if (!h5File.LinkExists(BASE))
+                throw new Exception(
+                    "The recorder file holds no section deformations. Pushover Analysis records them; for Run Analysis, " +
+                    "tick \"section.deformation\" in an MPCO Recorder.");
+
+            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>().Where(g => g.Name.Contains("ForceBeamColumn")))
+            {
+                var data = group.Group("DATA");
+                int[] ids = ElementIds(recorderPath, BASE, group);
+                for (int k = 0; k < steps.Count; k++)
+                {
+                    if (!data.LinkExists($"STEP_{steps[k]}"))
+                        throw new Exception($"STEP_{steps[k]} not defined!");
+                    var dataset = data.Dataset($"STEP_{steps[k]}");
+                    long rows = (long)dataset.Space.Dimensions[0];
+                    long cols = (long)dataset.Space.Dimensions[1];
+                    double[,] values = dataset.Read<double>().ToArray2D(rows, cols);
+                    int[][] columns = StationColumns(recorderPath, BASE, group, (int)cols, SectionDeformationNames, 4);
+
+                    for (int r = 0; r < rows; r++)
+                    {
+                        var stations = new double[columns.Length][];
+                        for (int s = 0; s < columns.Length; s++)
+                            stations[s] = columns[s].Select(c => c < 0 ? 0.0 : values[r, c]).ToArray();
+                        results[k][ids[r]] = stations;
+                    }
+                }
+            }
+            return results;
+        }
+
+        /// <summary>
+        /// Where each of <paramref name="names"/> sits in a row of a beam's section result group,
+        /// station by station, read off META/COMPONENTS as <see cref="SectionColumns"/> reads it; -1 for
+        /// one the section does not record. A file without the names is read <paramref name="perStation"/>
+        /// to a station, in the order of the names.
+        /// </summary>
+        private static int[][] StationColumns(string recorderPath, string basePath, PureHDF.IH5Group group, int rowLength,
+                                              string[] names, int perStation) =>
+            GroupInfo(recorderPath, basePath + "/" + group.Name + "#COMPONENTS", () =>
+            {
+                if (!group.LinkExists("META/COMPONENTS"))
+                    return Enumerable.Range(0, rowLength / perStation)
+                                     .Select(s => Enumerable.Range(s * perStation, names.Length).ToArray())
+                                     .ToArray();
+
+                var stations = string.Concat(group.Dataset("META/COMPONENTS").ReadString())
+                                     .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                var columns = new int[stations.Length][];
+                int offset = 0;
+                for (int s = 0; s < stations.Length; s++)
+                {
+                    var recorded = stations[s].Substring(stations[s].LastIndexOf('.') + 1).Split(',');
+                    columns[s] = names.Select(name => Array.IndexOf(recorded, name)).Select(k => k < 0 ? -1 : offset + k).ToArray();
+                    offset += recorded.Length;
+                }
+                return columns;
+            });
+
         /// <summary>The recorder file <see cref="_groupInfo"/> holds what it holds of, as path, size and time written.</summary>
         private static string _groupInfoFile;
 
