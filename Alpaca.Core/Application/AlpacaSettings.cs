@@ -18,7 +18,10 @@ namespace Alpaca4d
         AreaLoads,
         Values,
         Gravity,
-        Masses
+        Masses,
+        /// <summary>The elements' edges, drawn over their colours: black, or softer for a model of
+        /// thousands of thin members, which black edges would turn black.</summary>
+        Edges
     }
 
     /// <summary>
@@ -54,6 +57,7 @@ namespace Alpaca4d
             { DisplayItem.Values, Color.Black },
             { DisplayItem.Gravity, Color.FromArgb(69, 90, 100) },
             { DisplayItem.Masses, Color.FromArgb(109, 76, 65) },
+            { DisplayItem.Edges, Color.Black },
         };
 
         /// <summary>
