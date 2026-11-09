@@ -2,14 +2,16 @@
 //
 // Three rules, all in Alpaca4d.License.License:
 //
-//   1. An analysis is free up to FreeElementLimit elements. Past it, Run Analysis and Natural
-//      Vibration Analysis refuse without a license - checked on every run, where it used to be
-//      checked once every five minutes and let everything through in between.
+//   1. An analysis is free up to FreeElementLimit elements, and so is Model View's drawing of the
+//      model. Past it, Run Analysis, Natural Vibration and Linear Buckling refuse without a license,
+//      and Model View with them - checked on every run, where it used to be checked once every five
+//      minutes and let everything through in between.
 //   2. Topology Optimisation is free up to FreeTopologyElementLimit elements, asking
-//      ValidateLicense with that limit.
-//   3. Some components need a license whatever the model: View Results, Model View, Moment
-//      Curvature, Explorer Inputs, Explorer Record (to write a study) and Non-Linear Optimisation
-//      (to start a run). They ask ValidateFeature.
+//      ValidateLicense with that limit. The design it hands on is flagged IsTopologyDesign, and
+//      FreeLimitFor gives it that limit too: it is analysed and drawn free up to it.
+//   3. Some components need a license whatever the model: View Results, Moment Curvature,
+//      Explorer Inputs, Explorer Record (to write a study) and Non-Linear Optimisation (to start a
+//      run). They ask ValidateFeature.
 //
 // Either refusal opens the License window, but no more than once every five minutes, because a
 // refused component re-solves whenever anything upstream changes.
@@ -94,6 +96,19 @@ class LicenseTest
             Check(topology == 500, "the limit is 500");
             Check(LicenseRules.ValidateLicense(Of(500), false, null, topology), "500 elements run");
             Check(!LicenseRules.ValidateLicense(Of(501), false, null, topology), "501 elements are refused");
+
+            Console.WriteLine("\nNo license file: the design a topology optimisation hands on");
+
+            Check(LicenseRules.FreeLimitFor(Of(90)) == 50, "an ordinary model is analysed free up to 50 elements");
+            var design = Of(90);
+            design.IsTopologyDesign = true;
+            Check(LicenseRules.FreeLimitFor(design) == 500, "a topology design up to 500");
+            Check(LicenseRules.ValidateLicense(design, false, null, LicenseRules.FreeLimitFor(design)), "so a design of 90 elements is analysed");
+            Check(LicenseRules.FreeLimitFor(design.ShallowCopy()) == 500, "and so is Run Analysis's copy of it, for Model View");
+            var big = Of(501);
+            big.IsTopologyDesign = true;
+            Check(!LicenseRules.ValidateLicense(big, false, null, LicenseRules.FreeLimitFor(big)), "a design of 501 elements is refused");
+            Check(LicenseRules.FreeLimitFor(null) == 50, "no model at all gets the ordinary limit");
 
             Console.WriteLine("\nA FreeVersion license that has not expired");
 
