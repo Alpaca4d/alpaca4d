@@ -13,7 +13,9 @@
 # bay at a time. At the corners the grid spans between them as a slab does; near the centre it
 # cantilevers out to its edges. The Section Optimiser, with no design group, sizes every element on
 # its own within the family of the section it starts with, so the grid shows where the material goes.
-# The sections are only a start: choose your own.
+# The beams are rectangular hollow sections, RHS: joined rigidly at every node, they twist as the beams
+# across them bend, and an open section such as an HEA cannot take that torsion at any size - the
+# optimiser never settles. A closed section can. The sections are only a start: choose your own.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -376,9 +378,9 @@ def build(doc):
     bays = slider(grid, "Bays", 2, 20, 10, 0, INPUTS, ALONG_X, gap=10)
     supports = slider(grid, "Supports, corner to centre", 0, 1, 0, 2, INPUTS, BEARINGS)
     start_name = value_list(grid, "Starting section",
-                            [("IPE300", '"IPE300"'), ("HEA300", '"HEA300"'), ("HEB300", '"HEB300"')], 1, INPUTS, ALONG_Y)
+                            [("RHS 300x200x10", '"300x200x10"'), ("RHS 400x200x10", '"400x200x10"'), ("HEA300", '"HEA300"')], 0, INPUTS, ALONG_Y)
     grade = value_list(grid, "Grade", [("S235", '"S235"'), ("S275", '"S275"'), ("S355", '"S355"')], 2, INPUTS, ALONG_Y, gap=10)
-    load = slider(grid, "Node load [kN]", 0, 100, 20, 1, INPUTS, LOADING)
+    load = slider(grid, "Node load [kN]", 0, 100, 7.5, 1, INPUTS, LOADING)
 
     # 2 - Geometry: a line along X and one along Y at every grid line, each cut at every crossing, so
     # that the beams meet at the nodes.
@@ -468,21 +470,24 @@ def build(doc):
     flat(wire(inp(pattern, 1), out(node_load), out(gravity)))
 
     # 6 - The optimiser: no design group, so every element goes to the first section of its family -
-    # the HEAs, for an HEA300 - that holds it, smallest area first. Model View draws the sections it
-    # chose; a second Model View, named Displacement and hidden, how far the grid moves, with a Legend
-    # on the right of the view, hidden with it. Switch Model View off and Displacement and Legend on to
-    # see them.
+    # every RHS, for an RHS 300x200x10 - that holds it, smallest area first. Sizing each element on its
+    # own, a grid takes a few dozen iterations to settle: forty, on the Iterations slider. Model View
+    # draws the sections it chose; a second Model View, named Displacement and hidden, how far the grid
+    # moves, with a Legend on the right of the view, hidden with it. Switch Model View off and
+    # Displacement and Legend on to see them.
     assemble = component(grid, ASSEMBLE, "Assemble Model", None, MODEL, ALONG_X)
     wire(inp(assemble, 0), out(beam))
     wire(inp(assemble, 1), out(support))
     wire(inp(assemble, 2), out(pattern))
     max_utilisation = slider(grid, "MaxUtilisation", 0.5, 1.0, 1.0, 2, MODEL, BEARINGS)
+    iterations = slider(grid, "Iterations", 1, 100, 40, 0, MODEL, BEARINGS, gap=10)
     optimiser = emit(OPTIMISER, "Section Optimiser")
     optimiser.NickName = "Every element"
     open_menus(optimiser)
     grid.put(optimiser, OPTIMISE, ALONG_X)
     wire(inp(optimiser, O_MODEL), out(assemble))
     wire(inp(optimiser, O_MAX_UTILISATION), max_utilisation)
+    wire(inp(optimiser, O_ITERATIONS), iterations)
 
     mass = panel(grid, "Mass", out(optimiser, O_MASS), 150, 60, RESULTS, ALONG_X)
     converged = panel(grid, "Converged", out(optimiser, O_CONVERGED), 150, 30, RESULTS, ALONG_X, gap=10)
@@ -511,7 +516,7 @@ def build(doc):
     group(doc, "4 - Supports", [offset, near, far] + corners + [held, free, support], GREEN)
     group(doc, "5 - Loads", [down, direction, node_load, gravity, pattern], BLUE)
     group(doc, "6 - Every element on its own, within its family",
-          [assemble, max_utilisation, optimiser, mass, converged, history, view, results, legend], YELLOW)
+          [assemble, max_utilisation, iterations, optimiser, mass, converged, history, view, results, legend], YELLOW)
 
     # Only the sized grid draws in Rhino, not the construction lines behind it.
     for obj in doc.Objects:
@@ -528,12 +533,16 @@ def build(doc):
          "through the middle work hardest. Near the centre it cantilevers out to its edges: the "
          "material gathers over the supports and the edges go light.\n\n"
          "The Section Optimiser has no design group, so every element is sized on its own, within the "
-         "family of the section it starts with - the HEAs, for an HEA300 - smallest area first. Model "
-         "View draws the sections it chose; switch it off, and the Model View named Displacement and "
-         "Legend on, for how far the grid moves.\n\n"
+         "family of the section it starts with - every RHS, for an RHS 300x200x10 - smallest area "
+         "first, over up to 40 iterations. Model View draws the sections it chose; switch it off, and "
+         "the Model View named Displacement and Legend on, for how far the grid moves. It checks "
+         "strength only, not deflection.\n\n"
+         "Why hollow sections: joined rigidly at every node, each beam twists as the beams across it "
+         "bend. A closed section takes that torsion; an open one, such as the HEA300 in the list, "
+         "cannot at any size, and the optimiser never settles.\n\n"
          "The sections are only a start: choose your own, or give lines of beams a Design Group each "
          "so that every line ends up with one section.",
-         0, -380, 620, 320)
+         0, -480, 620, 420)
 
 
 def main():
