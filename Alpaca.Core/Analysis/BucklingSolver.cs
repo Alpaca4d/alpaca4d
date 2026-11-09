@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Alpaca4d
 {
@@ -503,18 +504,23 @@ namespace Alpaca4d
 
                 // x̄ = K_mat⁻¹ K_geo x, and K_mat x̄ = y exactly, which makes K_mat-orthonormalising
                 // the block cost no product with K_mat.
-                var xb = new List<double[]>(p);
-                var kx = new List<double[]>(p);
-                for (int j = 0; j < p; j++)
+                // The vectors of the block are independent of one another, and the factor is only
+                // read, so they are solved side by side: on a cylinder of 13 000 equations these
+                // solves were most of the time an analysis took.
+                var solved = new double[p][];
+                Parallel.For(0, p, j =>
                 {
                     var v = new double[n];
-                    factor.Solve(y[j], v, work);
-                    xb.Add(v);
-                    kx.Add((double[])y[j].Clone());
-                }
+                    factor.Solve(y[j], v, new double[n]);
+                    solved[j] = v;
+                });
+                var xb = new List<double[]>(solved);
+                var kx = y.Select(v => (double[])v.Clone()).ToList();
                 Orthonormalise(xb, kx, factor, kGeo, random, work);
 
-                var z = xb.Select(v => Times(kGeo, v)).ToList();   // K_geo x̄
+                var products = new double[p][];
+                Parallel.For(0, p, j => products[j] = Times(kGeo, xb[j]));
+                var z = new List<double[]>(products);   // K_geo x̄
                 var a = new double[p, p];
                 for (int i = 0; i < p; i++)
                     for (int j = 0; j <= i; j++)
