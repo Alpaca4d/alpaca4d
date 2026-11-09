@@ -1,20 +1,20 @@
 #! python3
-# The natural vibration example on tetrahedra: Inigo the dragon, a concrete dragon 5.5 m tall standing
-# on its two feet, in eleven thousand tetrahedra, and the way it vibrates - swaying, wagging its tail,
-# flapping its wings.
+# The tetrahedron example in marble: Michelangelo's Rebellious Slave, 2.13 m tall on its plinth, in
+# twenty eight thousand tetrahedra - how its own weight comes down through it, and how it sways.
 #
-# make.sh, next to it, writes InigoTheDragon.gh straight from this script, without Rhino. It also runs
+# make.sh, next to it, writes RebelliousSlave.gh straight from this script, without Rhino. It also runs
 # in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor (open this file
 # and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
-# Inigo the Dragon is Keenan Crane's, in the public domain (CC0). Grasshopper has no tetrahedral
-# mesher, so the tetrahedra come in as a tetrahedral mesher hands them out, nodes and four node numbers
-# per tetrahedron, read from InigoTheDragon.txt next to this script and kept in the definition.
-# InigoTheDragonMesh.py made that file with gmsh, the wings thickened to a few elements' worth.
+# The Rebellious Slave is Michelangelo's, carved about 1513 for the tomb of Pope Julius II, now in the
+# Louvre. The shape is the SMK's (Statens Museum for Kunst, Copenhagen) scan of its plaster cast KAS86,
+# in the public domain. Grasshopper has no tetrahedral mesher, so the tetrahedra come in as a
+# tetrahedral mesher hands them out, nodes and four node numbers per tetrahedron, read from
+# RebelliousSlave.txt next to this script and kept in the definition. RebelliousSlaveMesh.py made
+# that file with gmsh.
 #
 # The elements are Ten Node Tetrahedra, which bend, and need an OpenSees built from the master branch
-# since 16 October 2026. The soles are held at every node on the ground, edge nodes included. The mass
-# is the concrete's own: no load, no mass point.
+# since 16 October 2026. The plinth is held at every node of its underside, edge nodes included.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -23,9 +23,9 @@ import Rhino
 import Grasshopper
 from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParamWireDisplay
 from Grasshopper.Kernel.Data import GH_Path
-from Grasshopper.Kernel.Special import (GH_Group, GH_Panel, GH_BooleanToggle, GH_NumberSlider)
+from Grasshopper.Kernel.Special import GH_Group, GH_Panel, GH_BooleanToggle, GH_NumberSlider
 from Grasshopper.GUI.Base import GH_SliderAccuracy
-from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Point, GH_MeshFace
+from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Point, GH_MeshFace, GH_Colour
 from Rhino.Geometry import Point3d, MeshFace
 from System.Drawing import PointF, RectangleF, Color
 from System.Reflection import BindingFlags
@@ -45,8 +45,12 @@ CULL_DUPLICATES = "6EAFFBB2-3392-441A-8556-2DC126AA8910"    # Vector > Point > C
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
 TEN_NODE = "1F38CDFC-F909-4F3F-969E-9E2C63F9A321"           # Ten Node Tetrahedron
 SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
+GRAVITY = "4B6FA7FD-9388-4699-B374-B94F94583A53"            # Gravity Load
+LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
+ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
+RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
 NATURAL_VIBRATION = "3B7D2E95-6A41-4C8F-9E1D-5F0A8C27B6D3"  # Natural Vibration Analysis
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
@@ -58,22 +62,43 @@ GREEN = Color.FromArgb(60, 175, 201, 48)
 BLUE = Color.FromArgb(50, 66, 136, 247)
 GREY = Color.FromArgb(40, 42, 45, 49)
 
-DATA = "InigoTheDragon.txt"
+DATA = "RebelliousSlave.txt"
 GROUND = 0.001              # m: a node below this stands on the ground
-MODES = 12                  # how many modes to solve for
-# Which mode Model View opens on, counted from 0 as its Step is: the fourth, both wings flapping together.
-WING = 3
 # The four faces of a tetrahedron, by its corners. Ten Node Tetrahedron reads only the corners and
 # puts them in order itself, so any four faces would do; these make a closed mesh.
 FACES = ((0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0))
 # Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
-# stresses, Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
+# stresses, Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises;
+# and the displacements: Magnitude, Ux, Uy, Uz.
+BRICK_STRESSES, SIGMA_33 = 6, 2
 DISPLACEMENT, MAGNITUDE = 1, 0
-# A mode is read with its largest translation 1, and Model View draws it at scale 1 with its
-# largest movement 8% of the model's diagonal: 0.68 m on this 8.5 m one. 0.4 moves the wing tip by a
-# quarter of a metre; Animate sweeps the scale from 0 to SWEEP and back, which is half a metre.
-DEFORMATION_SCALE = 0.4
-SWEEP = 0.8
+# The range the colours are stretched over, in MPa: from the compression in the legs to none, in eight
+# bands of 0.05 MPa. Fitted to what is drawn it would run from -0.7 MPa, at a few nodes where the
+# plinth is held, to +0.3, and leave the rest of the statue one colour.
+RANGE = "-0.4 To 0"
+MODES = 6                   # how many modes to solve for
+# A mode is read with its largest translation 1, and Model View draws it at scale 1 with its largest
+# movement 8% of the statue's diagonal, 0.19 m.
+DEFORMATION_SCALE = 1.0
+
+# Alpaca4d's palette: the stress from the most compression, orange, to none, a tint of the light blue
+# dark enough for the statue to stand out on a white page; the modes from still, the same tint, to
+# where the statue moves most.
+STRESS_COLOURS = ["#EB6C3F", "#9E35DA", "#4288F7", "#B9D0F6"]
+MODE_COLOURS = ["#B9D0F6", "#4288F7", "#9E35DA", "#EB6C3F"]
+
+
+def colours(param, stops, count):
+    """A colour scale typed into an unwired input: count colours spread evenly between the stops."""
+    rgb = [tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in stops]
+    param.PersistentData.Clear()
+    for k in range(count):
+        t = k / float(count - 1) * (len(rgb) - 1)
+        i = min(int(t), len(rgb) - 2)
+        f = t - i
+        c = [int(round(rgb[i][j] + (rgb[i + 1][j] - rgb[i][j]) * f)) for j in range(3)]
+        param.PersistentData.Append(GH_Colour(Color.FromArgb(255, c[0], c[1], c[2])))
+    return param
 
 
 def read_tetrahedra():
@@ -262,19 +287,6 @@ def toggle(grid, name, value, col, row=None, gap=0):
     return grid.put(t, col, row, gap)
 
 
-def slider(grid, name, lo, hi, value, col, row=None, gap=0):
-    """A whole number slider."""
-    s = GH_NumberSlider()
-    s.CreateAttributes()
-    s.NickName = name
-    s.Slider.Type = GH_SliderAccuracy.Integer
-    s.Slider.DecimalPlaces = 0
-    s.Slider.Minimum = System.Decimal(float(lo))
-    s.Slider.Maximum = System.Decimal(float(hi))
-    s.Slider.Value = System.Decimal(float(value))
-    return grid.put(s, col, row, gap)
-
-
 
 def text(grid, name, value, col, row=None, gap=0, width=90.0):
     """A one-line panel holding a text or a number, such as a material's name."""
@@ -319,6 +331,19 @@ def group(doc, name, objects, colour):
     return g
 
 
+def slider(grid, name, lo, hi, value, col, row=None, gap=0):
+    """A whole number slider."""
+    s = GH_NumberSlider()
+    s.CreateAttributes()
+    s.NickName = name
+    s.Slider.Type = GH_SliderAccuracy.Integer
+    s.Slider.DecimalPlaces = 0
+    s.Slider.Minimum = System.Decimal(float(lo))
+    s.Slider.Maximum = System.Decimal(float(hi))
+    s.Slider.Value = System.Decimal(float(value))
+    return grid.put(s, col, row, gap)
+
+
 def widget(obj, field):
     """One of an Alpaca4d component's menu controls, which it keeps to itself."""
     return obj.GetType().GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(obj)
@@ -334,23 +359,23 @@ def show_result(view, show, component):
     view.Attributes.PerformLayout()
 
 
-# ---------------------------------------------------------------- the dragon
+# ---------------------------------------------------------------- the slave
 
 # Columns, in the order the data flows...
-DATA_, CORNERS, MESHES, NAMES, MATERIAL, ELEMENTS, HEIGHT, TEST, KEEP, UNIQUE, HOLD = range(11)
+DATA_, CORNERS, MESHES, NAMES, MATERIAL, ELEMENTS, HEIGHT, TEST, KEEP, UNIQUE, LOADS = range(11)
 # ...and rows, one per part of the model.
-TETS, SOLES = range(2)
+TETS, SOLES, WEIGHT = range(3)
 
 # The model and its analysis, in a grid of their own to the right.
 MODEL, VIEW, SHOWN = range(3)
-ASSEMBLED, ANALYSED = range(2)
+ASSEMBLED, ANALYSED, MODAL = range(3)
 
 
 def build(doc):
     nodes, tetrahedra = read_tetrahedra()
     g = Grid(doc)
 
-    # 1 - Inigo in tetrahedra, as a tetrahedral mesher hands them out: the nodes, and four node
+    # 1 - The slave in tetrahedra, as a tetrahedral mesher hands them out: the nodes, and four node
     # numbers per tetrahedron, one branch each. Each tetrahedron's corners made into a mesh.
     node_points = component(g, POINT, "Point", "Nodes", DATA_, TETS)
     node_points.PersistentData.Clear()
@@ -374,20 +399,20 @@ def build(doc):
     wire(inp(tet_meshes, 0), out(corners))
     wire(inp(tet_meshes, 1), faces)
 
-    # 2 - Concrete, and the ten node tetrahedra.
-    concrete_values = [text(g, "Concrete", "C30/37", NAMES, TETS),
-                       text(g, "E [kN/m2]", "33000000", NAMES, TETS),
-                       text(g, "G [kN/m2]", "13750000", NAMES, TETS),
-                       text(g, "Poisson", "0.2", NAMES, TETS),
-                       text(g, "Density [kg/m3]", "2500", NAMES, TETS)]
-    concrete = component(g, ND_MATERIAL, "nD", "Concrete", MATERIAL, TETS)
+    # 2 - Carrara marble, and the ten node tetrahedra.
+    concrete_values = [text(g, "Marble", "Carrara marble", NAMES, TETS),
+                       text(g, "E [kN/m2]", "50000000", NAMES, TETS),
+                       text(g, "G [kN/m2]", "20000000", NAMES, TETS),
+                       text(g, "Poisson", "0.25", NAMES, TETS),
+                       text(g, "Density [kg/m3]", "2700", NAMES, TETS)]
+    concrete = component(g, ND_MATERIAL, "nD", "Marble", MATERIAL, TETS)
     for i, source in enumerate(concrete_values):
         wire(inp(concrete, i), source)
     ten = component(g, TEN_NODE, "Ten Node Tetrahedron", None, ELEMENTS, TETS)
     wire(inp(ten, 0), out(tet_meshes))
     wire(inp(ten, 1), out(concrete))
 
-    # 3 - Held at every node on the ground: every element's ten from its Points output, the edge
+    # 3 - Held at every node on the underside of the plinth: every element's ten from its Points output, the edge
     # nodes with the corners, in one list; those below GROUND, once each.
     model_nodes = component(g, POINT, "Point", "Element nodes", ELEMENTS, SOLES)
     flat(wire(model_nodes, out(ten, 1)))
@@ -404,73 +429,112 @@ def build(doc):
     number(inp(sole_nodes, 1), GROUND)
     held = toggle(g, "Held", True, UNIQUE, SOLES)
     free = toggle(g, "Free", False, UNIQUE, SOLES)
-    support = component(g, SUPPORT, "Support", "Held soles", HOLD, SOLES)
+    support = component(g, SUPPORT, "Support", "Held plinth", LOADS, SOLES)
     wire(inp(support, 0), out(sole_nodes))
     for i in (1, 2, 3):
         wire(inp(support, i), held)
     for i in (4, 5, 6):
         wire(inp(support, i), free)
 
-    right = g.arrange(0, 0, stages=(NAMES, HEIGHT, HOLD))
+    # 4 - Its own weight.
+    gravity = component(g, GRAVITY, "Gravity Load", None, UNIQUE, WEIGHT)
+    pattern = component(g, LOAD_PATTERN, "Load Pattern", None, LOADS, WEIGHT)
+    flat(wire(inp(pattern, 1), out(gravity)))
 
-    # 4 - Assemble, with no load: the mass comes from the concrete's density.
+    right = g.arrange(0, 0, stages=(NAMES, HEIGHT, LOADS))
+
+    # 5 - Assemble, solve, and the vertical stress drawn over the statue.
     m = Grid(doc)
     assemble = component(m, ASSEMBLE, "Assemble Model", None, MODEL, ASSEMBLED)
     flat(wire(inp(assemble, 0), out(ten)))
     flat(wire(inp(assemble, 1), out(support)))
+    flat(wire(inp(assemble, 2), out(pattern)))
+    # Nodes closer than this are welded into one: the 1 cm default is half an element here, and would
+    # weld an edge's middle node to its corners.
+    number(inp(assemble, 5), 0.0001)
     view = component(m, MODEL_VIEW, "Model View", None, VIEW, ASSEMBLED)
     wire(inp(view, 0), out(assemble))
 
-    # 5 - The first MODES modes, and one of them drawn over the dragon.
-    vibration = component(m, NATURAL_VIBRATION, "Natural Vibration Analysis", None, MODEL, ANALYSED)
-    wire(inp(vibration, 0), out(assemble))
-    inp(vibration, 1).PersistentData.Clear()
-    inp(vibration, 1).PersistentData.Append(GH_Integer(MODES))
-    mode = slider(m, "Mode, from 0", 0, MODES - 1, WING, MODEL, ANALYSED)
-    results = component(m, MODEL_VIEW, "Model View", None, VIEW, ANALYSED)
-    wire(inp(results, 0), out(vibration))
-    wire(inp(results, 1), mode)
-    widget(results, "_ckDeformed").Active = True
-    scale = widget(results, "_slDeformScale")
-    scale.MaxValue = SWEEP
-    scale.Value = DEFORMATION_SCALE
+    settings = component(m, ANALYSIS_SETTINGS, "Analysis Settings", None, MODEL, ANALYSED)
+    run = component(m, RUN_ANALYSIS, "Run Analysis", None, MODEL, ANALYSED)
+    wire(inp(run, 0), out(assemble))
+    wire(inp(run, 1), out(settings))
+    results = component(m, MODEL_VIEW, "Model View", "Vertical stress", VIEW, ANALYSED)
+    wire(inp(results, 0), out(run))
+    colours(inp(results, 3), STRESS_COLOURS, 8)
     widget(results, "_ckExtruded").Active = False
     widget(results, "_ckReleases").Active = False
-    show_result(results, DISPLACEMENT, MAGNITUDE)
-    legend = component(m, LEGEND, "Legend", None, SHOWN, ANALYSED)
-    legend_title = text(m, "Title", "Mode shape, largest translation 1", SHOWN, ANALYSED, width=160.0)
+    widget(results, "_ckBands").Active = True
+    # With the elements' edges, so that the tetrahedra show: without them the statue reads as a scan,
+    # not as a model. Display settings' Element edges colour softens them on 28 000 tetrahedra.
+    widget(results, "_ckWires").Active = True
+    show_result(results, BRICK_STRESSES, SIGMA_33)
+    stress_range = text(m, "Range [MPa]", RANGE, MODEL, ANALYSED, width=110.0)
+    if RANGE:
+        wire(inp(results, 4), stress_range)
+    legend = component(m, LEGEND, "Legend", "Vertical stress legend", SHOWN, ANALYSED)
+    legend_title = text(m, "Title", "Vertical stress [MPa]", SHOWN, ANALYSED, width=140.0)
     wire(inp(legend, 0), legend_title)
     wire(inp(legend, 1), out(results, 3))
     wire(inp(legend, 2), out(results, 4))
-    frequencies = readout(m, "Frequencies [Hz]", out(vibration, 3), SHOWN, ANALYSED, width=160.0, height=240.0)
     info = readout(m, "What is drawn", out(results, 2), SHOWN, ANALYSED, width=300.0, height=40.0)
-    log = readout(m, "OpenSees log", out(vibration, 4), SHOWN, ANALYSED, width=300.0, height=140.0)
+    log = readout(m, "OpenSees log", out(run, 1), SHOWN, ANALYSED, width=300.0, height=140.0)
+
+    # 6 - The first MODES modes, and the one Mode picks drawn over the statue.
+    vibration = component(m, NATURAL_VIBRATION, "Natural Vibration Analysis", None, MODEL, MODAL)
+    wire(inp(vibration, 0), out(assemble))
+    inp(vibration, 1).PersistentData.Clear()
+    inp(vibration, 1).PersistentData.Append(GH_Integer(MODES))
+    mode = slider(m, "Mode, from 0", 0, MODES - 1, 0, MODEL, MODAL)
+    modal = component(m, MODEL_VIEW, "Model View", "Mode shape", VIEW, MODAL)
+    wire(inp(modal, 0), out(vibration))
+    wire(inp(modal, 1), mode)
+    colours(inp(modal, 3), MODE_COLOURS, 9)
+    widget(modal, "_ckDeformed").Active = True
+    widget(modal, "_slDeformScale").Value = DEFORMATION_SCALE
+    widget(modal, "_ckExtruded").Active = False
+    widget(modal, "_ckReleases").Active = False
+    widget(modal, "_ckWires").Active = True
+    show_result(modal, DISPLACEMENT, MAGNITUDE)
+    # A mode's size is its own: read with its largest translation 1, in m, its legend runs 0 to 1.
+    unit = modal.GetType().GetMethod("UnitOf", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(
+        modal, System.Array[System.Object]([DISPLACEMENT, MAGNITUDE]))
+    unit.Value = 2
+    mode_legend = component(m, LEGEND, "Legend", "Mode shape legend", SHOWN, MODAL)
+    mode_title = text(m, "Mode title", "Mode shape, largest movement 1", SHOWN, MODAL, width=180.0)
+    wire(inp(mode_legend, 0), mode_title)
+    wire(inp(mode_legend, 1), out(modal, 3))
+    wire(inp(mode_legend, 2), out(modal, 4))
+    frequencies = readout(m, "Frequencies [Hz]", out(vibration, 3), SHOWN, MODAL, width=160.0, height=130.0)
 
     m.arrange(right + 160, 0)
 
-    group(doc, "1 - Inigo the dragon in tetrahedra: nodes, and four nodes per tetrahedron",
+    group(doc, "1 - The Rebellious Slave in tetrahedra: nodes, and four nodes per tetrahedron",
           [node_points, corner_numbers, faces, corners, tet_meshes], ORANGE)
-    group(doc, "2 - Concrete, and Ten Node Tetrahedra: they need an OpenSees from master",
+    group(doc, "2 - Marble, and Ten Node Tetrahedra: they need an OpenSees from master",
           [concrete, ten] + concrete_values, PURPLE)
-    group(doc, "3 - Held at every node on the soles, edge nodes included",
+    group(doc, "3 - Held at every node under the plinth, edge nodes included",
           [model_nodes, height, on_ground, soles, sole_nodes, held, free, support], GREEN)
-    group(doc, "4 - Assemble Model: no load, the mass is the concrete's", [assemble, view], BLUE)
-    group(doc, "5 - The first 12 modes, and the one picked drawn over the dragon",
-          [vibration, mode, results, legend, legend_title, frequencies, info, log], GREY)
+    group(doc, "4 - Its own weight", [gravity, pattern], RED)
+    group(doc, "5 - Assemble Model, solve, and the vertical stress over the statue",
+          [assemble, view, settings, run, stress_range, results, legend, legend_title, info, log], BLUE)
+    group(doc, "6 - Its first six modes, and the one picked drawn over the statue",
+          [vibration, mode, modal, mode_legend, mode_title, frequencies], GREY)
 
-    # Only the Model View after Natural Vibration draws the dragon; the one after Assemble Model and the
-    # construction geometry stay out of the viewport. Show that one's preview to see the elements and
-    # the supports.
+    # Only the stress view draws the statue; the other views and the construction geometry stay out
+    # of the viewport. Show the mode's preview, and hide the stress's, to see the statue sway.
+    shown = (results.InstanceGuid, legend.InstanceGuid)
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
-        if hasattr(obj, "Hidden") and obj.InstanceGuid != results.InstanceGuid and obj.InstanceGuid != legend.InstanceGuid:
+        if hasattr(obj, "Hidden") and obj.InstanceGuid not in shown:
             obj.Hidden = True
 
-    note(doc, "Inigo the dragon",
-         "Inigo the dragon, in tetrahedra, and how it vibrates.\n\n"
-         "A solid concrete dragon 5.5 m tall, standing on its two feet: {0} tetrahedra on {1} corners, "
-         "{2:.1f} m3 or {3:.1f} t. Inigo is Keenan Crane's dragon, in the public domain (CC0); its wings "
-         "were thickened by 9 cm, so that they could be meshed.\n\n"
+    note(doc, "The Rebellious Slave",
+         "Michelangelo's Rebellious Slave, in tetrahedra.\n\n"
+         "A marble figure 2.13 m tall on its plinth, under its own weight: {0} tetrahedra on {1} corners, "
+         "{2:.2f} m3 or {3:.0f} kg. Michelangelo carved it about 1513 for the tomb of Pope Julius II; it is in the "
+         "Louvre. The shape is the SMK's (Statens Museum for Kunst) scan of its plaster cast KAS86, in the "
+         "public domain.\n\n"
          "1. Grasshopper has no tetrahedral mesher, so the tetrahedra come as a mesher writes them: "
          "the nodes, and four node numbers per tetrahedron. List Item and Construct Mesh make each "
          "into a four vertex mesh. They were made with gmsh; TetGen, gmsh or any other mesher's "
@@ -478,15 +542,16 @@ def build(doc):
          "2. Ten Node Tetrahedron: four corners and a node in the middle of each edge, so it bends. "
          "It needs an OpenSees built from the master branch since 16 October 2026 (Alpaca4d > "
          "Settings > Set OpenSees Executable).\n"
-         "3. A support holds only the node at its point, so the soles are held at every node on "
-         "the ground, the edge nodes too: Points gives every element's ten.\n"
-         "4. No load: Natural Vibration takes the mass from the concrete's density.\n"
-         "5. Mode picks the mode to draw, 0 being the first. The dragon sways "
-         "forward and back at 7.7 Hz (0), side to side at 22 Hz (1), wags its tail at 42 Hz (2), and "
-         "flaps its wings together at 59 Hz (3) and against each other at 60 Hz (4). Tick Animate "
-         "under Display, in the Model View after Natural Vibration, to watch it move. A mode has no "
-         "size of its own: it is read with its largest translation 1, so its numbers say where the dragon moves most, not by how much.".format(len(tetrahedra), len(nodes), volume(nodes, tetrahedra), 2.5 * volume(nodes, tetrahedra)),
-         0, -440, 640, 370)
+         "3. A support holds only the node at its point, so the plinth is held at every node of its "
+         "underside, the edge nodes too: Points gives every element's ten.\n"
+         "4. Its own weight, from the marble's density.\n"
+         "5. The vertical stress, in iso-surfaces of 0.05 MPa, over -0.4 to 0: its weight comes down through the "
+         "legs and the rough stone behind them into the plinth, in compression. Clear Range to see all of it, and "
+         "pick another result from the Results menu.\n"
+         "6. Its first six modes: Mode picks one, 0 being the first. Show that Model View's preview, and "
+         "hide the stress's, to see it.".format(len(tetrahedra), len(nodes), volume(nodes, tetrahedra),
+                                                 2700 * volume(nodes, tetrahedra)),
+         0, -420, 640, 350)
 
 
 def main():
@@ -494,7 +559,7 @@ def main():
     build(doc)
     doc.NewSolution(False)
     Grasshopper.Instances.ActiveCanvas.Refresh()
-    print("Inigo the dragon built.")
+    print("The Rebellious Slave built.")
 
 
 if __name__ == "__main__":

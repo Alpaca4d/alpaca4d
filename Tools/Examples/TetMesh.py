@@ -1,5 +1,5 @@
 """Fills a closed triangle surface with tetrahedra, with gmsh, and writes them for the tetrahedron
-examples to read: SpotTheCowMesh.py, FemurMesh.py and InigoTheDragonMesh.py use it.
+examples to read: SpotTheCowMesh.py, FemurMesh.py and RebelliousSlaveMesh.py use it.
 
 gmsh (https://gmsh.info, `brew install gmsh`) is run from its command line. Standard library only.
 
