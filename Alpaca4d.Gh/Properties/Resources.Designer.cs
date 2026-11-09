@@ -1283,6 +1283,16 @@ namespace Alpaca4d.Gh.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
+        public static System.Drawing.Bitmap Pushover_Analysis__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Pushover_Analysis__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
         public static System.Drawing.Bitmap Interaction_Domain__Alpaca4d_ {
             get {
                 object obj = ResourceManager.GetObject("Interaction_Domain__Alpaca4d_", resourceCulture);
