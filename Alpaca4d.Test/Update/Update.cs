@@ -179,6 +179,7 @@ class UpdateTest
               Same(AlpacaSettings.Colour(DisplayItem.AreaLoads), AlpacaSettings.DefaultColour(DisplayItem.AreaLoads)),
               "the old defaults in an older file give way to the new ones");
         Check(Same(AlpacaSettings.Colour(DisplayItem.SectionNames), Color.Black), "a colour picked in it is kept");
+        Check(Same(AlpacaSettings.Colour(DisplayItem.Edges), Color.Black), "a file without an edge colour draws the edges black");
 
         AlpacaSettings.SetColour(DisplayItem.LineLoads, Color.FromArgb(1, 2, 3));
         string saved = File.ReadAllText(mine);
