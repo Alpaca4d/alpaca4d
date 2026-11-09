@@ -159,6 +159,8 @@ namespace Alpaca4d.Gh
 
         internal MenuCheckBox _ckBands;
         internal MenuCheckBox _ckValues;
+        internal MenuCheckBox _ckHinges;
+        internal MenuSlider _slHingeSize;
 
         // ── Elements ─────────────────────────────────────────────────────────
         internal MenuCheckBox _ckExtruded;
@@ -191,6 +193,7 @@ namespace Alpaca4d.Gh
         private MenuStaticText _txTextSize;
         private MenuStaticText _txAxesSize;
         private MenuStaticText _txReleaseSize;
+        private MenuStaticText _txHingeSize;
 
         // The Loads menu, which the LoadPattern input is drawn in.
         private GH_ExtendableMenu _loadsMenu;
@@ -349,6 +352,14 @@ namespace Alpaca4d.Gh
             _ckValues = new MenuCheckBox(3, "Values", "Show values");
             resultsPanel.AddControl(_ckBands);
             resultsPanel.AddControl(_ckValues);
+
+            // Beams on fibre sections: where they have yielded at the step drawn. See ModelView.Hinges.cs.
+            _ckHinges = new MenuCheckBox(4, "Hinges", "Plastic hinges");
+            _slHingeSize = new MenuSlider(3, "HingeSize", 0.1, 5.0, 1.0, 1);
+            _txHingeSize = Caption("Hinge size");
+            resultsPanel.AddControl(_ckHinges);
+            resultsPanel.AddControl(_txHingeSize);
+            resultsPanel.AddControl(_slHingeSize);
 
             resultsMenu.AddControl(resultsPanel);
             resultsMenu.Expand();
@@ -523,7 +534,7 @@ namespace Alpaca4d.Gh
             foreach (var widget in new GH_Attr_Widget[]
                      {
                          _ckDeformed, _slDeformScale, _slDiagramScale, _ddLayer, _ddAxes, _ddReaction, _slArrowScale, _ckBands,
-                         _ckExtruded, _ddColourBy
+                         _ckExtruded, _ddColourBy, _ckHinges
                      })
                 Rebuild(widget);
 
@@ -531,7 +542,7 @@ namespace Alpaca4d.Gh
                      {
                          _ckValues, _ckWires, _slTextSize,
                          _ckNodeIds, _ckElementIds, _ckSectionNames, _ckLocalAxes, _slAxesSize, _ckReleases, _slReleaseSize,
-                         _ckShowLoads, _ckShowLoadValues, _slLoadScale, _ckShowSupports, _slSupportScale
+                         _ckShowLoads, _ckShowLoadValues, _slLoadScale, _ckShowSupports, _slSupportScale, _slHingeSize
                      })
                 Redraw(widget);
         }
@@ -642,6 +653,7 @@ namespace Alpaca4d.Gh
             Show(Labelled, _txTextSize, _slTextSize);
             Show(_ckLocalAxes?.Active ?? false, _txAxesSize, _slAxesSize);
             Show(_ckReleases?.Active ?? false, _txReleaseSize, _slReleaseSize);
+            Show(_ckHinges?.Active ?? false, _txHingeSize, _slHingeSize);
 
             // Nothing is animating a shape that is no longer being deformed.
             if (!deformed && (_ckAnimate?.Active ?? false))
@@ -933,6 +945,7 @@ namespace Alpaca4d.Gh
 
             _fieldsUsed.Clear();
             bool ok = ticked.Count == 0 ? SolveModel(DA, step) : SolveResults(DA, step, ticked);
+            SolveHinges(step);
 
             // A result or a component unticked lets go of what was read for it.
             foreach (var key in _fieldCache.Keys.Where(x => !_fieldsUsed.Contains(x)).ToList())
@@ -1346,6 +1359,10 @@ namespace Alpaca4d.Gh
             // See-through too, and over the shells they stand off.
             if (_ckShowLoads?.Active ?? false)
                 Loads().DrawSheets(args);
+
+            // Over everything shaded: a hinge stands inside the member it marks.
+            if (_ckHinges?.Active ?? false)
+                DrawHinges(args);
         }
 
         public override void DrawViewportWires(IGH_PreviewArgs args)
