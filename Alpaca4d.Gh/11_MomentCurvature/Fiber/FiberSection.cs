@@ -60,7 +60,10 @@ namespace Alpaca4d.Gh
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.Register_GenericParam("FiberSection", "FiberSection", "The fibre section. Feed it to Moment Curvature, or to a beam element that takes a fibre section.");
+            pManager.Register_GenericParam("FiberSection", "FiberSection",
+                "The fibre section. Feed it to Moment Curvature or Interaction Domain, or to the Section of a ForceBeamColumn for a beam " +
+                "that yields where its fibres do, as Pushover Analysis needs. On a beam its y and z are the beam's local y and z, and the " +
+                "beam's axis runs through the area centroid, where the arrows are drawn.");
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)

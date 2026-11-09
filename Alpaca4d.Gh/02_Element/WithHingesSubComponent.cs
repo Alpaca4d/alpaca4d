@@ -75,6 +75,16 @@ namespace Alpaca4d.Gh
             Alpaca4d.Generic.IUniaxialSection section = null;
             if (!DA.GetData(1, ref section)) return;
 
+            // Its hinges are elastic sections made from this one, with the released stiffnesses
+            // scaled down; there is no such thing to make from fibres.
+            if (section is Alpaca4d.Section.FiberSection)
+            {
+                msg = "WithHinges releases its ends with elastic hinge sections made from the section, which a fibre section cannot give. " +
+                      "Use ForceBeamColumn for a fibre section: it yields wherever its fibres do, ends included.";
+                level = GH_RuntimeMessageLevel.Error;
+                return;
+            }
+
             Vector3d zAxis = Vector3d.Zero;
             if (DA.GetData(3, ref zAxis))
             {

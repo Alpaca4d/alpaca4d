@@ -191,13 +191,13 @@ namespace Alpaca4d.Gh
                 var recorder = new Alpaca4d.Recorder();
                 if (settings.Analysis.Type == Analysis.AnalysisType.Static)
                 {
-                    recorder = Alpaca4d.Recorder.MpcoStatic(recorderName);
+                    recorder = Alpaca4d.Recorder.MpcoStatic(recorderName, model);
                     analysisModel.IsStatic = true;
                 }
 
                 if (settings.Analysis.Type == Analysis.AnalysisType.Transient)
                 {
-                    recorder = Alpaca4d.Recorder.MpcoTransient(recorderName);
+                    recorder = Alpaca4d.Recorder.MpcoTransient(recorderName, model);
                     analysisModel.IsTransient = true;
                 }
 
