@@ -2,9 +2,8 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 index 78e499a2b..2052e1775 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -702,6 +702,38 @@ target_link_libraries(OpenSees
-   Eigen3::Eigen
- )
+@@ -704,5 +704,37 @@
+ 
  
 +#
 +# system Mumps in the single-process interpreter: sequential MUMPS (libseq, no MPI)
@@ -38,9 +37,9 @@ index 78e499a2b..2052e1775 100644
 +    endif()
 +endif()
 +
- 
  #
  # OpenSeesSP Tcl Parallel Interpreter
+ #
 diff --git a/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp b/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp
 index 7ae5e19d0..6a8aaa60a 100644
 --- a/SRC/system_of_eqn/linearSOE/mumps/MumpsSOE.cpp
