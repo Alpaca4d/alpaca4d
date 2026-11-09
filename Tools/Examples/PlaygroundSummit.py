@@ -18,8 +18,10 @@
 # takes without a license. The Playground's lesson (assets/site/playground/summit.js in the website)
 # draws its snippets from this definition, read by Tools/GhCanvas, and hands this file out at the end.
 #
-# The eighth group, not a round of the lesson, analyses the design and colours it by Von Mises
-# stress. It is disabled: past 50 elements Run Analysis needs a license, and the design has about 90.
+# The eighth group, not a round of the lesson, analyses the design once the run has stopped and
+# colours it by Von Mises stress. The design has about 90 bricks, past the 50 elements Run Analysis
+# and Model View take without a license, but a design that came out of Topology Optimisation is
+# analysed and drawn free up to the 500 the optimisation took.
 #
 # The hand checks: the bridge keeps the deck, 30 x 0.192 m3 x 2.5 t/m3 = 14.4 t, and a quarter of the
 # rest, 32.4 t: 46.8 t of the block's 144 t. An arch rising f = 3.8 m from the foot of the rock to the
@@ -475,13 +477,12 @@ def build(doc):
     wire(inp(topology, T_RUN), run)
     wire(inp(topology, T_STEP), step)
 
-    # 8 - The design analysed, coloured by Von Mises stress: disabled, as past 50 elements Run
-    # Analysis needs a license.
+    # 8 - The design analysed, coloured by Von Mises stress, once the run has stopped and AlpacaModel
+    # has it. Free, as a topology design, up to 500 elements.
     settings = component(grid, ANALYSIS_SETTINGS, "Analysis Settings", None, SETTINGS)
     analysis = component(grid, RUN_ANALYSIS, "Run Analysis", None, RUN, ROCKS)
     wire(inp(analysis, 0), out(topology, T_ALPACA_MODEL))
     wire(inp(analysis, 1), out(settings))
-    analysis.Locked = True
     stresses = component(grid, MODEL_VIEW, "Model View", "Von Mises", VIEW)
     wire(inp(stresses, 0), out(analysis))
     widget(stresses, "_ckExtruded").Active = False
@@ -501,7 +502,7 @@ def build(doc):
     group(doc, "5 - Assemble", [assemble], BLUE)
     group(doc, "6 - What it keeps", [keep, fraction], YELLOW)
     group(doc, "7 - Topology Optimisation", [run, step, topology], GREY)
-    group(doc, "8 - The design, analysed: needs a license past 50 elements - enable Run Analysis once the run has stopped",
+    group(doc, "8 - The design, analysed once the run has stopped",
           [settings, analysis, stresses], PURPLE)
 
     # Only the optimised surface, and the design's stresses once analysed, draw in Rhino.
