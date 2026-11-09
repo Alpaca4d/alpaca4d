@@ -1666,8 +1666,16 @@ namespace Alpaca4d
             {
                 if (item.Type == ElementType.Beam)
                 {
-                    crossSections.Add(((IBeam)item).Section);
-                    materials.Add(((IBeam)item).Section.Material);
+                    var section = ((IBeam)item).Section;
+                    crossSections.Add(section);
+
+                    // A fibre section names its fibres' materials. Its Material is a stand-in for
+                    // the rest of Alpaca4d to read a modulus and a density off, and OpenSees never
+                    // sees it.
+                    if (section is Alpaca4d.Section.FiberSection fiberSection)
+                        materials.AddRange(fiberSection.Materials);
+                    else
+                        materials.Add(section.Material);
                 }
                 else if (item.Type == ElementType.Shell)
                 {

@@ -43,9 +43,15 @@ namespace Alpaca4d.Section
         }
         public string WriteTcl()
         {
+            return WriteTcl(0.0, 0.0);
+        }
+
+        /// <summary>The fibres, with <paramref name="dy"/> and <paramref name="dz"/> taken off their y and z.</summary>
+        public string WriteTcl(double dy, double dz)
+        {
             var sb = new StringBuilder();
-            foreach(var fiber in this.Fibers)
-                sb.Append(fiber.WriteTcl());
+            foreach (var fiber in this.Fibers)
+                sb.Append(fiber.WriteTcl(dy, dz));
             return sb.ToString();
         }
     }

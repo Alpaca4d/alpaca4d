@@ -959,8 +959,10 @@ namespace Alpaca4d.Result
 
             // One group per element class, named <classTag>-<className>[<rule>:<index>:<header>].
             // Enumerated rather than named: the index is handed out in order of discovery, so it is
-            // not a stable label, and a model can hold quads and triangles at once.
-            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>())
+            // not a stable label, and a model can hold quads and triangles at once. Shells only: a
+            // beam on a fibre section answers section.fiber.stress too, with its own layout.
+            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>()
+                                        .Where(group => group.Name.IndexOf("Shell", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 if (!group.LinkExists("DATA") || !group.LinkExists("ID") || !group.LinkExists("META"))
                     continue;

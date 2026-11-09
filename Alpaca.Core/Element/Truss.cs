@@ -123,6 +123,10 @@ namespace Alpaca4d.Element
         /// </summary>
         public string Problem()
         {
+            // A truss is written as one uniaxial material over the section's area. A fibre section
+            // has a material per fibre, and its Material is only a stand-in that OpenSees never sees.
+            if (this.Section is Alpaca4d.Section.FiberSection)
+                return "A truss takes one material over its area, so it cannot take a fibre section. Use a beam (ForceBeamColumn) for a fibre section, or give the truss an elastic section.";
             if (!(this.Section.Area > 0.0))
                 return "A truss needs a section with an area greater than zero.";
             if (this.WorksIn == AxialBehaviour.Tension && this.Prestress < 0.0)
