@@ -52,6 +52,11 @@
 #   STRUCTURE=outrigger    a braced core, super columns, outriggers and a tuned mass damper, after Taipei 101
 #   STRUCTURE=diagrid      a diagrid round a concrete core, after the Guangzhou IFC
 #
+# and a concrete building pushed over, its beams and columns fibre sections that crack and yield:
+#
+#   STRUCTURE=pushover     a small concrete building, L-shaped, a tall ground storey and a top storey
+#                          set back, pushed sideways to 3% drift
+#
 # make.sh, next to it, writes each straight from this script, without Rhino:
 #     STRUCTURE=hall ./make.sh Structures.py TrussRoofHall.gh
 # It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
@@ -70,11 +75,11 @@ import Rhino
 import Grasshopper
 from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParameterSide, GH_ParamAccess
 from Grasshopper.Kernel.Parameters.Hints import GH_IntegerHint_CS, GH_Point3dHint, GH_Vector3dHint
-from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_String, GH_Boolean, GH_Vector, GH_Colour, GH_Interval, GH_StructurePath
+from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_String, GH_Boolean, GH_Vector, GH_Colour, GH_Interval, GH_StructurePath, GH_Point
 from Grasshopper.Kernel.Data import GH_Path
 from Grasshopper.Kernel.Special import GH_NumberSlider, GH_Group, GH_Panel
 from Grasshopper.GUI.Base import GH_SliderAccuracy
-from Rhino.Geometry import Vector3d, Interval
+from Rhino.Geometry import Vector3d, Interval, Point3d
 from System.Drawing import PointF, RectangleF, Color
 
 # Grasshopper
@@ -139,6 +144,18 @@ LINK = "5E9C2F84-1D67-4A03-9B58-C4F2E7A06D31"               # Link
 UNIAXIAL = "4F1E13F9-0B35-4F8F-A324-883CEA2F8777"           # Uniaxial, Elastic
 MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
 TEXT_TAG = "5A41528B-12B9-40DC-A3F2-842034D267C4"           # Display > Dimensions > Text Tag 3D
+RECTANGLE_3PT = "9BC98A1D-2ECC-407E-948A-09A09ED3E69D"      # Curve > Primitive > Rectangle 3Pt
+CONSTRUCT_POINT = "3581F42A-9592-4549-BD6B-1C0FC39D067B"    # Vector > Point > Construct Point
+MESH_PLANE = "8ADBF481-7589-4A40-B490-006531EA001D"         # Mesh > Primitive > Mesh Plane
+CONCRETE01 = "57BF0FDB-B333-491C-B9EB-50783029B8C2"         # Concrete01
+REBAR = "47B04CA7-0F7E-4585-8F89-D31592E61394"              # ReinforcingSteel
+PATCH = "49DDD2E0-99B5-4D14-976E-531481B07909"              # Patch
+POINT_FIBER = "934021CE-8D12-4FCA-8CF1-9158EB08208A"        # Fiber Point
+FIBER_SECTION = "18cd5969-e0e4-4acf-9790-0af2c22cfeb9"      # Fiber Section
+LINEAR_SERIES = "05134721-D2DC-483E-BAD7-1A1AF0238A3D"      # Linear Time Series
+POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
+PUSHOVER = "3F7A2D90-5C1B-4E86-9A4D-2B8E6C0F7135"           # Pushover Analysis
+CURVE_PARAM = "D5967B9F-E8EE-436B-A8AD-29FDCECF32D5"        # Params > Geometry > Curve
 
 # The switchers' other units, by name: the beam's truss, a ground motion's pattern, Newmark's integrator.
 TRUSS = "Truss (Alpaca4d)"
@@ -148,7 +165,7 @@ NEWMARK = "Newmark"
 A_DAMPING, A_SYSTEM, A_ALGORITHM, A_INTEGRATOR, A_TYPE, A_STEPS = 0, 3, 5, 6, 7, 8
 
 # ForceBeamColumn's inputs, and Truss's, by place.
-B_LINE, B_SECTION, B_ZAXIS, B_ELEMENT_ID = 0, 1, 3, 5
+B_LINE, B_SECTION, B_ZAXIS, B_COLOUR, B_ELEMENT_ID = 0, 1, 3, 4, 5
 T_LINE, T_SECTION = 0, 1
 # Support's inputs: where, then whether each of Tx, Ty, Tz, Rx, Ry, Rz is held - all held unless typed.
 S_POSITION = 0
@@ -197,6 +214,7 @@ SCALES = {
     "buttressed": JET,
     "outrigger": JET,
     "diagrid": JET,
+    "pushover": JET,
 }
 R_VALUES, R_COLORS = 3, 4
 DISPLACEMENT, MAGNITUDE = 1, 0
@@ -2206,11 +2224,189 @@ def tank(doc):
              "the same frequency.")
 
 
+# ---------------------------------------------------------------- a concrete frame pushed over
+
+# The deformation scale: the frame is drawn twice its sway.
+PUSHOVER_SCALE = 2
+# The members' grey, under the hinges Model View draws in orange and purple.
+MEMBER_GREY = Color.FromArgb(255, 160, 168, 178)
+# Fibre sections, in m: a column 400 x 400 with eight phi 20 bars, and a beam 500 deep and 300 wide
+# with three phi 20 at the top and three at the bottom, all 50 mm from the faces to the bars' centres.
+# On a beam a fibre's y - its x in the drawing - is the beam's local y, which on a horizontal beam
+# points up: so the beam is drawn with its depth along x.
+BAR_20 = 3.141592653589793 * 0.02 ** 2 / 4.0
+COLUMN_BARS = [(-0.15, -0.15, 0.0), (0.0, -0.15, 0.0), (0.15, -0.15, 0.0), (-0.15, 0.0, 0.0), (0.15, 0.0, 0.0),
+               (-0.15, 0.15, 0.0), (0.0, 0.15, 0.0), (0.15, 0.15, 0.0)]
+BEAM_BARS = [(y, z, 0.0) for y in (-0.2, 0.2) for z in (-0.1, 0.0, 0.1)]
+
+
+# A fibre section's torsion is elastic, a GJ of its own: Fiber Section's 1e8 kN m2 would have the
+# beams across a frame hold its columns' tops against turning. About a tenth of the uncracked G J of
+# these sections, for concrete that has cracked.
+CRACKED_GJ = 3000.0
+
+
+def fibre_section(s, name, depth, width, along, across, bars, concrete, rebar):
+    """A Fiber Section of concrete, depth along x by width along y, meshed into along by across faces -
+    a fibre a face - and bars of rebar at bars, a phi 20 each; its torsion CRACKED_GJ."""
+    outline = component(s.grid, RECTANGLE_3PT, "Rectangle 3Pt", name + " outline", 2.25, MAIN, gap=30)
+    points_ = [(-depth / 2, -width / 2), (depth / 2, -width / 2), (depth / 2, width / 2)]
+    for k, (x, y) in enumerate(points_):
+        inp(outline, k).PersistentData.Clear()
+        inp(outline, k).PersistentData.Append(GH_Point(Point3d(x, y, 0.0)))
+    mesh = component(s.grid, MESH_PLANE, "Mesh Plane", name + " fibres", 2.5, MAIN, gap=30)
+    wire(inp(mesh, 0), out(outline))
+    integer(inp(mesh, 1), along)
+    integer(inp(mesh, 2), across)
+    patch = component(s.grid, PATCH, "Patch", name + " concrete", 2.75, MAIN, gap=30)
+    wire(inp(patch, 0), out(mesh))
+    wire(inp(patch, 1), out(concrete))
+    steel = component(s.grid, POINT_FIBER, "Fiber Point", name + " bars", 2.75, MAIN, gap=30)
+    inp(steel, 0).PersistentData.Clear()
+    for x, y, z in bars:
+        inp(steel, 0).PersistentData.Append(GH_Point(Point3d(x, y, z)))
+    number(inp(steel, 1), *[BAR_20] * len(bars))
+    wire(inp(steel, 2), out(rebar))
+    section = component(s.grid, FIBER_SECTION, "Fiber Section", name, 2.9, MAIN, gap=30)
+    wire(inp(section, 0), out(steel))
+    wire(inp(section, 2), out(patch))
+    number(inp(section, 3), CRACKED_GJ)
+    s.parts["2"] += [outline, mesh, patch, steel, section]
+    return section
+
+
+def pushover(doc):
+    s = Structure(doc, "Irregular building", "pushover", [
+        ("BayX", "Bay along x [m]", 4, 8, 6, 1),
+        ("SecondBayX", "Second bay along x [m]", 4, 8, 5, 1),
+        ("BayY", "Bays along y [m]", 4, 8, 5, 1),
+        ("GroundStorey", "Ground storey [m]", 2.8, 5, 4, 1),
+        ("Storey", "Storeys above [m]", 2.8, 4.5, 3.2, 1),
+    ], [
+        ("Floor", "Floor load [kN/m]", 0, 60, 20, 1),
+        ("Drift", "Roof drift [%]", 0.5, 6, 3, 1),
+        ("Steps", "Steps", 20, 400, 200, 0),
+    ])
+    s.geometry(["Columns", "Beams", "Feet", "Floors", "Forces", "Roof"])
+    s.as_point = GH_Point3dHint()
+
+    # 2 - The materials and the sections: C25/30 and B450C, Concrete01's and ReinforcingSteel's own.
+    concrete = component(s.grid, CONCRETE01, "Concrete01", "C25/30", SECTIONS, MAIN, gap=30)
+    rebar = component(s.grid, REBAR, "ReinforcingSteel", "B450C", SECTIONS, MAIN, gap=30)
+    s.parts["2"] += [concrete, rebar]
+    column = fibre_section(s, "Column 400 x 400", 0.4, 0.4, 10, 10, COLUMN_BARS, concrete, rebar)
+    beam = fibre_section(s, "Beam 500 x 300", 0.5, 0.3, 12, 6, BEAM_BARS, concrete, rebar)
+    columns = s.elements("Columns", "Columns", column)
+    beams = s.elements("Beams", "Beams", beam)
+    # Display only: both views draw each element in its own colour, a grey that the hinges stand out on.
+    for member in (columns, beams):
+        inp(member, B_COLOUR).PersistentData.Clear()
+        inp(member, B_COLOUR).PersistentData.Append(GH_Colour(MEMBER_GREY))
+    s.support("Built in", "Feet", (True,) * 6)
+
+    # 4 - What the frame carries while it is pushed: its own weight and the floors, ramped up over the
+    # pushover's first ten steps by a linear time series, then held.
+    weight = component(s.grid, GRAVITY, "Gravity Load", "Self-weight", LOADS, LOADED, gap=30)
+    floors = s.line_load("Floors", [beams], UNIT_Z, -1, "Floor")
+    series = component(s.grid, LINEAR_SERIES, "Linear Time Series", "Ramp", PATTERNS, LOADED, gap=30)
+    pattern = s.pattern("Weight and floors", [weight, floors])
+    wire(inp(pattern, 0), out(series))
+    lateral = component(s.grid, POINT_LOAD, "Point Load", "The push, floor by floor", LOADS, LOADED, gap=30)
+    wire(inp(lateral, 0), s.g("Floors"))
+    wire(inp(lateral, 1), s.g("Forces"))
+    s.parts["4"] += [weight, series, lateral]
+
+    # 5 - Assembled, and pushed: the roof to Drift % of the height, along X, with P-Delta.
+    a = component(s.grid, ASSEMBLE, "Assemble Model", s.title, MODEL, MAIN)
+    wire(flat(inp(a, 0)), *[out(m) for m in s.members])
+    wire(flat(inp(a, 1)), *[out(x) for x in s.supports])
+    wire(flat(inp(a, 2)), *[out(x) for x in s.patterns])
+    height = expression(s.grid, "f(g,h)=g+2*h", [s.sliders["GroundStorey"], s.sliders["Storey"]], "Height [m]", MODEL, MAIN, gap=30)
+    target = expression(s.grid, "f(d,h)=d/100*h", [s.sliders["Drift"], out(height)], "Target [m]", MODEL, MAIN, gap=30)
+    push = component(s.grid, PUSHOVER, "Pushover Analysis", "Pushover", ANALYSIS, MAIN)
+    wire(inp(push, 0), out(a))
+    wire(inp(push, 1), s.g("Roof"))
+    words(inp(push, 2), "X")
+    wire(inp(push, 3), out(target))
+    wire(inp(push, 4), s.sliders["Steps"])
+    wire(flat(inp(push, 5)), out(lateral))
+    s.assembled, s.run = a, push
+    s.parts["5"] += [a, height, target, push]
+
+    # 6 - The frame at a point of the curve, and the curve beside it, the point on it.
+    point = slider(s.grid, "Point on the curve", 0, 400, 200, 0, VIEWS, SHOWN, gap=30)
+    beside = expression(s.grid, "f(a,b)=a+b+4", [s.sliders["BayX"], s.sliders["SecondBayX"]], "Curve at x", VIEWS, SHOWN, gap=30)
+    origin = component(s.grid, CONSTRUCT_POINT, "Construct Point", "Curve origin", VIEWS, SHOWN, gap=30)
+    wire(inp(origin, 0), out(beside))
+    size = expression(s.grid, "f(h)=h", [out(height)], "Curve size", VIEWS, SHOWN, gap=30)
+    curve = python_component(s.grid, "Capacity curve", "capacity_curve",
+                             [("Displacement", s.as_float, GH_ParamAccess.list), ("BaseShear", s.as_float, GH_ParamAccess.list),
+                              ("Steps", GH_IntegerHint_CS(), GH_ParamAccess.list), ("Point", GH_IntegerHint_CS()),
+                              ("Origin", s.as_point), ("Size", s.as_float)],
+                             ["Curve", "SoFar", "Dot", "Axes", "TagAt", "Tags", "Step"], LEGENDS, SHOWN)
+    for k, source in enumerate([out(push, 1), out(push, 2), out(push, 4), point, out(origin), out(size)]):
+        wire(inp(curve, k), source)
+    # Drawn by a Curve parameter, and the Python component's own preview off: it would draw where the
+    # labels go as crosses.
+    curve.Hidden = True
+    drawn = emit(CURVE_PARAM, "The Curve parameter")
+    drawn.NickName = "Capacity curve drawn"
+    s.grid.put(drawn, LEGENDS, SHOWN, gap=30)
+    wire(drawn, out(curve, 1), out(curve, 2), out(curve, 3), out(curve, 4))
+    tags = component(s.grid, TEXT_TAG, "Text Tag 3D", "Curve labels", LEGENDS, SHOWN, gap=30)
+    wire(inp(tags, 0), out(curve, 5))
+    wire(inp(tags, 1), out(curve, 6))
+    number(inp(tags, 2), 0.7)
+    inp(tags, 3).PersistentData.Clear()
+    inp(tags, 3).PersistentData.Append(GH_Colour(Color.FromArgb(255, 42, 45, 49)))
+
+    # The frame at the point, drawn twice its sway, in its grey, with its plastic hinges: a ball where
+    # the bars have yielded, orange, or the concrete crushed, purple. Tick Displacement in its Results
+    # menu to colour it by how far it has moved as well.
+    view = component(s.grid, MODEL_VIEW, "Model View", "Frame pushed", VIEWS, SHOWN, gap=30)
+    wire(inp(view, V_MODEL), out(push))
+    wire(inp(view, V_STEP), out(curve, 7))
+    menu_setting(view, "_ckDeformed", "Active", True)
+    menu_setting(view, "_slDeformScale", "Value", PUSHOVER_SCALE)
+    menu_setting(view, "_ckHinges", "Active", True)
+    menu_setting(view, "_ckReleases", "Active", False)
+    menu_setting(view, "_ckShowSupports", "Active", True)
+    view.Attributes.ExpireLayout()
+    view.Attributes.PerformLayout()
+    hinges = panel(s.grid, "Hinges", out(push, 5), 520, 220, LEGENDS, SHOWN, gap=30)
+    rest = s.at_rest(colour_by=0)
+    s.parts["6"] += [point, beside, origin, size, curve, drawn, tags, view, hinges]
+
+    s.finish({"1": "Geometry: an L of three bays, a tall ground storey, a top storey set back; the push on every node",
+              "2": "Members: fibre sections of Concrete01 and ReinforcingSteel, on ForceBeamColumns",
+              "3": "Supports: every column built in at the ground",
+              "4": "Loads: its own weight and the floors, held; the push, growing with the height",
+              "5": "Pushover: the top storey's roof pushed to Drift % of the height along X, with P-Delta",
+              "6": "Results: the frame at a Point on the curve, drawn {0} times, its plastic hinges, and the capacity curve".format(PUSHOVER_SCALE)},
+             "Irregular building - a small concrete building that is not regular, pushed sideways until its ground storey gives way.\n\n"
+             "An L in plan, bays of 6 and 5 m by two of 5 m; a ground storey 4 m tall under a second of 3.2 m, and a third "
+             "storey set back over one corner. Every member is a ForceBeamColumn on a Fiber Section: concrete in fibres, a "
+             "Concrete01 C25/30, and phi 20 bars of ReinforcingSteel B450C - eight in a 400 x 400 column, three at the top and "
+             "three at the bottom of a 500 x 300 beam, drawn with its depth along x: on a horizontal beam a fibre section's "
+             "y points up. Their GJ is a cracked section's, 3000 kN m2: Fiber Section's 1e8 would have the beams hold the "
+             "columns' tops against turning.\n\n"
+             "It carries its own weight and 20 kN/m on every beam, ramped up and then held. Pushover Analysis then pushes it "
+             "along X with a load on every node that grows with its height, and controls the top storey's roof, up to Drift % "
+             "of the height, with P-Delta. Point on the curve picks a point of the Capacity curve beside it, and Model View "
+             "draws the building there with its plastic hinges: a ball where the bars have yielded, orange, or the concrete "
+             "crushed, purple. Hinges lists them in the order they formed.\n\n"
+             "What it shows: the tall ground storey takes most of the sway, its columns hinging top and bottom - a soft storey - "
+             "and the L twists as it goes.\n\n"
+             "Try: Ground storey down to 3.2 m, and see the sway spread more evenly up the building; P-Delta off on Pushover, "
+             "and see the curve keep climbing; Floor load up.")
+
+
 BUILDERS = {"hall": hall, "tower": tower, "canopy": canopy, "facade": facade, "vault": vault, "windtruss": windtruss,
             "girder": girder, "cablestayed": cablestayed, "arch": arch, "building": building, "city": city,
             "footbridge": footbridge, "sticks": sticks, "shell": shell, "tank": tank,
             "twisting": twisting, "leaning": leaning, "curving": curving, "crescent": crescent,
-            "bundled": bundled, "braced": braced, "buttressed": buttressed, "outrigger": outrigger, "diagrid": diagrid}
+            "bundled": bundled, "braced": braced, "buttressed": buttressed, "outrigger": outrigger, "diagrid": diagrid,
+            "pushover": pushover}
 
 
 def build(doc):

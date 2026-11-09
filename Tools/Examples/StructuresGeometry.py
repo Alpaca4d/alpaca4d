@@ -1359,3 +1359,93 @@ def diagrid(Radius, Bulge, Around, Storeys, StoreyHeight, NodeStoreys, Core, Flo
         [(hexagon(i, 0) + hexagon(i + 1, 0)) / 2 for i in range(6)]
     Floors, Masters, MassPoints, Masses = _floors(levels, masters, FloorMass, areas)
     return Diagonals, Rings, Walls, Feet, Floors, Masters, MassPoints, Masses, [ring[0]]
+
+
+def pushover(BayX, SecondBayX, BayY, GroundStorey, Storey):
+    """A small concrete building that is not regular: an L in plan - three cells of a grid two bays by
+    two, BayX and SecondBayX along x and BayY twice along y, without the cell at the back on the right -
+    two storeys over the whole L, the ground one GroundStorey tall and taller than the rest, and a
+    third storey, Storey tall like the second, over the front left cell only. Its columns are built in
+    at the ground. Floors: every node above the ground; Forces: the push on each, along x at load
+    factor 1, growing with its height, as a building sways in its first mode - every node standing for
+    about the same mass, a floor's share is its number of nodes times its height; Roof: the corner of
+    the top storey over the middle of the L, where the push is controlled."""
+    xs = [0.0, BayX, BayX + SecondBayX]
+    ys = [0.0, BayY, 2.0 * BayY]
+    zs = [0.0, GroundStorey, GroundStorey + Storey, GroundStorey + 2.0 * Storey]
+    ell = [(0, 0), (1, 0), (0, 1)]
+    footprints = [ell, ell, [(0, 0)]]
+
+    def corners(cells):
+        seen = []
+        for i, j in cells:
+            for p in ((i, j), (i + 1, j), (i, j + 1), (i + 1, j + 1)):
+                if p not in seen:
+                    seen.append(p)
+        return seen
+
+    def edges(cells):
+        seen = []
+        for i, j in cells:
+            for e in (((i, j), (i + 1, j)), ((i, j + 1), (i + 1, j + 1)), ((i, j), (i, j + 1)), ((i + 1, j), (i + 1, j + 1))):
+                if e not in seen:
+                    seen.append(e)
+        return seen
+
+    node = lambda p, k: P(xs[p[0]], ys[p[1]], zs[k])
+    Columns, Beams, Floors, Forces = [], [], [], []
+    for k, cells in enumerate(footprints):
+        Columns += [L(node(p, k), node(p, k + 1)) for p in corners(cells)]
+        Beams += [L(node(a, k + 1), node(b, k + 1)) for a, b in edges(cells)]
+        Floors += [node(p, k + 1) for p in corners(cells)]
+        Forces += [rg.Vector3d(2.0 * zs[k + 1] / zs[3], 0.0, 0.0) for p in corners(cells)]
+    Feet = [node(p, 0) for p in corners(ell)]
+    Roof = node((1, 1), 3)
+    return Columns, Beams, Feet, Floors, Forces, Roof
+
+
+def _nice(x):
+    """A round number at or above x, for an axis: 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten."""
+    if x <= 0:
+        return 1.0
+    power = 10 ** math.floor(math.log10(x))
+    for step in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if step * power >= x - 1e-9:
+            return step * power
+    return 10 * power
+
+
+def capacity_curve(Displacement, BaseShear, Steps, Point, Origin, Size):
+    """The capacity curve, drawn in the XZ plane from Origin, Size across and Size high: base shear up,
+    the control point's displacement along, in mm. Curve: the whole of it; SoFar: up to Point; Dot: a
+    ring round Point on it; Axes: the two axes and their ticks; TagAt and Tags: where each label goes - a
+    plane upright in the drawing's plane, so that Text Tag 3D stands the text up, facing whoever looks at
+    the frame - and what it says; Step: Point's recorded step, for Model View."""
+    n = len(Displacement)
+    if n == 0 or len(BaseShear) != n:
+        return None, None, None, [], [], [], 0
+    i = max(0, min(n - 1, int(Point)))
+    d = [x * 1000.0 for x in Displacement]
+    top_d, top_v = _nice(max(abs(x) for x in d)), _nice(max(abs(v) for v in BaseShear))
+    o = Origin
+    at = lambda x, v: P(o.X + Size * x / top_d, o.Y, o.Z + Size * v / top_v)
+    Curve = rg.Polyline([at(x, v) for x, v in zip(d, BaseShear)]).ToNurbsCurve()
+    SoFar = rg.Polyline([at(x, v) for x, v in zip(d[:i + 1], BaseShear[:i + 1])]).ToNurbsCurve() if i > 0 else None
+    tick = Size / 40.0
+    Dot = rg.Circle(rg.Plane(at(d[i], BaseShear[i]), rg.Vector3d.XAxis, rg.Vector3d.ZAxis), tick).ToNurbsCurve()
+    Axes = [L(at(0, 0), at(top_d, 0)), L(at(0, 0), at(0, top_v))]
+    upright = lambda p: rg.Plane(p, rg.Vector3d.XAxis, rg.Vector3d.ZAxis)
+    TagAt, Tags = [], []
+    for k in range(5):
+        x, v = top_d * k / 4, top_v * k / 4
+        Axes += [L(at(x, 0), at(x, 0) + rg.Vector3d(0, 0, -tick)), L(at(0, v), at(0, v) + rg.Vector3d(-tick, 0, 0))]
+        TagAt += [upright(at(x, 0) + rg.Vector3d(-tick, 0, -5 * tick)), upright(at(0, v) + rg.Vector3d(-9 * tick, 0, -tick))]
+        Tags += ["{0:g}".format(round(x, 6)), "{0:g}".format(round(v, 6))]
+    # The axes' names, and the point's values a line over the shear's, where they cannot run into it.
+    TagAt += [upright(at(top_d * 0.3, 0) + rg.Vector3d(0, 0, -10 * tick)), upright(at(0, top_v) + rg.Vector3d(-tick, 0, 3 * tick)),
+              upright(at(0, top_v) + rg.Vector3d(-tick, 0, 8 * tick))]
+    shown = lambda x: 0 if abs(x) < 0.5 else x
+    Tags += ["Roof displacement [mm]", "Base shear [kN]",
+             "{0:.0f} mm, {1:.0f} kN".format(shown(d[i]), shown(BaseShear[i]))]
+    Step = Steps[i] if i < len(Steps) else 0
+    return Curve, SoFar, Dot, Axes, TagAt, Tags, Step
