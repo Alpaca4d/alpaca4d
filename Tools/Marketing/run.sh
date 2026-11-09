@@ -6,9 +6,13 @@
 #     ./run.sh bridge tower         # some of them
 #     PUBLISH=0 ./run.sh cow        # the captures only, in out/; ./publish.sh cow later
 #
-# Scenes: cow femur dragon bricks mixed (solids), bridge tower benchmarks (topology optimisation),
+# Scenes: cow femur slave bricks mixed (solids), bridge tower benchmarks (topology optimisation),
 # lines2d bridgelines plates kangaroo nerviflatslab nerviumbrella musmeci and the studies
-# (cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell) (principal stress lines), twospan curvedbeam beamgrid (section optimiser), howto (the docs' how-to guides).
+# (cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell) (principal stress lines), twospan curvedbeam beamgrid (section optimiser), howto (the docs' how-to guides),
+# footbridge spectrum shell momentcurvature tank (the examples remade on 2026-11-06; tankstills is
+# tank without its frames), quakebuildings and quaketowers (buildings that are not straight, and towers
+# of a hundred storeys and more, in an earthquake; each also alone: twisting leaning curving crescent,
+# bundled braced buttressed outrigger diagrid).
 # See README.md.
 #
 # Starts Rhino 8 and quits it at the end. With a Rhino already open, it runs in that one instead, if
@@ -20,7 +24,7 @@ cd "$(dirname "$0")"
 here=$(pwd)
 repo=$(cd ../.. && pwd)
 
-ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid"
 SCENES=${*:-$ALL}
 OUT=${OUT:-$here/out}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}
@@ -31,8 +35,11 @@ LICENSE=${LICENSE-$repo/Alpaca4d.Utils/data_august_28.bin}
 [ -f "$LICENSE" ] || LICENSE=
 RHINOCODE="/Applications/Rhino 8.app/Contents/Resources/bin/rhinocode"
 
+# Run only when named: printingbuckling makes the 3D printing scenes' buckling modes again, alone, into
+# their folders, at the moments those scenes found - run them once first.
+EXTRA="printingbuckling"
 for scene in $SCENES; do
-  case " $ALL " in *" $scene "*) ;; *) echo "no scene $scene; the scenes are: $ALL"; exit 1 ;; esac
+  case " $ALL $EXTRA " in *" $scene "*) ;; *) echo "no scene $scene; the scenes are: $ALL $EXTRA"; exit 1 ;; esac
 done
 [ -d "$GH" ]        || { echo "set GH=/path/to/Grasshopper 7 lib/net48"; exit 1; }
 [ -f "$RHINO" ]     || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }
@@ -70,11 +77,19 @@ if [ -z "${RHINO_ID:-}" ]; then
   # Now and then Rhino starts without running StartScriptServer: it is closed and started again.
   for attempt in 1 2 3; do
     echo "Starting Rhino 8"
-    open -na "Rhino 8" --args -nosplash -runscript="_StartScriptServer"
+    # Without macOS reopening the documents of the last Rhino: a Rhino that quit on its "keep this new
+    # document?" question leaves an Untitled one, and reopening it stops the next one starting behind an
+    # alert - one that cannot even be answered while the screen is locked (see README.md).
+    open -na "Rhino 8" --args -ApplePersistenceIgnoreState YES -nosplash -runscript="_StartScriptServer"
     ready=
-    for _ in $(seq 1 120); do
+    for second in $(seq 1 120); do
       pid=$(pgrep -x Rhinoceros | head -1 || true)
       if [ -n "$pid" ] && "$RHINOCODE" list 2>/dev/null | grep -q "rhinocode_remotepipe_$pid"; then ready=1; break; fi
+      # A Rhino can sit in a hidden alert while starting; asking System Events for its windows lets
+      # it go on (see README.md).
+      if [ -n "$pid" ] && [ "$second" = 30 ]; then
+        osascript -e "tell application \"System Events\" to get name of every window of (first process whose unix id is $pid)" > /dev/null 2>&1 || true
+      fi
       sleep 1
     done
     [ -n "$pid" ] || { echo "Rhino did not start"; exit 1; }

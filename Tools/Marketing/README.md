@@ -34,7 +34,7 @@ open Finder, so they link to that helper on 127.0.0.1, which opens only paths in
 | --- | --- | --- |
 | `cow` | SpotTheCow | `solids/spot-the-cow` |
 | `femur` | Femur, with principal stress lines through the bone | `solids/femur`, `principal-stress-lines/femur` |
-| `dragon` | InigoTheDragon: modes 0, 1, 4 and 5, two of them moving | `solids/inigo-the-dragon` |
+| `slave` | RebelliousSlave: its vertical stress from in front and from its left, its first two modes as stills and loops | `solids/rebellious-slave`, and the pictures of its section in `doc/basics/elements/ten-node-tetrahedron/rebellious-slave/` |
 | `bricks` | BrickSolverSpeed, in Von Mises stress | `solids/brick-block` |
 | `mixed` | MixedModelSpeed: frame, slab and bricks, displaced | `solids/mixed-model` |
 | `bridge` | TopologyBridge: the run, the design, the design analysed | `topology-optimisation/bridge` |
@@ -49,18 +49,42 @@ open Finder, so they link to that helper on 127.0.0.1, which opens only paths in
 | `musmeci` | `StressLinesMusmeciBridge.gh`, here: the Musmeci bridge, after the Basento viaduct - a membrane form-found by Kangaroo on paired footings over four spans, analysed as a concrete shell, its stress lines in its surface, a deck on its crowns; from three sides, the valley and under it; the form being found, the bridge spinning and walked through underneath, as GIF and MP4 | `principal-stress-lines/musmeci-bridge` |
 | `cornerslab` `roundumbrella` `roundslab` `candela` `groinvault` `palazzetto` `isler` `hexshell` | The principal stress lines studies, below | `principal-stress-lines/<study>` |
 | `twospan` | TwoSpanBeamOptimiser, a load on each span: the HEA element by element with the loads, the deformed shape extruded, the bending moment and the shear, each on its own; the beam deflecting as GIF and MP4; one HEA for the whole beam | `section-optimiser/two-span-beam` |
-| `curvedbeam` | CurvedBeamOptimiser: the curved beam sized element by element within the IPEs, a colour for each section, from above at an angle and from the front | `section-optimiser/curved-beam` |
-| `beamgrid` | BeamGridOptimiser: the beam grid sized element by element, a colour for each section, and its displacement with the Legend | `section-optimiser/beam-grid` |
+| `curvedbeam` | CurvedBeamOptimiser: the curved beam sized element by element within the IPEs, a colour for each section, from above at an angle and from the front; then, on two supports - built in at the start and one roller - the load, and then the roller, walking along it and back, a node a frame, the beam sized again at each (`Sizing`), coloured by section size with a Legend of the sections, the place and the steel's mass under each frame, as GIF and MP4 | `section-optimiser/curved-beam`, `curved-beam-moving-load`, `curved-beam-moving-support` |
+| `beamgrid` | BeamGridOptimiser: the beam grid of RHS sized element by element, a colour for each section, and its displacement with the Legend; then the supports walking in from the corners a bay at a time and back, the grid sized again at each, as `curvedbeam` does it but coloured by each section's mass in kg/m (an RHS's name holds no one size), the camera turning a quarter round, as GIF and MP4 | `section-optimiser/beam-grid`, `beam-grid-moving-supports` |
 | `howto` | `HowToPictures.gh`, here: the six kinds of support, a frame with its beam pinned at both ends, a box of shell walls under wind, a frame's first buckling mode, and a frame with a slab under every kind of load and under its own weight alone | `how-to/<picture>`, and a copy beside its guide in `doc/how-to/`; `model-view/loads/`, and a copy in `doc/basics/visualisation/model-view/` |
 | `structures` | `TrussRoofHall.gh`, `SteelTower.gh`, `RoofCanopy.gh`, `VerticalTrussFacade.gh`, `BarrelVault.gh` and `HorizontalTrussFacade.gh` from `../Examples/Structures.py`: each one's loads, its deformed shape over it at rest, the GIF of it deforming, its canvas, and the tower's first mode | `structures/<slug>/`, and the example's pictures in `examples/<slug>/` |
 | `earthquakes` | The five earthquake definitions from `../Examples/Structures.py`: each one's canvas, the still at the step it moves the most, and a frame every 0.1 s through the record, which publish.sh plays at ten frames a second. Every frame has its charts, drawn in the scene: the ground's acceleration, and how the points the geometry's `Watch` output marks move along the shaking, read with a Nodal Displacements of the scene's own (for the city, a bar for each roof, lowest building to tallest); publish.sh stacks them under the frames, and under the still as `<slug>-2.png` | `earthquakes/<slug>/`, and the stills and the MP4 in `examples/<slug>/` |
+| `footbridge` | `FootbridgeModes.gh` from `../Examples/Structures.py`: its canvas, and its first three modes, each a still with its Legend over the bridge at rest and a loop of it swinging through its rest (`Vibrating`) | `structures/footbridge/`, and `doc/how-to/analysis/natural-frequencies.png` |
+| `quakebuildings`, `quaketowers` | The nine earthquakes added on 2026-11-07 from `../Examples/Structures.py`, as `earthquakes` does them: four buildings that are not straight (also alone: `twisting`, `leaning`, `curving`, `crescent`) and five towers of 100 storeys and more (`bundled`, `braced`, `buttressed`, `outrigger`, `diagrid`). A tall one - a tower, and the twisting and the curving building - stands a quarter of the way across its pictures, by the legend (`Slide`), its charts drawn narrow and tall for publish.sh to put beside it (`post.py besidecharts`, and `pair` for the still) rather than under it; its still is at the step its first watched point - the roof, or the spire's tip - moves the most, from that point's history, as drawing twenty thousand members at every fifth step to find it takes too long. The leaning towers' still is at the moment the gap between their tops closes the most. | `earthquakes/<slug>/`, and the stills and the MP4 in `examples/<slug>/` |
+| `tank` | `TankModes.gh` from `../Examples/Structures.py`: its canvas; its hundred modes on their grid, Grasshopper's mesh edges on and dark (`TankEdges`) - a close look as the cover, the whole grid receding, and from above with each mode's number and frequency and the Legend - and the close look swinging, every mode at once | `structures/tank-modes/`, and the pictures of `examples/natural-vibration/` |
+| `spectrum` | `ResponseSpectrumSticks.gh` from `../Examples/Structures.py`: its canvas; the sticks when they reach furthest together, the spectrum they draw behind them in purple; a frame every 0.1 s through the record, the spectrum so far growing behind them, each with its charts - the ground's acceleration, and each stick's pseudo-acceleration so far over the whole spectrum | `earthquakes/response-spectrum/`, and the still and the MP4 in `examples/response-spectrum/` |
+| `shell` | `CompressedShell.gh`, the structures' scene for it alone: its loads, its deformed shape in iso-surfaces, the GIF of it deforming, its canvas | `structures/compressed-shell/`, and the example's pictures in `examples/compressed-shell/` |
+| `momentcurvature` | `MomentCurvature.gh`: its canvas, and the section beside its moment-curvature diagram from above, the concrete a light grey mesh and each bar a disc of its own size | `domain-moment-curvature/moment-curvature/`, and `examples/moment-curvature/moment-curvature.png` |
+| `printing` | `../Examples/PrintedCylinder.gh`: TU/e's cylinder of fresh concrete as it is printed - its canvas; the load factor on its own weight every third layer; the wall growing a layer a frame, coloured by the age of its concrete, with the chart of the load factor under each frame, as GIF and MP4; the ages at 30 layers; and, at the layer it buckles, its buckling mode, still and swinging, the swinging coloured by how far each point moves, on a jet gradient | `3d-printing/printed-cylinder/`, and the example's pictures in `examples/printed-cylinder/` |
+| `printedstructure`, `printedtwisted`, `printedwall`, `printeddome`, `printedleaning` | `../Examples/PrintedStructure.gh`, `PrintedTwistedColumn.gh`, `PrintedWavyWall.gh`, `PrintedDome.gh`, `PrintedLeaningColumn.gh` (`PrintedStructure.py`, `SHAPE=...`): a shape printed along its own sections - its canvas; the load factor at twenty moments over the whole print; the whole print, a frame every 2.5 s of printing (200 at most) with the nozzle on it - tilted along Printed Layers' Axis where the shape is printed along a Path - coloured by age, the chart under each, as GIF and MP4; the ages at the end; the settling under its own weight and the buckling mode where the factor first reaches 1, still and swinging (the swinging coloured by how far each point moves, on a jet gradient, the camera still); on the page, a lighter GIF of the buckling mode | `3d-printing/printed-structure/`, `twisted-column/`, `wavy-wall/`, `dome/`, `leaning-column/`, and the pictures of the page `examples/3d-printed-structure/` |
+| `printedleaningflat` | `../Examples/PrintedLeaningColumn.gh` with its Path unplugged, printed in flat layers, as `printedleaning`; then the two side by side at the same moment, each labelled, its chart under it (`post.py sidebyside`; run `printedleaning` first) | `3d-printing/leaning-column/leaning-column-flat-*`, `leaning-column-both-printing.gif`, `.mp4`, and on the page the flat print's chart and the side by side |
+| `printingbuckling` | Run only when named. The buckling modes alone of `printing` and the `printed...` scenes, at the moments they found (read from their `-factors.txt`, so run them once first), into their folders; publish.sh makes the modes' GIFs and MP4s and the pages' GIFs again. Every buckling mode is coloured by how far each point moves in it, on a jet gradient, the camera still | the `-buckling.gif`, `.mp4` of `3d-printing/*/`, and the GIFs of the pages |
 
 All of them take about 13 minutes on an M2 Pro, a quarter of it in `benchmarks`, which runs top3d's
 two problems for 200 iterations each; `plates` and `kangaroo` take about two minutes and one.
 
 A structure deforming - a GIF and an MP4 of it swinging from rest to its deformed shape, looping, and
 the still at full deformation - comes from `Deforming` in `Shots.cs`: the deformation-pictures skill
-says how to set up the definition and the scene.
+says how to set up the definition and the scene. In every one, and in a mode swinging (`Vibrating`),
+the colours fade with the swing, as Model View's Animate fades them: all the colour of zero at rest,
+the result's own at full deformation.
+
+A structure sized again as something moves along it - a load, a support - comes from `Sizing` in
+`Shots.cs`: it steps a slider out and back, has the Section Optimiser size the structure at every
+stop, and captures Model View coloured by section. It solves every stop twice: first to learn which
+sections come up at all, so that each keeps one colour in every frame - by its size, the number in
+its name (IPE240) or its mass in kg/m, the smallest light blue, through purple, the largest orange -
+on a scale with round ends, which a Legend under the model shows; then for the frames. Model View on
+its own would colour the sections in the order it meets them, and a section would change colour from
+frame to frame. The camera is fitted to what is drawn at every stop, and at every angle of a turn.
+Under each frame goes a caption: where the load or the support is, and the mass of the steel.
+`post.py animcharts` takes a `split` (0.82 here) to cut each frame in two there, the model and the
+legend under it, and close the empty band between them, and a `grow` to keep a thin load arrow.
 
 Every topology optimisation gets a GIF and an MP4 of its run, design by design, and its final
 design analysed in Von Mises stress: they are what gets shared most. Every principal stress lines
@@ -168,5 +192,40 @@ To learn how something reads before committing to it, run that scene alone.
   script sent with `--rhino rhinocode_remotepipe_<pid>` still runs. Try one before closing it.
 * **Model View stops drawing at an area load of 0**, before the supports: `plates` unwires the
   slab's Mesh Load for its point-load shots rather than setting it to 0.
-* **The dragon's deformation slider is saved as 0 to 0.8.** The scene opens it to -2 to 2, so
-  that a mode can swing both ways.
+* **A scripted Rhino can stall behind an alert no one sees** (seen 2026-11-06, opening
+  `CompressedShell.gh`): the main thread sits in `-[NSAlert runModal]` (`sample <pid> 1` shows it),
+  no script runs, and nothing appears on screen. Asking System Events for its windows let it go on:
+  `osascript -e 'tell application "System Events" to tell (first process whose unix id is <pid>) to get name of every window'`.
+* **Rhino can also stop while starting, behind an alert that reopens an old document** (seen
+  2026-11-06, with the screen locked: three starts in a row): `sample` shows the main thread in
+  `-[MRDocumentController reopenDocumentForURL:...]` and `-[NSAlert runModal]`, under macOS's
+  restoring of the last session. A Rhino that quit on its "keep this new document?" question leaves
+  an Untitled document for macOS to reopen. `run.sh` starts Rhino with `-ApplePersistenceIgnoreState
+  YES`, which skips that; start one by hand the same way.
+* **Text Tag 3D draws nothing when it was hidden at its last solution** (seen 2026-11-06, the tank's
+  labels): a scene that shows one with `ShowOnly` expires it and solves again before shooting. A
+  Justification of 8 drew nothing at all; leave it at its default.
+* **Model View hands out every step's Values and Colors in one branch** when Step is a list (the
+  tank's hundred modes): a Legend fed by them gets every mode's, one after another. The tank's
+  definition takes the first nine with List Item.
+* **A Nodal Displacements filtered by NodeTag hands its nodes back in the model's order**, not in the
+  order the tags were given (seen 2026-11-07: the bundled tube's roof and 50th floor came out
+  swapped). `Histories` matches each point to its node by the filtered Position output.
+* **A mesh keeps its vertices in single precision**: 592 m up, a vertex is 591.99998. Geometry code
+  that matches a mesh's vertices to heights in double precision misses them (the buttressed core's
+  top floors came out empty); match to a millimetre.
+* **Opening a definition used to solve it twice**: shown on the canvas, a document solves, and
+  `Open` then solved it all again with `NewSolution(true)`, running every analysis twice - minutes,
+  for an earthquake. It now solves only what is left, `NewSolution(false)`.
+* **The screen saver stops the captures** (seen 2026-11-07): Rhino waits at its next capture, idle,
+  until it is gone, and run.sh gives up after `WAIT` seconds (7200 by default; the earthquakes and
+  the towers together need more). The lock screen alone does not stop them. While the screen is
+  locked, `caffeinate -d` keeps the screen saver away (see the run-in-rhino skill).
+* **Never edit `run.sh` while it runs** (seen 2026-11-08): bash reads a script as it goes, so an edit
+  mid-run ends it with "unexpected EOF", and its exit handler quits Rhino in the middle of a scene.
+  `Shots.cs` is safe to edit: run.sh compiled it at the start.
+* **Unlocking the screen can change the viewport's size** (seen 2026-11-07: the frames after an
+  unlock showed the tower about a third closer, its top cut off, as if the upright 591 x 788
+  viewport had turned wide). Shoot logs
+  the viewport's size again whenever it changes, and the earthquake scenes frame their camera again.
+  Other animations do not yet: look for a second "the viewport is" line in their log.

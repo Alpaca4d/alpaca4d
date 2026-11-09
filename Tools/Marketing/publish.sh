@@ -262,17 +262,6 @@ femur() {
   pair "$s/femur-in-grasshopper.png" "$s/grasshopper-definition.png" "$s/femur.png"
 }
 
-dragon() {
-  local d=$O/inigo-the-dragon m
-  mkdir -p "$d"
-  for m in 0 1 4 5; do trim dragon/dragon-mode-$m "$d/mode-$m.png"; done
-  canvas dragon/dragon-canvas "$d/grasshopper-definition.png"
-  pair "$d/inigo-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/mode-4.png"
-  # A mode swings through its rest and back: a loop, with no frames to skip or hold.
-  $P anim "$OUT/dragon/dragon-mode-4-frames" "$d/mode-4-wings" 40 800 15 0
-  $P anim "$OUT/dragon/dragon-mode-0-frames" "$d/mode-0-sway" 40 800 15 0
-}
-
 bricks() {
   local d=$O/brick-block
   mkdir -p "$d"
@@ -313,6 +302,13 @@ curvedbeam() {
   done
   canvas curvedbeam/curved-beam-canvas "$d/grasshopper-definition.png"
   pair "$d/curved-beam-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/curved-beam-sections.png"
+  # On two supports, the load, then the roller, walking along the beam and back, the beam sized again at every
+  # node, its caption under each frame: a case of its own each, for a post of its own.
+  local c
+  for c in moving-load moving-support; do
+    mkdir -p "$d-$c"
+    $P animcharts "$OUT/curvedbeam/curved-beam-$c-frames" "$OUT/curvedbeam/curved-beam-$c-captions" "$d-$c/curved-beam-$c" 40 900 8 0 3 0.82
+  done
 }
 
 beamgrid() {
@@ -323,6 +319,10 @@ beamgrid() {
   done
   canvas beamgrid/beam-grid-canvas "$d/grasshopper-definition.png"
   pair "$d/beam-grid-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/beam-grid-sections.png"
+  # The supports walking in from the corners and back, the grid sized again at each, a second a stop.
+  mkdir -p "$d-moving-supports"
+  $P animcharts "$OUT/beamgrid/beam-grid-moving-supports-frames" "$OUT/beamgrid/beam-grid-moving-supports-captions" \
+    "$d-moving-supports/beam-grid-moving-supports" 40 900 10 0 0 0.82
 }
 
 # The docs' how-to guides: a folder per picture, and a copy beside its guide in the docs.
@@ -347,25 +347,33 @@ howto() {
 
 # The six conventional structures: each one's loads, deformed shape and GIF, its canvas beside its
 # deformed shape, and the tower's first mode - and the example's pictures in examples/<slug>/.
+# One of the structures, captured by scene: its loads, its deformed shape, the GIF of it deforming,
+# its first mode if it has one, its canvas; and the example's pictures.
+structure() {
+  local scene=$1 slug=$2 d e
+  d=$M/structures/$slug
+  e=$M/../examples/$slug
+  mkdir -p "$d" "$e"
+  trim $scene/$slug-loads "$d/$slug-loads.png" 0 12
+  trim $scene/$slug-deformed "$d/$slug-deformed.png" 0 12
+  $P anim "$OUT/$scene/$slug-deforming-frames" "$d/$slug-deforming" 40 900 15 0
+  if [ -d "$OUT/$scene/$slug-mode-frames" ]; then
+    trim $scene/$slug-mode "$d/$slug-mode.png" 0 12
+    $P anim "$OUT/$scene/$slug-mode-frames" "$d/$slug-mode" 40 900 15 0
+  fi
+  canvas $scene/$slug-canvas "$d/grasshopper-definition.png"
+  # The example's page: the deformed shape first, the loads second, and the GIFs.
+  cp "$d/$slug-deformed.png" "$e/$slug.png"
+  cp "$d/$slug-loads.png" "$e/$slug-2.png"
+  cp "$d/$slug-deforming.gif" "$e/$slug-deforming.gif"
+  [ -f "$d/$slug-mode.gif" ] && cp "$d/$slug-mode.gif" "$e/$slug-mode.gif"
+  return 0
+}
+
 structures() {
-  local slug d
-  for slug in truss-roof-hall steel-tower roof-canopy vertical-truss-facade barrel-vault horizontal-truss-facade; do
-    d=$M/structures/$slug
-    mkdir -p "$d"
-    trim structures/$slug-loads "$d/$slug-loads.png" 0 12
-    trim structures/$slug-deformed "$d/$slug-deformed.png" 0 12
-    $P anim "$OUT/structures/$slug-deforming-frames" "$d/$slug-deforming" 40 900 15 0
-    if [ -d "$OUT/structures/$slug-mode-frames" ]; then
-      trim structures/$slug-mode "$d/$slug-mode.png" 0 12
-      $P anim "$OUT/structures/$slug-mode-frames" "$d/$slug-mode" 40 900 15 0
-    fi
-    canvas structures/$slug-canvas "$d/grasshopper-definition.png"
-    # The example's page: the deformed shape first, the loads second, and the GIFs.
-    local e=$M/../examples/$slug
-    cp "$d/$slug-deformed.png" "$e/$slug.png"
-    cp "$d/$slug-loads.png" "$e/$slug-2.png"
-    cp "$d/$slug-deforming.gif" "$e/$slug-deforming.gif"
-    [ -f "$d/$slug-mode.gif" ] && cp "$d/$slug-mode.gif" "$e/$slug-mode.gif"
+  local slug
+  for slug in truss-roof-hall steel-tower roof-canopy vertical-truss-facade barrel-vault horizontal-truss-facade compressed-shell; do
+    structure structures $slug
   done
 }
 
@@ -386,13 +394,249 @@ earthquakes() {
   done
 }
 
-ALL="cow femur dragon bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell"
+# The printed cylinder: the still of it buckling, the ages at 30 layers, its printing as GIF and MP4 with
+# the load factor's chart under each frame, the buckling mode swinging, its canvas, and the example's pictures.
+printing() {
+  local d=$M/3d-printing/printed-cylinder e=$M/../examples/printed-cylinder
+  mkdir -p "$d" "$e"
+  trim printing/printed-cylinder-buckled "$d/printed-cylinder-buckled.png" 0 12
+  trim printing/printed-cylinder-ages "$d/printed-cylinder-ages.png" 0 12
+  $P stack "$d/printed-cylinder-buckled-chart.png" "$d/printed-cylinder-buckled.png" "$OUT/printing/printed-cylinder-chart.png" 0
+  # Eight frames a layer: the MP4 has them all, 24 a second; the GIF, for posts, every third at 8, 600 px
+  # wide, so that it stays light with every brick's edges drawn.
+  $P animcharts "$OUT/printing/printed-cylinder-printing-frames" "$OUT/printing/printed-cylinder-printing-charts" "$d/printed-cylinder-printing" 40 900 24 2
+  local half; half=$(mktemp -d)
+  mkdir -p "$half/frames" "$half/charts"
+  local i=0 f
+  for f in "$OUT"/printing/printed-cylinder-printing-frames/*.png; do
+    if [ $(( $(basename "$f" .png | sed 's/^0*//;s/^$/0/') % 3 )) = 2 ]; then
+      cp "$f" "$half/frames/$(printf %03d $i).png"
+      cp "$OUT/printing/printed-cylinder-printing-charts/$(basename "$f")" "$half/charts/$(printf %03d $i).png"
+      i=$((i + 1))
+    fi
+  done
+  $P animcharts "$half/frames" "$half/charts" "$half/printing" 40 600 8 2
+  cp "$half/printing.gif" "$d/printed-cylinder-printing.gif"
+  rm -rf "$half"
+  $P anim "$OUT/printing/printed-cylinder-buckling-frames" "$d/printed-cylinder-buckling" 40 600 15 0
+  canvas printing/printed-cylinder-canvas "$d/grasshopper-definition.png"
+  cp "$d/printed-cylinder-buckled-chart.png" "$e/printed-cylinder.png"
+  cp "$d/printed-cylinder-ages.png" "$e/printed-cylinder-2.png"
+  $P pagemp4 "$d/printed-cylinder-printing.mp4" "$e/printed-cylinder-printing.mp4"
+  # The buckling mode as a GIF on the page, lighter than the one for posts.
+  $P pagegif "$OUT/printing/printed-cylinder-buckling-frames" "$e/printed-cylinder-buckling.gif"
+}
+
+# A shape of Tools/Examples/PrintedStructure.py printed along its own sections, as printing() does for
+# the cylinder: the whole print, a frame for every 2.5 s of printing or more; the ages at its end; the
+# settling and the buckling mode where the load factor reaches 1. printedshape scene prefix case example
+# stem: the pictures go to marketing/3d-printing/<case>, and to examples/3d-printed-structure/ as <stem>*.
+printedshape() {
+  local scene=$1 p=$2 d=$M/3d-printing/$3 e=$M/../examples/3d-printed-structure stem=$4 s=$OUT/$1
+  mkdir -p "$d" "$e"
+  trim "$scene/$p-buckled" "$d/$p-buckled.png" 0 12
+  trim "$scene/$p-ages" "$d/$p-ages.png" 0 12
+  trim "$scene/$p-settling" "$d/$p-settling.png" 0 12
+  $P stack "$d/$p-buckled-chart.png" "$d/$p-buckled.png" "$s/$p-chart.png" 0
+  $P animcharts "$s/$p-printing-frames" "$s/$p-printing-charts" "$d/$p-printing" 40 900 12 2
+  # The GIF, for posts: every third frame at 6 a second, 600 px wide, light with every brick's edges drawn.
+  local third; third=$(mktemp -d)
+  mkdir -p "$third/frames" "$third/charts"
+  local i=0 f
+  for f in "$s/$p-printing-frames"/*.png; do
+    if [ $(( $(basename "$f" .png | sed 's/^0*//;s/^$/0/') % 3 )) = 2 ]; then
+      cp "$f" "$third/frames/$(printf %03d $i).png"
+      cp "$s/$p-printing-charts/$(basename "$f")" "$third/charts/$(printf %03d $i).png"
+      i=$((i + 1))
+    fi
+  done
+  $P animcharts "$third/frames" "$third/charts" "$third/printing" 40 600 6 2
+  cp "$third/printing.gif" "$d/$p-printing.gif"
+  rm -rf "$third"
+  $P anim "$s/$p-buckling-frames" "$d/$p-buckling" 40 600 15 0
+  canvas "$scene/$p-canvas" "$d/grasshopper-definition.png"
+  cp "$d/$p-buckled-chart.png" "$e/$stem.png"
+  $P pagemp4 "$d/$p-printing.mp4" "$e/$stem-printing.mp4"
+  $P pagegif "$s/$p-buckling-frames" "$e/$stem-buckling.gif"
+}
+
+# The branching shell of the earlier voxel example: the example's own pictures, under its old name.
+printedstructure() {
+  printedshape printedstructure printed-structure printed-structure 3d-printed-structure
+  local e=$M/../examples/3d-printed-structure
+  cp "$M/3d-printing/printed-structure/printed-structure-ages.png" "$e/3d-printed-structure-2.png"
+  cp "$M/3d-printing/printed-structure/printed-structure-settling.png" "$e/3d-printed-structure-3.png"
+}
+# The other shapes, each a section of the example's page.
+printedtwisted() { printedshape printedtwisted twisted-column twisted-column twisted-column; }
+printedwall() { printedshape printedwall wavy-wall wavy-wall wavy-wall; }
+printeddome() { printedshape printeddome printed-dome dome dome; }
+# The leaning column printed along its axis, the nozzle tilting as it bends over; and printed in flat layers,
+# its Path unplugged, after which the two go side by side at the same moment - for the page as well.
+printedleaning() { printedshape printedleaning leaning-column leaning-column leaning-column; }
+printedleaningflat() {
+  local d=$M/3d-printing/leaning-column e=$M/../examples/3d-printed-structure a=$OUT/printedleaning b=$OUT/printedleaningflat
+  printedshape printedleaningflat leaning-column-flat leaning-column leaning-column-flat
+  # The canvas is the column's own, its Path plugged in; on the page, of the flat print only its chart.
+  canvas printedleaning/leaning-column-canvas "$d/grasshopper-definition.png"
+  rm -f "$e/leaning-column-flat-printing.mp4" "$e/leaning-column-flat-buckling.gif"
+  local ea eb
+  ea=$(awk '$1 != "critical" { t = $1 } END { print t }' "$a/leaning-column-factors.txt")
+  eb=$(awk '$1 != "critical" { t = $1 } END { print t }' "$b/leaning-column-flat-factors.txt")
+  $P sidebyside "$a/leaning-column-printing-frames" "$a/leaning-column-printing-charts" "$ea" "$a/leaning-column-label.png" \
+    "$b/leaning-column-flat-printing-frames" "$b/leaning-column-flat-printing-charts" "$eb" "$b/leaning-column-flat-label.png" \
+    "$d/leaning-column-both-printing" 1200 12 2
+  $P pagemp4 "$d/leaning-column-both-printing.mp4" "$e/leaning-column-both-printing.mp4" 1200
+}
+
+# The buckling modes alone, after the printingbuckling scene made their frames again: the GIFs and MP4s for
+# posts, and the lighter GIFs on the pages. The flat leaning column has none on the page.
+printingbuckling() {
+  local x=$M/../examples scene p c stem
+  $P anim "$OUT/printing/printed-cylinder-buckling-frames" "$M/3d-printing/printed-cylinder/printed-cylinder-buckling" 40 600 15 0
+  $P pagegif "$OUT/printing/printed-cylinder-buckling-frames" "$x/printed-cylinder/printed-cylinder-buckling.gif"
+  # Scene, prefix, case and page stem, four words each; not a heredoc read line by line, whose lines ffmpeg
+  # would read as its own input.
+  set -- printedstructure printed-structure printed-structure 3d-printed-structure \
+         printedtwisted twisted-column twisted-column twisted-column \
+         printedwall wavy-wall wavy-wall wavy-wall \
+         printeddome printed-dome dome dome \
+         printedleaning leaning-column leaning-column leaning-column \
+         printedleaningflat leaning-column-flat leaning-column -
+  while [ $# -ge 4 ]; do
+    scene=$1 p=$2 c=$3 stem=$4
+    shift 4
+    $P anim "$OUT/$scene/$p-buckling-frames" "$M/3d-printing/$c/$p-buckling" 40 600 15 0
+    [ "$stem" = - ] || $P pagegif "$OUT/$scene/$p-buckling-frames" "$x/3d-printed-structure/$stem-buckling.gif"
+  done
+}
+
+# A footbridge's first three modes, each a still and a loop of it swinging, its canvas, and the
+# picture of the docs' how-to guide on natural frequencies.
+footbridge() {
+  local d=$M/structures/footbridge m n
+  mkdir -p "$d"
+  for m in 0 1 2; do
+    n=$((m + 1))
+    trim footbridge/footbridge-mode-$m "$d/footbridge-mode-$n.png" 0 12
+    $P anim "$OUT/footbridge/footbridge-mode-$m-frames" "$d/footbridge-mode-$n" 40 900 15 0
+  done
+  canvas footbridge/footbridge-canvas "$d/grasshopper-definition.png"
+  cp "$d/footbridge-mode-1.png" "$M/../doc/how-to/analysis/natural-frequencies.png"
+}
+
+# A tank's first hundred modes: the close look at the grid, the whole grid receding, the grid from
+# above with each mode's number and frequency, the close look swinging, its canvas, and the natural
+# vibration example's pictures.
+tank() {
+  local d=$M/structures/tank-modes e=$M/../examples/natural-vibration
+  mkdir -p "$d" "$e"
+  trim tank/tank-modes "$d/tank-modes.png" 0 12
+  trim tank/tank-modes-edges "$d/tank-modes-edges.png" 0 12
+  trim tank/tank-modes-field "$d/tank-modes-field.png" 0 12
+  trim tank/tank-modes-grid "$d/tank-modes-grid.png" 0 12
+  $P anim "$OUT/tank/tank-modes-frames" "$d/tank-modes-swinging" 40 900 15 0
+  canvas tank/tank-canvas "$d/grasshopper-definition.png"
+  # The page's pictures 2400 px wide, in 256 colours: the modes' smooth colours make the full ones 3 to 7 MB.
+  local f
+  for f in "tank-modes:natural-vibration" "tank-modes-grid:natural-vibration-2"; do
+    ffmpeg -y -loglevel error -i "$d/${f%%:*}.png" \
+      -vf "scale=2400:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a" \
+      "$e/${f##*:}.png"
+  done
+  cp "$d/tank-modes-swinging.mp4" "$e/natural-vibration-swinging.mp4"
+}
+
+# The sticks: the still with the spectrum behind them, again with its charts under it, the MP4 of
+# them shaking in real time with theirs, the canvas, and the example's pictures.
+spectrum() {
+  local d=$M/earthquakes/response-spectrum e=$M/../examples/response-spectrum
+  mkdir -p "$d" "$e"
+  trim spectrum/response-spectrum "$d/response-spectrum.png" 0 12
+  $P stack "$d/response-spectrum-2.png" "$d/response-spectrum.png" "$OUT/spectrum/response-spectrum-chart.png" 0
+  $P animcharts "$OUT/spectrum/response-spectrum-frames" "$OUT/spectrum/response-spectrum-charts" "$d/response-spectrum-shaking" 40 900 10 0
+  canvas spectrum/spectrum-canvas "$d/grasshopper-definition.png"
+  cp "$d/response-spectrum.png" "$d/response-spectrum-2.png" "$d/response-spectrum-shaking.mp4" "$e/"
+}
+
+# The compressed shell, from the structures' scene of its own.
+shell() { structure shell compressed-shell; }
+
+# The Rebellious Slave: its vertical stress from in front and from its left, its first two modes as
+# stills and loops, its canvas, and the pictures of its section of the Ten Node Tetrahedron page.
+slave() {
+  local d=$O/rebellious-slave t=$M/../doc/basics/elements/ten-node-tetrahedron/rebellious-slave m n
+  mkdir -p "$d" "$t"
+  trim slave/slave-stress "$d/rebellious-slave.png" 0 12
+  trim slave/slave-stress-left "$d/rebellious-slave-left.png" 0 12
+  for m in 0 1; do
+    n=$((m + 1))
+    trim slave/slave-mode-$m "$d/mode-$n.png" 0 12
+    $P anim "$OUT/slave/slave-mode-$m-frames" "$d/mode-$n" 40 800 15 0
+    cp "$d/mode-$n.gif" "$t/rebellious-slave-mode-$n.gif"
+  done
+  canvas slave/slave-canvas "$d/grasshopper-definition.png"
+  pair "$d/rebellious-slave-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/rebellious-slave.png"
+  cp "$d/rebellious-slave.png" "$t/rebellious-slave.png"
+  cp "$d/rebellious-slave-left.png" "$t/rebellious-slave-2.png"
+}
+
+# Moment curvature: the section beside its diagram, from above, its canvas, and the example's picture.
+# The buildings that are not straight and the towers of a hundred storeys and more, shaken by El Centro:
+# as the earthquakes, but a tall one's charts stand beside it rather than under it. $1 is the scene they
+# were captured in, the rest their slugs.
+quakes() {
+  local scene=$1 slug d e
+  shift
+  for slug in "$@"; do
+    d=$M/earthquakes/$slug
+    e=$M/../examples/$slug
+    mkdir -p "$d" "$e"
+    trim $scene/$slug "$d/$slug.png" 0 12
+    case $slug in
+      leaning-*|crescent-*)
+        $P stack "$d/$slug-2.png" "$d/$slug.png" "$OUT/$scene/$slug-chart.png" 0
+        $P animcharts "$OUT/$scene/$slug-frames" "$OUT/$scene/$slug-charts" "$d/$slug-shaking" 40 900 10 0 ;;
+      *)
+        $P pair "$d/$slug-2.png" "$d/$slug.png" "$OUT/$scene/$slug-chart.png" 1400
+        $P besidecharts "$OUT/$scene/$slug-frames" "$OUT/$scene/$slug-charts" "$d/$slug-shaking" 40 900 10 0 ;;
+    esac
+    canvas $scene/$slug-canvas "$d/grasshopper-definition.png"
+    cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-shaking.mp4" "$e/"
+  done
+}
+QUAKE_BUILDINGS="twisting-tower-earthquake leaning-towers-earthquake curving-tower-earthquake crescent-earthquake"
+QUAKE_TOWERS="bundled-tube-earthquake braced-tube-earthquake buttressed-core-earthquake outrigger-tower-earthquake diagrid-tower-earthquake"
+quakebuildings() { quakes quakebuildings $QUAKE_BUILDINGS; }
+quaketowers() { quakes quaketowers $QUAKE_TOWERS; }
+twisting() { quakes twisting twisting-tower-earthquake; }
+leaning() { quakes leaning leaning-towers-earthquake; }
+curving() { quakes curving curving-tower-earthquake; }
+crescent() { quakes crescent crescent-earthquake; }
+bundled() { quakes bundled bundled-tube-earthquake; }
+braced() { quakes braced braced-tube-earthquake; }
+buttressed() { quakes buttressed buttressed-core-earthquake; }
+outrigger() { quakes outrigger outrigger-tower-earthquake; }
+diagrid() { quakes diagrid diagrid-tower-earthquake; }
+
+momentcurvature() {
+  local d=$M/domain-moment-curvature/moment-curvature e=$M/../examples/moment-curvature
+  mkdir -p "$d" "$e"
+  trim momentcurvature/moment-curvature "$d/moment-curvature.png" 0 12
+  canvas momentcurvature/moment-curvature-canvas "$d/grasshopper-definition.png"
+  pair "$d/moment-curvature-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/moment-curvature.png"
+  cp "$d/moment-curvature.png" "$e/moment-curvature.png"
+}
+
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done
 fi
+# Run only when named: the buckling modes alone of the 3D printing scenes.
+EXTRA="printingbuckling"
 for scene in $scenes; do
-  case " $ALL " in *" $scene "*) ;; *) echo "no scene $scene; the scenes are: $ALL"; exit 1 ;; esac
+  case " $ALL $EXTRA " in *" $scene "*) ;; *) echo "no scene $scene; the scenes are: $ALL"; exit 1 ;; esac
   echo "=== $scene"
   $scene
 done
