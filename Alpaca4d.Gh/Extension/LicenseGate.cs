@@ -8,10 +8,10 @@ namespace Alpaca4d.Gh
     /// <summary>
     /// What a component says and does when a missing license stops it.
     ///
-    /// Three rules, all in <see cref="Alpaca4d.License.License"/>: an analysis is free up to
-    /// <see cref="Alpaca4d.License.License.FreeElementLimit"/> elements, Topology Optimisation up to
-    /// <see cref="Alpaca4d.License.License.FreeTopologyElementLimit"/>, and a few components
-    /// need a license whatever the model. This keeps the wording of the refusal in one place, and
+    /// Three rules, all in <see cref="Alpaca4d.License.License"/>: an analysis, and Model View, are
+    /// free up to <see cref="Alpaca4d.License.License.FreeElementLimit"/> elements, Topology
+    /// Optimisation up to <see cref="Alpaca4d.License.License.FreeTopologyElementLimit"/> - and so is
+    /// the analysis of the design it hands on - and a few components need a license whatever the model. This keeps the wording of the refusal in one place, and
     /// remembers who was refused so that a license added from the License window runs them again
     /// straight away, instead of leaving them red until something upstream changes.
     /// </summary>
@@ -48,9 +48,12 @@ namespace Alpaca4d.Gh
             return $"{name} needs a license. {HowToLicense}";
         }
 
-        /// <summary>For an analysis, which is free up to the element limit.</summary>
+        /// <summary>
+        /// For an analysis, which is free up to the element limit: the topology optimisation's for the
+        /// design one handed on.
+        /// </summary>
         public static bool AllowsModel(GH_Component component, Alpaca4d.Model model)
-            => AllowsModel(component, model, Alpaca4d.License.License.FreeElementLimit, "Alpaca4d analyses");
+            => AllowsModel(component, model, Alpaca4d.License.License.FreeLimitFor(model), "Alpaca4d analyses");
 
         /// <summary>
         /// For something free up to <paramref name="limit"/> elements. <paramref name="what"/> starts

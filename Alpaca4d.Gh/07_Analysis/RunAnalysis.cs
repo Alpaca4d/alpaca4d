@@ -126,7 +126,7 @@ namespace Alpaca4d.Gh
             }
 
 
-            // Free up to License.FreeElementLimit elements. Past it, no license means no analysis.
+            // Free up to License.FreeLimitFor(model) elements - 50, or 500 for a topology design. Past it, no license means no analysis.
             if (!LicenseGate.AllowsModel(this, model))
                 return;
 

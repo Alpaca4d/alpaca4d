@@ -857,11 +857,11 @@ namespace Alpaca4d.Gh
 
             if (!DA.GetData(0, ref _model) || _model == null) return;
 
-            // Needs a license whatever the model. Refused mid-animation, the timer would go on
-            // re-solving twenty times a second only to be refused each time, so it stops too. The
-            // model is let go of as well, or the viewport would go on drawing the last one this
-            // component was allowed to show.
-            if (!LicenseGate.Allows(this, "Model View"))
+            // Free up to the element limit an analysis has, so that what may be analysed without a
+            // license may be seen too. Refused mid-animation, the timer would go on re-solving twenty
+            // times a second only to be refused each time, so it stops too. The model is let go of as
+            // well, or the viewport would go on drawing the last one this component was allowed to show.
+            if (!LicenseGate.AllowsModel(this, _model, Alpaca4d.License.License.FreeLimitFor(_model), "Model View draws"))
             {
                 _model = null;
                 StopAnimation();
