@@ -109,6 +109,7 @@ public static class Shots
                     case "tankstills": list = Tank().Where(x => x.Item1 != "swinging").ToList(); break;
                     case "spectrum": list = Spectrum(); break;
                     case "momentcurvature": list = MomentCurvatureScene(); break;
+                    case "pushover": list = PushoverScene(); break;
                     case "earthquakes": list = Earthquakes("earthquakes"); break;
                     // The buildings that are not straight, and the towers of a hundred storeys and more.
                     case "quakebuildings": list = Earthquakes("buildings"); break;
@@ -2957,6 +2958,190 @@ public static class Shots
         var info = Info(view);
         int at = info.LastIndexOf("max ");
         return at >= 0 && double.TryParse(info.Substring(at + 4), System.Globalization.NumberStyles.Float, Inv, out double v) ? v : 0.0;
+    }
+
+    // ------------------------------------------------------------------ a building pushed over
+
+    /// <summary>
+    /// The irregular concrete building of Tools/Examples/Structures.py pushed over, PushoverBuilding.gh:
+    /// its canvas; the building at the end of the push with its plastic hinges, from a corner, and the
+    /// chart of its capacity curve on its own; the building beside Grasshopper's own drawing of the curve,
+    /// as the example opens; and a frame every second point of the curve, the building pushed a little
+    /// further each time and its hinges forming, with the chart of the curve so far in a folder of its own,
+    /// for publish.sh's animcharts.
+    /// </summary>
+    static List<(string, Func<bool>)> PushoverScene() => new List<(string, Func<bool>)>
+    {
+        Do("frame", () =>
+        {
+            SoftEdges(EdgeGrey);
+            Open("PushoverBuilding.gh");
+            foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                Messages(c);
+            var push = Find<IGH_Component>("Pushover");
+            foreach (var m in push.RuntimeMessages(GH_RuntimeMessageLevel.Remark)) Log("  Pushover: " + m);
+            var view = Find<IGH_Component>("Frame pushed");
+            var rest = Find<IGH_Component>("Irregular building at rest");
+            var curve = Find<IGH_Param>("Capacity curve drawn");
+            var labels = Find<IGH_Component>("Curve labels");
+            var point = Find<GH_NumberSlider>("Point on the curve");
+            var d = Values<GH_Number>(Out(push, "Displacement")).Select(n => n.Value * 1000.0).ToArray();
+            var v = Values<GH_Number>(Out(push, "Base Shear")).Select(n => n.Value).ToArray();
+            var hinges = Values<GH_Integer>(Out(push, "Yields At")).Select(n => n.Value).ToArray();
+            if (d.Length < 2) throw new Exception("the push gave no curve");
+            Log($"  {hinges.Length} hinges, the first at point {(hinges.Length > 0 ? hinges.Min() : -1)}");
+            foreach (var line in Values<GH_String>(Out(push, "Hinges")).Take(12)) Log("    " + line.Value);
+            SwayByFloor(push);
+            int last = d.Length - 1, peak = Array.IndexOf(v, v.Max());
+            Log($"  {d.Length} points to {d[last]:F0} mm; the peak {v[peak]:F0} kN at {d[peak]:F0} mm; {v[last]:F0} kN at the end");
+            Canvas("pushover-building-canvas");
+
+            // Framed at the end of the push, where it sways the most, with the frame at rest under it.
+            ShowOnly(view, rest);
+            double most = AtStep(point, last, view);
+            Log($"  drawn at the last point: {most:G4} mm at the most");
+            var frame = Drawn();
+            var framed = Aim(Grown(frame, 0.06), new Vector3d(0.55, -1.3, 0.65), Vector3d.ZAxis, magnify: 1.2);
+            FitInside(framed, frame, 0.17);
+            Shoot(framed, "pushover-building", WithLegend);
+            PushoverChart(Path.Combine(outDir, "pushover-building-chart.png"), d, v, last, WithLegend, hinges);
+
+            Directory.CreateDirectory(Path.Combine(outDir, "pushover-building-frames"));
+            Directory.CreateDirectory(Path.Combine(outDir, "pushover-building-charts"));
+            int frames = 0;
+            var points_ = Enumerable.Range(0, last + 1).Where(k => k % 3 == 0 || k == last).ToList();
+            foreach (int k in points_)
+            {
+                AtStep(point, k, view);
+                Shoot(framed, Path.Combine("pushover-building-frames", frames.ToString("D3")));
+                PushoverChart(Path.Combine(outDir, "pushover-building-charts", frames.ToString("D3") + ".png"), d, v, k, 1, hinges);
+                frames++;
+            }
+            Log($"  {frames} frames and their charts, every third point of the curve");
+
+            // As the example opens: the curve Grasshopper draws beside the frame, at the last point. Last,
+            // as it aims the one viewport the frames are shot in somewhere else.
+            ShowOnly(view, rest, curve, labels);
+            AtStep(point, last, view);
+            var both = Drawn();
+            var side = Aim(Grown(both, 0.05), new Vector3d(0.15, -1, 0.15), Vector3d.ZAxis, magnify: 1.15);
+            FitInside(side, both, 0.17);
+            Shoot(side, "pushover-building-and-curve", WithLegend);
+            Close();
+        }),
+    };
+
+    /// <summary>
+    /// How far each floor of a pushed model moved along X at the end of the push, its least and its most,
+    /// into the log: read by a Nodal Displacements of the scene's own, taken out again after.
+    /// </summary>
+    static void SwayByFloor(IGH_Component push)
+    {
+        var steps = Values<GH_Integer>(Out(push, "Step")).Select(n => n.Value).ToList();
+        if (steps.Count == 0) return;
+        var nodes = (IGH_Component)Instances.ComponentServer.EmitObject(new Guid("25085EAB-6C66-487E-B83B-BAB5AB02B1BB"));
+        nodes.CreateAttributes();
+        doc.AddObject(nodes, false);
+        try
+        {
+            nodes.Params.Input[0].AddSource(push.Params.Output[0]);
+            var step = (GH_PersistentParam<GH_Integer>)In(nodes, "Step");
+            step.PersistentData.Clear();
+            step.PersistentData.Append(new GH_Integer(steps.Last()));
+            doc.NewSolution(false);
+            var at = Values<GH_Point>(Out(nodes, "Position")).Select(p => p.Value).ToList();
+            var moved = Values<GH_Vector>(Out(nodes, "Displacement")).Select(v => v.Value.X * 1000.0).ToList();
+            foreach (var floor in Enumerable.Range(0, Math.Min(at.Count, moved.Count)).GroupBy(i => Math.Round(at[i].Z, 3)).OrderBy(g => g.Key))
+                Log($"    floor at {floor.Key:0.0} m: {floor.Min(i => moved[i]):0} to {floor.Max(i => moved[i]):0} mm along X");
+        }
+        finally { doc.RemoveObject(nodes, false); }
+    }
+
+    /// <summary>
+    /// The capacity curve at point k, 2400 px wide times scale: base shear up, the roof's displacement
+    /// along, the whole curve in light grey, the curve so far in light blue, the point now in orange, and
+    /// the two values now, top right, with how many plastic hinges have formed - a small orange ring on
+    /// the curve where each did, from the Pushover's Yields At.
+    /// </summary>
+    static void PushoverChart(string path, double[] d, double[] v, int k, double scale, int[] hinges,
+                              string upTitle = "Base shear [kN]", string alongTitle = "Roof displacement [mm]",
+                              Func<int, int, string> nowText = null)
+    {
+        float s = (float)scale;
+        int w = (int)(2400 * s), h = (int)(820 * s);
+        var r = new RectangleF(260 * s, 130 * s, w - 380 * s, 520 * s);
+        double right = Nice(d.Max() * 1.02), top = Nice(v.Max() * 1.03);
+        Func<double, float> X = x => r.Left + (float)(x / right) * r.Width;
+        Func<double, float> Y = y => r.Bottom - (float)(y / top) * r.Height;
+        k = Math.Max(0, Math.Min(k, d.Length - 1));
+        using (var bitmap = new Bitmap(w, h))
+        using (var g = Graphics.FromImage(bitmap))
+        using (var big = new Font(ChartFont, 42 * s, GraphicsUnit.Pixel))
+        using (var small = new Font(ChartFont, 32 * s, GraphicsUnit.Pixel))
+        using (var axis = new Pen(ChartAxis, 2 * s))
+        using (var ink = new SolidBrush(DarkTech))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.Clear(Background);
+            // A short axis - a load factor of 2.5 - in round ticks with decimals: 0.5 apart, not 0.625 rounded to 1.
+            int up = top < 10 ? Divisions(top) : 4;
+            for (int i = 0; i <= up; i++)
+            {
+                double y = top * i / up;
+                g.DrawLine(axis, r.Left, Y(y), r.Right, Y(y));
+                var label = y.ToString(top < 10 ? "0.##" : "0", Inv);
+                var size = g.MeasureString(label, small);
+                g.DrawString(label, small, ink, r.Left - size.Width - 14 * s, Y(y) - size.Height / 2);
+            }
+            for (int i = 0; i <= 4; i++)
+            {
+                double x = right * i / 4;
+                g.DrawLine(axis, X(x), r.Bottom, X(x), r.Bottom + 10 * s);
+                var label = x.ToString("0", Inv);
+                var size = g.MeasureString(label, small);
+                g.DrawString(label, small, ink, X(x) - size.Width / 2, r.Bottom + 16 * s);
+            }
+            g.DrawString(upTitle, big, ink, r.Left - 8 * s, r.Top - 100 * s);
+            var along = alongTitle;
+            var alongSize = g.MeasureString(along, small);
+            g.DrawString(along, small, ink, r.Left + (r.Width - alongSize.Width) / 2, r.Bottom + 66 * s);
+
+            var all = d.Select((x, i) => new PointF(X(x), Y(v[i]))).ToArray();
+            using (var faint = new Pen(ChartFaint, 4 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                g.DrawLines(faint, all);
+            if (k > 0)
+                using (var pen = new Pen(LightBlue, 7 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                    g.DrawLines(pen, all.Take(k + 1).ToArray());
+            // Where hinges formed, so far: one ring a point of the curve, however many formed at it.
+            using (var ring = new Pen(Orange, 4 * s))
+                foreach (int at in hinges.Where(h => h <= k && h < all.Length).Distinct())
+                    g.DrawEllipse(ring, all[at].X - 9 * s, all[at].Y - 9 * s, 18 * s, 18 * s);
+            using (var dot = new SolidBrush(Orange))
+                g.FillEllipse(dot, all[k].X - 13 * s, all[k].Y - 13 * s, 26 * s, 26 * s);
+
+            // Rounded first, and a zero written as one: -0.0001 kN would read "-0".
+            double roof = Math.Round(d[k]), shear = Math.Round(v[k]);
+            if (roof == 0) roof = 0;
+            if (shear == 0) shear = 0;
+            int formed = hinges.Count(h => h <= k);
+            var now = nowText != null ? nowText(k, formed) : $"Roof  {roof:0} mm      Base shear  {shear:0} kN      Hinges  {formed}";
+            var nowSize = g.MeasureString(now, big);
+            g.DrawString(now, big, ink, r.Right - nowSize.Width, r.Top - 100 * s);
+            bitmap.Save(path, ImageFormat.Png);
+        }
+    }
+
+    /// <summary>How many intervals split range into ticks of 1, 2, 2.5, 3 or 5 times a power of ten: five if they can, then four, six, three.</summary>
+    static int Divisions(double range)
+    {
+        foreach (int n in new[] { 5, 4, 6, 3 })
+        {
+            double step = range / n, scale = Math.Pow(10, Math.Floor(Math.Log10(step))), m = step / scale;
+            if (new[] { 1.0, 2.0, 2.5, 3.0, 5.0, 10.0 }.Any(x => Math.Abs(m - x) < 1e-9))
+                return n;
+        }
+        return 4;
     }
 
     // ------------------------------------------------------------------ stress lines on shells

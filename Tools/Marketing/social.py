@@ -18,7 +18,7 @@ FFMPEG = "/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg"
 
 # The topics in the order the page lists them, newest work first, and what each is called there.
 TOPICS = [
-    ("3d-printing", "3D printing"), ("earthquakes", "Earthquakes"), ("structures", "Structures"), ("section-optimiser", "Section Optimiser"),
+    ("pushover", "Pushover"), ("3d-printing", "3D printing"), ("earthquakes", "Earthquakes"), ("structures", "Structures"), ("section-optimiser", "Section Optimiser"),
     ("examples", "Design checks and studies"), ("domain-moment-curvature", "Column domain"),
     ("topology-optimisation", "Topology optimisation"), ("principal-stress-lines", "Principal stress lines"),
     ("solids", "Solids"), ("model-view", "Model View"), ("how-to", "How-to guides"), ("components", "Components"),
@@ -28,6 +28,7 @@ TOPICS = [
 HOLD = {
     "playground/": "Push the website first: the live Playground page still shows a made-up progress, says only the River lesson is ready, and is hidden from search engines.",
     "twisted-ring": "No page on the website yet, and no analysis behind it.",
+    "pushover/": "Not out yet: Pushover Analysis is only in 0.12.0_Dev, in no Yak beta, and the example page is not pushed. Release a beta and push the website first.",
     "inigo-the-dragon": "Its example is gone: the Rebellious Slave took its place on the Ten Node Tetrahedron page (2026-11-06), so the post's link leads nowhere.",
 }
 # Posts left off the page, matched exactly against a case's id, and why; their folders and READMEs stay.

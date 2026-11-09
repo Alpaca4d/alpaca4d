@@ -628,7 +628,25 @@ momentcurvature() {
   cp "$d/moment-curvature.png" "$e/moment-curvature.png"
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid"
+# The irregular building pushed over: the building at the end of the push with its hinges, and again
+# with its capacity curve under it; the push as GIF and MP4, the curve so far under every frame; the
+# building beside the curve Grasshopper draws, as the example opens, and beside its canvas; and the
+# example's pictures.
+pushover() {
+  local slug=irregular-building-pushover
+  local d=$M/pushover/$slug e=$M/../examples/$slug
+  mkdir -p "$d" "$e"
+  trim pushover/pushover-building "$d/$slug.png" 0 12
+  $P stack "$d/$slug-2.png" "$d/$slug.png" "$OUT/pushover/pushover-building-chart.png" 0
+  trim pushover/pushover-building-and-curve "$d/$slug-curve.png" 0 12
+  # 600 wide: the building stands tall over its chart, and at 900 the GIF came to 12 MB, at 640 to 5.5.
+  $P animcharts "$OUT/pushover/pushover-building-frames" "$OUT/pushover/pushover-building-charts" "$d/$slug-pushing" 40 600 15 2
+  canvas pushover/pushover-building-canvas "$d/grasshopper-definition.png"
+  pair "$d/$slug-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/$slug-curve.png"
+  cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-curve.png" "$d/$slug-pushing.mp4" "$e/"
+}
+
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done
