@@ -20,6 +20,38 @@
 #   STRUCTURE=building     an eight-storey steel office building with concrete slabs
 #   STRUCTURE=city         a tiny city of sixteen buildings from two storeys to twenty
 #
+# a footbridge and its natural modes:
+#
+#   STRUCTURE=footbridge   a concrete deck on a steel box girder, and its first six modes
+#
+# and a row of sticks the same earthquake shakes, which together draw its response spectrum:
+#
+#   STRUCTURE=sticks       thirty cantilevers with a mass on top, from 1 m to 10 m tall
+#
+# and a shell form-found with Kangaroo2 to carry its own weight in compression:
+#
+#   STRUCTURE=shell        a concrete shell of four legs, 20 m across
+#
+# and a concrete tank's first hundred natural modes, a copy of the tank in each, on a grid:
+#
+#   STRUCTURE=tank         a concrete cylinder 4 m across and 5 m tall, built in at its base
+#
+# and, shaken by El Centro too, four buildings that are not straight:
+#
+#   STRUCTURE=twisting     a thirty-storey concrete tower turning a quarter turn to its roof
+#   STRUCTURE=leaning      two steel towers leaning towards each other over a street
+#   STRUCTURE=curving      a forty-storey round steel tower bowing out and back
+#   STRUCTURE=crescent     a fourteen-storey concrete block curved in plan
+#
+# and five towers of a hundred storeys and more, each after a famous one's structure, every floor a
+# rigid diaphragm with its mass at its nodes:
+#
+#   STRUCTURE=bundled      a bundled tube, after the Willis Tower
+#   STRUCTURE=braced       a braced tube, after the John Hancock Center
+#   STRUCTURE=buttressed   a buttressed core of concrete walls and a spire, after the Burj Khalifa
+#   STRUCTURE=outrigger    a braced core, super columns, outriggers and a tuned mass damper, after Taipei 101
+#   STRUCTURE=diagrid      a diagrid round a concrete core, after the Guangzhou IFC
+#
 # make.sh, next to it, writes each straight from this script, without Rhino:
 #     STRUCTURE=hall ./make.sh Structures.py TrussRoofHall.gh
 # It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
@@ -36,9 +68,10 @@
 import System
 import Rhino
 import Grasshopper
-from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParameterSide
-from Grasshopper.Kernel.Parameters.Hints import GH_IntegerHint_CS
-from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_String, GH_Boolean, GH_Vector, GH_Colour, GH_Interval
+from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParameterSide, GH_ParamAccess
+from Grasshopper.Kernel.Parameters.Hints import GH_IntegerHint_CS, GH_Point3dHint, GH_Vector3dHint
+from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_String, GH_Boolean, GH_Vector, GH_Colour, GH_Interval, GH_StructurePath
+from Grasshopper.Kernel.Data import GH_Path
 from Grasshopper.Kernel.Special import GH_NumberSlider, GH_Group, GH_Panel
 from Grasshopper.GUI.Base import GH_SliderAccuracy
 from Rhino.Geometry import Vector3d, Interval
@@ -51,6 +84,25 @@ UNIT_X = "79F9FBB3-8F1D-4D9A-88A9-F7961B1012CD"             # Vector > Vector > 
 UNIT_Y = "D3D195EA-2D59-4FFA-90B1-8B7FF3369F69"             # Vector > Vector > Unit Y
 UNIT_Z = "9103C240-A6A9-4223-9B42-DBD19BF38E2B"             # Vector > Vector > Unit Z
 MULTIPLY = "63FFF845-7C61-4DFB-BA12-44D481B4BF0F"           # Vector > Vector > Multiply
+VECTOR_XYZ = "56B92EAB-D121-43F7-94D3-6CD8F0DDEAD8"         # Vector > Vector > Vector XYZ
+DUPLICATE = "DD8134C0-109B-4012-92BE-51D843EDFFF7"          # Sets > Sequence > Duplicate Data
+UNFLATTEN = "B8E2AA8F-8830-4EE1-BB59-613EA279C281"          # Sets > Tree > Unflatten Tree
+TREE_BRANCH = "3A710C1E-1809-4E19-8C15-82ADCE31CD62"        # Sets > Tree > Tree Branch
+MESH_PARAM = "1E936DF3-0EEA-4246-8549-514CB8862B7A"         # Params > Geometry > Mesh
+LIST_ITEM = "59DAF374-BC21-4A5E-8282-5504FB7AE9AE"          # Sets > List > List Item
+MESH_EDGES = "2B9BF01D-5FE5-464C-B0B3-B469EB5F2EFB"         # Mesh > Analysis > Mesh Edges
+DECONSTRUCT_MESH = "BA2D8F57-0738-42B4-B5A5-FE4D853517EB"   # Mesh > Analysis > Deconstruct Mesh
+PULL_POINT = "902289DA-28DC-454B-98D4-B8F8AA234516"         # Vector > Point > Pull Point
+SMALLER_THAN = "AE840986-CADE-4E5A-96B0-570F007D4FC0"       # Maths > Operators > Smaller Than
+CULL_PATTERN = "008E9A6F-478A-4813-8C8A-546273BC3A6B"       # Sets > Sequence > Cull Pattern
+
+# Kangaroo2
+REFINE = "6003658A-C422-41CF-8A2F-8E106B09CC10"             # Kangaroo2 > Mesh > Refine
+LENGTH_LINE = "091BAE84-8FA9-4B35-8AAD-B25B859055F6"        # Kangaroo2 > Goals-Lin > Length(Line)
+ANCHOR = "3C30B1A1-4473-4AD4-A700-EA9770726C03"             # Kangaroo2 > Goals-Pt > Anchor
+LOAD = "2019C995-53AF-4EB2-976D-95B1FDC823FA"               # Kangaroo2 > Goals-Pt > Load
+SHOW = "0ED5E67D-539D-480E-88CB-D81FA795D66C"               # Kangaroo2 > Main > Show
+ZOMBIE = "4408343B-577E-4FD8-96FF-DF7549189186"             # Kangaroo2 > Main > Zombie Solver
 
 # Alpaca4d
 MATERIAL = "F50A7B47-2E73-4B57-BF7A-DB6D7EAC91D6"           # Material Library Elastic
@@ -77,13 +129,23 @@ PATH_SERIES = "AFAF03A6-6C4E-4DAB-AA46-EB60DFB95DFB"        # Path Time Series
 DAMPING = "EB8C2885-7DEF-4B12-B978-FD81A1A5763E"            # Damping
 INTEGRATOR = "A5F2B8C3-D1E4-4F5A-B6C7-8D9E0F1A2B3C"         # Integrator
 ANALYSIS_STEP = "825E700F-52D7-433D-92F6-8B6730F0A217"      # Analysis Step
+MASS_POINT = "5C7056ED-01D4-4DDE-AD9E-46A5266ECEE6"         # Mass Point
+NODAL_DISPLACEMENTS = "25085EAB-6C66-487E-B83B-BAB5AB02B1BB" # Nodal Displacements
+MPCO_RECORDER = "3F6C2B8E-9D41-4A7E-B5C3-1E8F0A2D7C94"      # MPCO Recorder
+RIGID_LINK = "C7A1A1B5-8C17-4B51-B9E2-3E8E9F3C6475"         # Rigid Link
+SERIES = "E64C5FB1-845C-4ab1-8911-5F338516BA67"             # Sets > Sequence > Series
+RIGID_DIAPHRAGM = "BDA8CE51-1B34-48C7-B0B1-80A25E7E5754"    # Rigid Diaphragm
+LINK = "5E9C2F84-1D67-4A03-9B58-C4F2E7A06D31"               # Link
+UNIAXIAL = "4F1E13F9-0B35-4F8F-A324-883CEA2F8777"           # Uniaxial, Elastic
+MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
+TEXT_TAG = "5A41528B-12B9-40DC-A3F2-842034D267C4"           # Display > Dimensions > Text Tag 3D
 
 # The switchers' other units, by name: the beam's truss, a ground motion's pattern, Newmark's integrator.
 TRUSS = "Truss (Alpaca4d)"
 UNIFORM_EXCITATION = "UniformExcitation (Alpaca4d)"
 NEWMARK = "Newmark"
 # Analysis Settings' inputs, by place.
-A_DAMPING, A_ALGORITHM, A_INTEGRATOR, A_TYPE, A_STEPS = 0, 5, 6, 7, 8
+A_DAMPING, A_SYSTEM, A_ALGORITHM, A_INTEGRATOR, A_TYPE, A_STEPS = 0, 3, 5, 6, 7, 8
 
 # ForceBeamColumn's inputs, and Truss's, by place.
 B_LINE, B_SECTION, B_ZAXIS, B_ELEMENT_ID = 0, 1, 3, 5
@@ -105,6 +167,9 @@ DARK_TECH, LIGHT_BLUE, PURPLE_, LIGHT_GREEN, ORANGE_ = "#2A2D31", "#4288F7", "#9
 # A pale tint of the light blue: where the elements' edges are drawn, black, a scale starting dark would
 # draw everything that hardly moves black too.
 PALE_BLUE = "#D4E3FD"
+# The earthquakes' scale, every one alike: a jet, dark blue for still to dark red for moving the most, the way
+# engineers read a displacement - the user's choice for the buckling modes, 2026-11-07, and for these the same day.
+JET = ["#000080", "#0000FF", "#0080FF", "#00FFFF", "#80FF80", "#FFFF00", "#FF8000", "#FF0000", "#800000"]
 # No green where line loads are drawn: theirs is green, and a green band would read as a load.
 SCALES = {
     "hall": [DARK_TECH, LIGHT_BLUE, ORANGE_],
@@ -114,11 +179,24 @@ SCALES = {
     "facade": [DARK_TECH, LIGHT_BLUE, PURPLE_],
     "vault": [PURPLE_, LIGHT_BLUE, LIGHT_GREEN],
     "windtruss": [PURPLE_, LIGHT_BLUE, ORANGE_],
-    "girder": [PALE_BLUE, LIGHT_BLUE, LIGHT_GREEN, ORANGE_],
-    "cablestayed": [LIGHT_BLUE, PURPLE_, ORANGE_],
-    "arch": [PALE_BLUE, LIGHT_BLUE, PURPLE_, ORANGE_],
-    "building": [LIGHT_BLUE, LIGHT_GREEN, ORANGE_],
-    "city": [PALE_BLUE, LIGHT_BLUE, LIGHT_GREEN, ORANGE_],
+    "girder": JET,
+    "cablestayed": JET,
+    "arch": JET,
+    "building": JET,
+    "city": JET,
+    "footbridge": [PALE_BLUE, LIGHT_BLUE, PURPLE_, ORANGE_],
+    "sticks": [PALE_BLUE, LIGHT_BLUE, PURPLE_, ORANGE_],
+    "shell": [PALE_BLUE, LIGHT_BLUE, PURPLE_, ORANGE_],
+    "tank": [LIGHT_BLUE, LIGHT_GREEN, ORANGE_],
+    "twisting": JET,
+    "leaning": JET,
+    "curving": JET,
+    "crescent": JET,
+    "bundled": JET,
+    "braced": JET,
+    "buttressed": JET,
+    "outrigger": JET,
+    "diagrid": JET,
 }
 R_VALUES, R_COLORS = 3, 4
 DISPLACEMENT, MAGNITUDE = 1, 0
@@ -419,6 +497,27 @@ def show_result(c, show, component_):
     c.Attributes.PerformLayout()
 
 
+def recorder(grid, nickname, nodes, col, row=None, gap=0):
+    """An MPCO Recorder writing only the node results named, such as "displacement", and no element
+    results, as unticking the rest of its menus does."""
+    c = component(grid, MPCO_RECORDER, "MPCO Recorder", nickname, col, row, gap)
+    impl = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    for field, keep in (("_nodeBoxes", nodes), ("_elementBoxes", ())):
+        for box in impl.GetType().GetField(field, flags).GetValue(impl):
+            box.Active = box.Tag in keep
+    return c
+
+
+def result_unit(c, show, component_, index):
+    """Picks the unit Model View reads a result in, by its place in the result's Unit drop-down: for
+    a length, mm, cm, m."""
+    c = getattr(c, "__implementation__", c)
+    flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+    unit = c.GetType().GetMethod("UnitOf", flags).Invoke(c, System.Array[System.Object]([show, component_]))
+    unit.Value = index
+
+
 def switch_unit(c, unit):
     """Puts a switcher component on another of its units, as its drop-down does. It sets its unit's
     parameters aside as it switches, and writes to Rhino's command line when one still has a parent -
@@ -434,18 +533,21 @@ def switch_unit(c, unit):
 
 
 def python_component(grid, nickname, function, inputs, outputs, col, row=None):
-    """A GhPython component running one function of StructuresGeometry.py: its inputs as (name, hint)
-    and its outputs as names, after its own out, which carries what the code prints and its errors."""
+    """A GhPython component running one function of StructuresGeometry.py: its inputs as (name, hint),
+    or (name, hint, access) for a list or a tree, and its outputs as names, after its own out, which
+    carries what the code prints and its errors."""
     c = emit(PYTHON, "GhPython")
     c.NickName = nickname
     while c.Params.Input.Count:
         c.Params.UnregisterInputParameter(c.Params.Input[0])
     while c.Params.Output.Count > 1:
         c.Params.UnregisterOutputParameter(c.Params.Output[1])
-    for i, (name, hint) in enumerate(inputs):
+    for i, spec in enumerate(inputs):
         p = c.CreateParameter(GH_ParameterSide.Input, i)
-        p.Name = p.NickName = name
-        p.TypeHint = hint
+        p.Name = p.NickName = spec[0]
+        p.TypeHint = spec[1]
+        if len(spec) > 2:
+            p.Access = spec[2]
         c.Params.RegisterInputParam(p)
     for i, name in enumerate(outputs):
         p = c.CreateParameter(GH_ParameterSide.Output, i + 1)
@@ -454,7 +556,7 @@ def python_component(grid, nickname, function, inputs, outputs, col, row=None):
     c.Params.OnParametersChanged()
     c.VariableParameterMaintenance()
     c.Code = (System.IO.File.ReadAllText(GEOMETRY) + "\n\n" + ", ".join(outputs) + " = " + function + "(" +
-              ", ".join(name for name, hint in inputs) + ")\n")
+              ", ".join(spec[0] for spec in inputs) + ")\n")
     return grid.put(c, col, row)
 
 
@@ -477,7 +579,8 @@ class Structure(object):
         self.grid = Grid(doc)
         self.title = title
         self.members, self.supports, self.patterns = [], [], []
-        self.parts = {"1": [], "2": [], "3": [], "4": [], "5": [], "6": []}
+        self.constraints, self.recorders = [], []
+        self.parts = {"1": [], "2": [], "3": [], "4": [], "5": [], "6": [], "7": []}
         hints = emit(PYTHON, "GhPython").GetType().Assembly
         as_float = self.as_float = System.Activator.CreateInstance(hints.GetType("GhPython.Component.NewFloatHint"))
         as_int = GH_IntegerHint_CS()
@@ -529,9 +632,10 @@ class Structure(object):
         return beam
 
     def support(self, name, points, held):
-        """A support at each of the geometry's points: held, Tx to Rz, True where held."""
+        """A support at each of the geometry's points, named, or of a parameter: held, Tx to Rz, True
+        where held."""
         s = component(self.grid, SUPPORT, "Support", name, MEMBERS, LOADED, gap=30)
-        wire(inp(s, S_POSITION), self.g(points))
+        wire(inp(s, S_POSITION), self.g(points) if isinstance(points, str) else points)
         for k in range(6):
             if not held[k]:
                 booleans(inp(s, k + 1), False)
@@ -591,6 +695,9 @@ class Structure(object):
         if step is not None:
             integer(inp(view, V_STEP), step)
         menu_setting(view, "_ckDeformed", "Active", True)
+        # The slider stops at 200: a shell that hardly moves is drawn larger than that.
+        if scale > 200:
+            menu_setting(view, "_slDeformScale", "MaxValue", float(scale))
         menu_setting(view, "_slDeformScale", "Value", scale)
         # The edges and the release symbols would hide the colours on members this thin.
         menu_setting(view, "_ckWires", "Active", False)
@@ -642,20 +749,26 @@ class Structure(object):
         self.parts["2"].append(beam)
         return beam
 
-    def slabs(self, name, meshes, thickness):
-        """Concrete slabs, thickness thick, as ASD Shells on a mesh output."""
-        concrete = component(self.grid, ND_MATERIAL, "nD", "Slab concrete", SECTIONS, MAIN, gap=30)
+    def slabs(self, name, meshes, thickness, concrete_name="Slab concrete"):
+        """Concrete slabs, thickness thick - a number, or a slider - as ASD Shells on a mesh output,
+        named, or a parameter."""
+        concrete = component(self.grid, ND_MATERIAL, "nD", concrete_name, SECTIONS, MAIN, gap=30)
         words(inp(concrete, 0), "Concrete")
         number(inp(concrete, 1), 30e6)
         number(inp(concrete, 2), 30e6 / 2.4)
         number(inp(concrete, 3), 0.2)
         number(inp(concrete, 4), 2500)
         inp(concrete, 5).PersistentData.Append(GH_Colour(AT_REST))
-        plate = component(self.grid, PLATE_FIBER, "Plate Fiber Section", "{0:g} mm".format(thickness * 1000), SECTIONS, MAIN, gap=30)
-        number(inp(plate, 1), thickness)
+        typed = isinstance(thickness, float)
+        plate = component(self.grid, PLATE_FIBER, "Plate Fiber Section",
+                          "{0:g} mm".format(thickness * 1000) if typed else "Thickness", SECTIONS, MAIN, gap=30)
+        if typed:
+            number(inp(plate, 1), thickness)
+        else:
+            wire(inp(plate, 1), thickness)
         wire(inp(plate, 2), out(concrete))
         shell = component(self.grid, SHELL, "ASD Shell", name, MEMBERS, MAIN, gap=30)
-        wire(flat(inp(shell, 0)), self.g(meshes))
+        wire(flat(inp(shell, 0)), self.g(meshes) if isinstance(meshes, str) else meshes)
         wire(inp(shell, 1), out(plate))
         self.members.append(shell)
         self.parts["2"] += [concrete, plate, shell]
@@ -689,6 +802,10 @@ class Structure(object):
         wire(flat(inp(a, 0)), *[out(m) for m in self.members])
         wire(flat(inp(a, 1)), *[out(x) for x in self.supports])
         wire(flat(inp(a, 2)), *[out(x) for x in self.patterns])
+        if self.constraints:
+            wire(flat(inp(a, 3)), *[out(x) for x in self.constraints])
+        if self.recorders:
+            wire(inp(a, 4), *[out(x) for x in self.recorders])
         zeta, f1, f2 = self.sliders["Damping"], self.sliders["F1"], self.sliders["F2"]
         # alphaM = 2 zeta w1 w2 / (w1 + w2) and betaK = 2 zeta / (w1 + w2), w = 2 pi f, zeta in %.
         alpha = expression(self.grid, "f(z,a,b)=0.1256637*z*a*b/(a+b)", [zeta, f1, f2], "alphaM", MODEL, MAIN, gap=30)
@@ -714,14 +831,15 @@ class Structure(object):
         self.parts["5"] += [a, alpha, beta, damping, integrator, steps, settings, run]
         return run
 
-    def shaking(self, name, scale, top, step, bands=False, supports=1.0):
+    def shaking(self, name, scale, top, step, bands=False, supports=1.0, steps=1000, wires=True):
         """A Model View of the analysed model at the Step slider's step, deformed scale times, its
         colours over 0 to top mm for every step alike, with a Legend; its supports drawn supports times
         their size, which is a metre or so."""
-        stepper = slider(self.grid, "Step", 0, 1000, step, 0, VIEWS, SHOWN, gap=30)
+        stepper = slider(self.grid, "Step", 0, steps, step, 0, VIEWS, SHOWN, gap=30)
         view = self.deformed(name, out(self.run), scale, title="Displacement [mm]", loads=False, bands=bands)
-        # The elements' edges and the supports: what each piece is, and where it is held.
-        menu_setting(view, "_ckWires", "Active", True)
+        # The elements' edges and the supports: what each piece is, and where it is held. A tower of
+        # thousands of members is drawn without the edges, which would turn it black.
+        menu_setting(view, "_ckWires", "Active", wires)
         menu_setting(view, "_ckShowSupports", "Active", True)
         menu_setting(view, "_slSupportScale", "Value", supports)
         wire(inp(view, V_STEP), stepper)
@@ -729,6 +847,35 @@ class Structure(object):
         inp(view, V_RANGE).PersistentData.Append(GH_Interval(Interval(0.0, top)))
         self.parts["6"].append(stepper)
         return view
+
+    def floors(self):
+        """Every floor a rigid diaphragm, driven from one of its nodes, and its mass shared between its
+        nodes, from the geometry's Floors, Masters, MassPoints and Masses; and a recorder of the
+        displacements alone, which is all a view of the shaking reads, for a tower of thousands of
+        members through the whole record."""
+        d = component(self.grid, RIGID_DIAPHRAGM, "Rigid Diaphragm", "A diaphragm a floor", MEMBERS, LOADED, gap=30)
+        wire(inp(d, 0), self.g("Floors"))
+        wire(inp(d, 1), self.g("Masters"))
+        m = component(self.grid, MASS_POINT, "Mass Point", "Floor masses", LOADS, LOADED, gap=30)
+        wire(inp(m, 0), self.g("MassPoints"))
+        wire(inp(m, 1), self.g("Masses"))
+        self.constraints.append(d)
+        # Assemble takes masses with the load patterns.
+        self.patterns.append(m)
+        self.parts["3"].append(d)
+        self.parts["4"].append(m)
+        self.displacements_only()
+        return d, m
+
+    def displacements_only(self):
+        record = recorder(self.grid, "Displacements only", ["displacement"], MODEL, MAIN, gap=30)
+        self.recorders.append(record)
+        self.parts["5"].append(record)
+        return record
+
+    def box(self, name, material, h, b, t):
+        """A Rectangle Hollow CS h deep, b wide, its walls t thick."""
+        return self.section(RECTANGLE_HOLLOW, name, material, h, b, t, t, t)
 
     def at_rest(self, colour_by=BY_MATERIAL):
         """A Model View of the structure at rest, as lines, light grey by its material."""
@@ -753,7 +900,7 @@ class Structure(object):
 
     def finish(self, names, about):
         self.grid.arrange(300, 300, stages=(GEOMETRY_, SECTIONS, WIDTHS, MODEL, VIEWS))
-        colours = {"1": RED, "2": ORANGE, "3": PURPLE, "4": GREEN, "5": BLUE, "6": GREY}
+        colours = {"1": RED, "2": ORANGE, "3": PURPLE, "4": GREEN, "5": BLUE, "6": GREY, "7": GREY}
         for key in sorted(self.parts):
             if self.parts[key]:
                 group(self.doc, key + " - " + names[key], self.parts[key], colours[key])
@@ -1073,12 +1220,12 @@ def windtruss(doc):
 
 # ---------------------------------------------------------------- earthquakes
 
-def quake(f1, f2):
+def quake(f1, f2, duration=12):
     """The sliders every earthquake has: how strong the record is, how much of it, and the damping,
     5% of critical at two frequencies that bracket the modes that matter."""
     return [
         ("Scale", "Ground motion scale", 0, 3, 1.0, 2),
-        ("Duration", "Duration [s]", 2, 31, 12, 1),
+        ("Duration", "Duration [s]", 2, 31, duration, 1),
         ("Damping", "Damping [%]", 0, 10, 5, 1),
         ("F1", "Damping at [Hz]", 0.1, 10, f1, 2),
         ("F2", "and at [Hz]", 0.5, 50, f2, 2),
@@ -1273,8 +1420,797 @@ def city(doc):
              "and sways far behind it; an L, or a tower off its podium's middle, twists as it sways.\n\n" + QUAKE_STORY)
 
 
+# ---------------------------------------------------------------- buildings that are not straight
+
+BUILDING_STORY = ("The ground motion is El Centro, 18 May 1940, its north-south component: 0.32 g at its "
+                  "peak, 2 s in. Its accelerations, a Path Time Series, shake the ground under the building "
+                  "through a Uniform Excitation pattern, and a transient analysis follows it step by step, "
+                  "0.02 s at a time. The building's own weight is its mass; the damping, Rayleigh's, is 5% "
+                  "of critical at the two frequencies given. Only the displacements are recorded. Drag Step "
+                  "to watch it shake.")
+
+TOWER_STORY = ("The ground motion is El Centro, 18 May 1940, its north-south component: 0.32 g at its peak, "
+               "2 s in, all 31 s of it, as a tower this tall swings slowly. Its accelerations, a Path Time "
+               "Series, shake the ground under the tower through a Uniform Excitation pattern, and a transient "
+               "analysis follows it step by step, 0.02 s at a time. Every floor is a Rigid Diaphragm, its mass "
+               "- Floor mass kg/m2 of its area: slab, finishes, facade and some of what is in it - shared "
+               "between its nodes as Mass Points; the members' own weight adds to it. The damping, Rayleigh's, "
+               "is 2% of critical at the two frequencies given, as a tall building has. Only the "
+               "displacements are recorded. Drag Step to watch it shake.")
+
+# Each view's deformation scale, the top of its colours in mm, the same for every step, and the size of
+# its supports.
+TWISTING_VIEW = (15, 400, 1.5)
+LEANING_VIEW = (15, 480, 1.5)
+CURVING_VIEW = (25, 240, 1.5)
+CRESCENT_VIEW = (25, 200, 1.5)
+BUNDLED_VIEW = (30, 800, 4)
+BRACED_VIEW = (40, 560, 4)
+BUTTRESSED_VIEW = (20, 800, 4)
+OUTRIGGER_VIEW = (20, 720, 4)
+DIAGRID_VIEW = (40, 800, 4)
+BUILDING_STEPS, TOWER_STEPS = 1000, 1550
+
+
+def _building_groups(geometry, members, along, view, bands=True):
+    return {"1": "Geometry: " + geometry,
+            "2": "Members: " + members,
+            "3": "Supports: every column built in at the ground",
+            "4": "Ground motion: El Centro 1940 along " + along,
+            "5": "Transient analysis: Newmark, 0.02 s steps, Rayleigh damping, the displacements recorded",
+            "6": "Results: the building at Step, drawn {0} times, {1}over 0 to {2} mm".format(
+                view[0], "in iso-surfaces " if bands else "its colours ", view[1])}
+
+
+def _tower_groups(geometry, members, view):
+    return {"1": "Geometry: " + geometry,
+            "2": "Members: " + members,
+            "3": "Supports and floors: built in at the ground, every floor a rigid diaphragm",
+            "4": "Ground motion and masses: El Centro 1940 along x, each floor's mass at its nodes",
+            "5": "Transient analysis: Newmark, 0.02 s steps, Rayleigh damping, the displacements recorded",
+            "6": "Results: the tower at Step, drawn {0} times, its colours over 0 to {1} mm".format(*view[:2])}
+
+
+def _shake(s, name, view, steps, along="X", bands=True, wires=True):
+    s.earthquake(along)
+    s.transient()
+    return s.shaking(name, view[0], view[1], 150, bands=bands, supports=view[2], steps=steps, wires=wires)
+
+
+def twisting(doc):
+    s = Structure(doc, "Twisting tower", "twisting", [
+        ("Bays", "Bays each way", 2, 6, 4, 0),
+        ("Bay", "Bay [m]", 5, 10, 7, 1),
+        ("Storeys", "Storeys", 5, 60, 30, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 3.5, 1),
+        ("Twist", "Twist [deg]", 0, 180, 90, 0),
+    ], quake(0.3, 3.0, 20))
+    s.geometry(["Columns", "Beams", "Slabs", "Feet", "Watch"])
+    concrete = s.concrete()
+    s.elements("Columns", "Columns", s.section(RECTANGLE, "Column 1 x 1 m", concrete, 1.0, 1.0))
+    s.elements("Beams", "Beams", s.section(RECTANGLE, "Beam 0.45 x 0.8 m", concrete, 0.45, 0.8))
+    s.slabs("Slabs", "Slabs", 0.22)
+    s.support("Built in", "Feet", (True,) * 6)
+    s.displacements_only()
+    _shake(s, "Twisting shaking", TWISTING_VIEW, BUILDING_STEPS)
+    s.finish(_building_groups("a square tower whose every floor turns a little more than the one under it",
+                              "concrete columns 1 x 1 m and beams 0.45 x 0.8 m, 220 mm slabs as ASD Shells",
+                              "x", TWISTING_VIEW),
+             "Twisting tower - thirty storeys, each floor turned 3 degrees further than the one under it, shaken by an "
+             "earthquake.\n\nA concrete frame of four bays by four, 7 m each, a slab at every floor meshed twice a bay: "
+             "the columns lean round the tower from floor to floor, a quarter turn from the ground to the roof.\n\n"
+             + BUILDING_STORY)
+
+
+def leaning(doc):
+    s = Structure(doc, "Leaning towers", "leaning", [
+        ("BaysX", "Bays along x", 1, 6, 3, 0),
+        ("BaysY", "Bays along y", 1, 6, 4, 0),
+        ("Bay", "Bay [m]", 5, 10, 7.5, 1),
+        ("Storeys", "Storeys, west tower", 5, 40, 26, 0),
+        ("EastStoreys", "Storeys, east tower", 5, 40, 20, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 3.6, 1),
+        ("Lean", "Lean [deg]", 0, 25, 15, 1),
+        ("Gap", "Apart at the ground [m]", 20, 120, 60, 1),
+    ], quake(0.33, 3.0, 20))
+    s.geometry(["Columns", "Beams", "Slabs", "Feet", "Watch"])
+    steel = s.steel()
+    s.elements("Columns", "Columns", s.box("Column box 600 x 40", steel, 0.6, 0.6, 0.04))
+    s.member("Beams", "Beams", "HEB600")
+    s.slabs("Slabs", "Slabs", 0.2)
+    s.support("Built in", "Feet", (True,) * 6)
+    s.displacements_only()
+    _shake(s, "Leaning shaking", LEANING_VIEW, BUILDING_STEPS)
+    s.finish(_building_groups("two towers of different heights leaning towards each other over a street",
+                              "steel box columns 600 x 40 mm, HEB600 beams, 200 mm slabs as ASD Shells",
+                              "x, the way they lean", LEANING_VIEW),
+             "Leaning towers - two towers of twenty-six and twenty storeys, leaning 15 degrees towards each other, shaken "
+             "by an earthquake along the way they lean.\n\nEach a steel frame of three bays by four, 7.5 m each, every floor "
+             "moved a little further over the street than the one under it, 60 m apart at the ground. Only the "
+             "shaking is analysed: the pull of their own weight, leaning, is not part of it.\n\n" + BUILDING_STORY)
+
+
+def curving(doc):
+    s = Structure(doc, "Curving tower", "curving", [
+        ("Around", "Columns round it", 8, 32, 16, 0),
+        ("Radius", "Radius [m]", 10, 30, 18, 1),
+        ("Core", "Core radius [m]", 4, 12, 7, 1),
+        ("Storeys", "Storeys", 5, 60, 40, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 3.6, 1),
+        ("Bend", "Bend at half height [m]", 0, 30, 12, 1),
+    ], quake(0.45, 4.0, 20))
+    s.geometry(["Columns", "Beams", "Slabs", "Feet", "Watch"])
+    steel = s.steel()
+    s.elements("Columns", "Columns", s.box("Column box 700 x 40", steel, 0.7, 0.7, 0.04))
+    s.member("Beams", "Beams", "IPE600")
+    s.slabs("Slabs", "Slabs", 0.2)
+    s.support("Built in", "Feet", (True,) * 6)
+    s.displacements_only()
+    _shake(s, "Curving shaking", CURVING_VIEW, BUILDING_STEPS)
+    s.finish(_building_groups("a round tower whose floors move out and back as it rises",
+                              "steel box columns 700 x 40 mm, IPE600 ring and radial beams, 200 mm slabs as ASD Shells",
+                              "x, the way it bends", CURVING_VIEW),
+             "Curving tower - a round tower of forty storeys that bows out 12 m half way up and comes back over its foot, "
+             "shaken by an earthquake.\n\nThree rings of sixteen steel columns round an open core, ring and radial beams "
+             "and a slab at every floor.\n\n" + BUILDING_STORY)
+
+
+def crescent(doc):
+    s = Structure(doc, "Crescent", "crescent", [
+        ("Bays", "Bays along it", 4, 20, 12, 0),
+        ("Depth", "Bays deep", 1, 4, 2, 0),
+        ("Bay", "Bay [m]", 5, 10, 7.5, 1),
+        ("Radius", "Inner radius [m]", 15, 80, 30, 1),
+        ("Sweep", "Sweep [deg]", 30, 270, 150, 0),
+        ("Storeys", "Storeys", 2, 30, 14, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 3.5, 1),
+    ], quake(0.48, 5.0, 20))
+    s.geometry(["Columns", "Beams", "Slabs", "Feet", "Watch"])
+    concrete = s.concrete()
+    s.elements("Columns", "Columns", s.section(RECTANGLE, "Column 0.7 x 0.7 m", concrete, 0.7, 0.7))
+    s.elements("Beams", "Beams", s.section(RECTANGLE, "Beam 0.4 x 0.7 m", concrete, 0.4, 0.7))
+    s.slabs("Slabs", "Slabs", 0.22)
+    s.support("Built in", "Feet", (True,) * 6)
+    s.displacements_only()
+    _shake(s, "Crescent shaking", CRESCENT_VIEW, BUILDING_STEPS)
+    s.finish(_building_groups("a block curved in plan, 150 degrees of a ring",
+                              "concrete columns 0.7 x 0.7 m and beams 0.4 x 0.7 m, 220 mm slabs as ASD Shells",
+                              "x, across its middle", CRESCENT_VIEW),
+             "Crescent - a block of fourteen storeys curved in plan, shaken by an earthquake across it.\n\nA concrete "
+             "frame twelve bays along an arc of 150 degrees and two bays deep, a slab at every floor. Shaken across its "
+             "middle, it twists as well as sways: its ends swing further than its middle.\n\n" + BUILDING_STORY)
+
+
+# ---------------------------------------------------------------- towers of a hundred storeys and more
+
+def _tower_quake(f1, f2, mass=800, duration=31):
+    """A tall building's: all of the record, and 2% damping; and the mass of its floors."""
+    return [
+        ("Scale", "Ground motion scale", 0, 3, 1.0, 2),
+        ("Duration", "Duration [s]", 2, 31, duration, 1),
+        ("Damping", "Damping [%]", 0, 10, 2, 1),
+        ("F1", "Damping at [Hz]", 0.05, 10, f1, 2),
+        ("F2", "and at [Hz]", 0.5, 50, f2, 2),
+        ("FloorMass", "Floor mass [kg/m2]", 300, 1500, mass, 0),
+    ]
+
+
+def bundled(doc):
+    s = Structure(doc, "Bundled tube", "bundled", [
+        ("Tube", "Tube [m]", 15, 30, 22.86, 2),
+        ("Bays", "Columns a tube side", 2, 6, 5, 0),
+        ("Storeys", "Storeys", 30, 120, 108, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 4.09, 2),
+    ], _tower_quake(0.12, 2.0))
+    s.inputs.append(("FloorMass", s.as_float))
+    s.geometry(["Columns", "Spandrels", "Belts", "Feet", "Floors", "Masters", "MassPoints", "Masses", "Watch"])
+    steel = s.steel()
+    s.elements("Columns", "Columns", s.box("Column box 900 x 60", steel, 0.9, 0.9, 0.06))
+    s.member("Spandrels", "Spandrels", "HEM1000")
+    s.elements("Belt trusses", "Belts", s.box("Brace box 600 x 40", steel, 0.6, 0.6, 0.04))
+    s.support("Built in", "Feet", (True,) * 6)
+    s.floors()
+    _shake(s, "Bundled shaking", BUNDLED_VIEW, TOWER_STEPS, bands=False, wires=False)
+    s.finish(_tower_groups("nine square tubes bundled together, stopping at the 50th, 66th, 90th and 108th floors",
+                           "steel box columns 900 x 60 mm 4.6 m apart, HEM1000 spandrels, belt trusses of braces at three floors",
+                           BUNDLED_VIEW),
+             "Bundled tube, after the Willis Tower in Chicago - nine square steel tubes of 22.9 m, 108 storeys and 442 m "
+             "tall at the top, shaken by an earthquake.\n\nEach wall of each tube is a frame of columns 4.6 m apart tied "
+             "by deep spandrels: together they are one tube, stiff as a box, cut into nine. Two tubes stop at the 50th "
+             "floor, two at the 66th, three at the 90th, and two go on to the top. Belt trusses brace the walls over two "
+             "storeys at three floors. A model of how the tower's structure works, not of the tower itself.\n\n" + TOWER_STORY)
+
+
+def braced(doc):
+    s = Structure(doc, "Braced tube", "braced", [
+        ("Length", "Long side at the ground [m]", 40, 100, 80, 1),
+        ("Width", "Short side at the ground [m]", 25, 70, 50, 1),
+        ("TopLength", "Long side at the roof [m]", 20, 100, 48, 1),
+        ("TopWidth", "Short side at the roof [m]", 15, 70, 30, 1),
+        ("Storeys", "Storeys", 30, 120, 100, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 3.44, 2),
+        ("XStoreys", "Storeys an X", 6, 30, 18, 0),
+    ], _tower_quake(0.14, 2.0))
+    s.inputs.append(("FloorMass", s.as_float))
+    s.geometry(["Columns", "Spandrels", "Diagonals", "Feet", "Floors", "Masters", "MassPoints", "Masses", "Watch"])
+    steel = s.steel()
+    s.elements("Columns", "Columns", s.box("Column box 900 x 80", steel, 0.9, 0.9, 0.08))
+    s.member("Spandrels", "Spandrels", "HEM1000")
+    s.elements("Diagonals", "Diagonals", s.box("Diagonal box 900 x 80", steel, 0.9, 0.9, 0.08))
+    s.support("Built in", "Feet", (True,) * 6)
+    s.floors()
+    _shake(s, "Braced shaking", BRACED_VIEW, TOWER_STEPS, bands=False, wires=False)
+    s.finish(_tower_groups("a tapering box of 100 storeys, its faces crossed by diagonals, an X every 18 storeys",
+                           "steel box columns and diagonals 900 x 80 mm, HEM1000 spandrels",
+                           BRACED_VIEW),
+             "Braced tube, after the John Hancock Center in Chicago - a tapering steel box of 100 storeys, 344 m tall, "
+             "shaken by an earthquake.\n\n80 by 50 m at the ground and 48 by 30 m at the roof, its four faces crossed by "
+             "diagonals from corner to corner, an X every 18 storeys and half of one at the top. The diagonals make the "
+             "walls a truss: the columns, leaning in with the taper, share the load through them. A model of how the "
+             "tower's structure works, not of the tower itself.\n\n" + TOWER_STORY)
+
+
+def buttressed(doc):
+    s = Structure(doc, "Buttressed core", "buttressed", [
+        ("Core", "Core, middle to corner [m]", 8, 18, 12, 1),
+        ("Corridor", "Corridor walls apart [m]", 3, 10, 6, 1),
+        ("WingWidth", "Wing width [m]", 15, 40, 26, 1),
+        ("Module", "Module [m]", 6, 12, 9, 1),
+        ("Modules", "Modules a wing", 2, 8, 6, 0),
+        ("Storeys", "Storeys", 40, 180, 160, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 3.7, 2),
+        ("Spire", "Spire [m]", 0, 300, 220, 0),
+    ], _tower_quake(0.14, 2.0, 900, 20))
+    s.inputs.append(("FloorMass", s.as_float))
+    s.geometry(["Walls", "Columns", "Beams", "Spire", "Feet", "Floors", "Masters", "MassPoints", "Masses", "Watch"])
+    concrete = s.concrete()
+    steel = s.steel()
+    s.slabs("Walls", "Walls", 0.8, "Wall concrete")
+    s.elements("Columns", "Columns", s.section(RECTANGLE, "Column 1.2 x 1.2 m", concrete, 1.2, 1.2))
+    s.elements("Beams", "Beams", s.section(RECTANGLE, "Beam 0.6 x 1 m", concrete, 0.6, 1.0))
+    s.elements("Spire", "Spire", s.section(CIRCLE, "Spire tube 8 m x 60 mm", steel, 8.0, 0.06))
+    s.support("Built in", "Feet", (True,) * 6)
+    s.floors()
+    _shake(s, "Buttressed shaking", BUTTRESSED_VIEW, 1000, wires=False)
+    s.finish(_tower_groups("three wings round a hexagonal core, stepping back one after another, and a spire",
+                           "800 mm concrete walls as ASD Shells, concrete columns and beams, a steel spire",
+                           BUTTRESSED_VIEW),
+             "Buttressed core, after the Burj Khalifa in Dubai - 160 storeys of concrete walls, 592 m to the roof, and a "
+             "steel spire 220 m over it, shaken by an earthquake.\n\nA hexagonal core of walls, and three wings round it, "
+             "each two corridor walls with a hammerhead wall across its end: the wings buttress the core, and the core "
+             "holds the wings. The wings step back a module of 9 m at a time, one after another round the tower, until "
+             "only the core is left. A model of how the tower's structure works, not of the tower itself.\n\n" +
+             TOWER_STORY.replace("all 31 s of it, as a tower this tall swings slowly", "its first 20 s, which hold its strongest shaking"))
+
+
+def outrigger(doc):
+    s = Structure(doc, "Outrigger tower", "outrigger", [
+        ("StoreyHeight", "Storey height [m]", 3.5, 5, 4.2, 2),
+        ("Width", "Module, half width at its foot [m]", 20, 30, 25, 1),
+        ("Flare", "Module, flare to its top [m]", 0, 8, 4, 1),
+        ("DamperMass", "Damper [t]", 1, 3000, 660, 0),
+        ("DamperPeriod", "Damper period [s]", 2, 15, 9.7, 2),
+        ("DamperDamping", "Damper damping [%]", 0, 30, 8, 1),
+    ], _tower_quake(0.1, 2.0))
+    s.inputs.append(("FloorMass", s.as_float))
+    s.geometry(["CoreColumns", "CoreBeams", "CoreBraces", "Supers", "Perimeter", "Rings", "Outriggers", "Hangers",
+                "Feet", "Floors", "Masters", "MassPoints", "Masses", "Damper", "DamperPoint", "DamperMasses",
+                "Stiffness", "Dashpot", "Watch"])
+    steel = s.steel()
+    s.elements("Core columns", "CoreColumns", s.box("Core column box 1200 x 80", steel, 1.2, 1.2, 0.08))
+    s.member("Core beams", "CoreBeams", "HEM600")
+    s.elements("Core braces", "CoreBraces", s.box("Brace box 800 x 60", steel, 0.8, 0.8, 0.06))
+    s.elements("Super columns", "Supers", s.box("Super column 2400 x 3000 x 200", steel, 2.4, 3.0, 0.2))
+    s.member("Perimeter columns", "Perimeter", "HEM600")
+    s.member("Ring beams", "Rings", "HEM600")
+    s.elements("Outriggers", "Outriggers", s.box("Outrigger box 1200 x 80", steel, 1.2, 1.2, 0.08))
+    s.member("Damper hangers", "Hangers", "HEM1000")
+    s.support("Built in", "Feet", (True,) * 6)
+    s.floors()
+    # The damper: a ball hung from the 92nd floor by a rod - a truss, which holds it up - and swung by a
+    # spring and a dashpot across, a Link of an elastic material with damping in its two directions
+    # across the rod, its stiffness and damping from the damper's mass, period and damping.
+    rod = s.elements("Damper rod", "Damper", s.section(CIRCLE, "Rod 300 mm", steel, 0.3, 0.15), truss=True)
+    springs = []
+    for axis in ("one way", "the other"):
+        u = component(s.grid, UNIAXIAL, "Uniaxial", "Spring and dashpot, " + axis, SECTIONS, LOADED, gap=30)
+        words(inp(u, 0), "Damper spring " + axis)
+        wire(inp(u, 1), s.g("Stiffness"))
+        wire(inp(u, 2), s.g("Stiffness"))
+        wire(inp(u, 3), s.g("Dashpot"))
+        springs.append(u)
+    link = component(s.grid, LINK, "Link", "Damper springs", MEMBERS, LOADED, gap=30)
+    wire(inp(link, 0), s.g("Damper"))
+    wire(inp(link, 1), *[out(u) for u in springs])
+    inp(link, 2).PersistentData.Clear()
+    for d in (2, 3):
+        inp(link, 2).PersistentData.Append(GH_Integer(d))
+    s.members.append(link)
+    ball = component(s.grid, MASS_POINT, "Mass Point", "Damper mass", LOADS, LOADED, gap=30)
+    wire(inp(ball, 0), s.g("DamperPoint"))
+    wire(inp(ball, 1), s.g("DamperMasses"))
+    s.patterns.append(ball)
+    s.parts["2"] += springs + [link]
+    s.parts["4"].append(ball)
+    _shake(s, "Outrigger shaking", OUTRIGGER_VIEW, TOWER_STEPS, bands=False, wires=False)
+    s.finish(_tower_groups("a braced core, eight super columns and outrigger trusses, eight flaring modules, a damper",
+                           "steel boxes and HEM sections; the damper a rod, a link of springs and dashpots, and a mass",
+                           OUTRIGGER_VIEW),
+             "Outrigger tower, after Taipei 101 - 101 storeys, 424 m to the roof, and a tuned mass damper, shaken by an "
+             "earthquake.\n\nA braced steel core of sixteen columns and eight super columns, two on each face, tied "
+             "together by outrigger trusses two storeys deep under the foot of every module: when the tower sways, the "
+             "outriggers make the super columns stretch and squash, and the whole width of the tower bends as one. Eight "
+             "modules of eight storeys flare out over a base that narrows as it rises. In the core, 660 t hang from the "
+             "92nd floor on a spring and a dashpot tuned to the tower's sway: it swings against the tower and takes some "
+             "of its movement. A model of how the tower's structure works, not of the tower itself.\n\n" + TOWER_STORY)
+
+
+def diagrid(doc):
+    s = Structure(doc, "Diagrid tower", "diagrid", [
+        ("Radius", "Radius [m]", 20, 45, 32, 1),
+        ("Bulge", "Bulge half way up", 0, 0.4, 0.12, 2),
+        ("Around", "Diamonds round it", 6, 24, 12, 0),
+        ("Storeys", "Storeys", 30, 120, 103, 0),
+        ("StoreyHeight", "Storey height [m]", 3, 5, 4.27, 2),
+        ("NodeStoreys", "Storeys a diamond", 4, 20, 12, 0),
+        ("Core", "Core, middle to corner [m]", 8, 18, 12, 1),
+    ], _tower_quake(0.11, 2.0, 700))
+    s.inputs.append(("FloorMass", s.as_float))
+    s.geometry(["Diagonals", "Rings", "Walls", "Feet", "Floors", "Masters", "MassPoints", "Masses", "Watch"])
+    steel = s.steel()
+    s.elements("Diagonals", "Diagonals", s.section(CIRCLE, "Tube 1800 x 180, filled", steel, 1.8, 0.18))
+    s.member("Ring beams", "Rings", "HEM1000")
+    s.slabs("Core walls", "Walls", 1.0, "Wall concrete")
+    s.support("Built in", "Feet", (True,) * 6)
+    s.floors()
+    _shake(s, "Diagrid shaking", DIAGRID_VIEW, TOWER_STEPS, bands=False, wires=False)
+    s.finish(_tower_groups("a tube of diagonals round a concrete core, a rounded triangle in plan, bulging half way up",
+                           "steel tubes 1.8 m across for the diagonals, HEM1000 ring beams, 1 m concrete core walls",
+                           DIAGRID_VIEW),
+             "Diagrid tower, after the Guangzhou International Finance Center - 103 storeys, 440 m tall, shaken by an "
+             "earthquake.\n\nA tube of steel diagonals, crossing at nodes every 12 storeys, round a concrete core: a "
+             "tube in a tube. The diagonals carry both the weight and the sway, as a lattice; its plan is a triangle with "
+             "rounded corners, bulging half way up. The tubes stand for concrete-filled ones, their steel thicker for the "
+             "concrete inside. A model of how the tower's structure works, not of the tower itself.\n\n" + TOWER_STORY)
+
+
+# ---------------------------------------------------------------- 12 - a footbridge's natural modes
+
+# The view of the modes: how many are solved, and the Model View's deformation scale - a mode is drawn
+# its largest movement 8% of the bridge's size at 1.
+FOOTBRIDGE_MODES = 6
+
+
+def footbridge(doc):
+    s = Structure(doc, "Footbridge", "footbridge", [
+        ("Span", "Span [m]", 15, 60, 40, 1),
+        ("Width", "Deck width [m]", 2, 6, 3.5, 2),
+        ("Segment", "Element length [m]", 1, 5, 2.5, 2),
+        ("Depth", "Box depth [m]", 0.6, 2.5, 1.2, 2),
+    ], [])
+    s.geometry(["Box", "Deck", "Under", "Over", "Pinned", "Sliding"])
+    steel = s.steel()
+    box = component(s.grid, RECTANGLE_HOLLOW, "Rectangle Hollow CS", "Box girder", SECTIONS, MAIN, gap=30)
+    words(inp(box, 0), "Steel box 1.6 m wide")
+    number(inp(box, 1), 1.6)
+    wire(inp(box, 2), s.sliders["Depth"])
+    # Webs of 20 mm, flanges of 25 mm.
+    number(inp(box, 3), 0.02)
+    number(inp(box, 4), 0.025)
+    number(inp(box, 5), 0.025)
+    wire(inp(box, 6), out(steel))
+    s.parts["2"].append(box)
+    s.elements("Box girder", "Box", box)
+    s.slabs("Deck", "Deck", 0.2)
+    # The deck on the box: each node of the deck's middle line follows the box's node under it as a
+    # rigid body, so that the deck works with the box, as a composite girder.
+    links = component(s.grid, RIGID_LINK, "Rigid Link", "Deck on box", MEMBERS, MAIN, gap=30)
+    wire(inp(links, 0), s.g("Under"))
+    wire(inp(links, 1), s.g("Over"))
+    s.parts["2"].append(links)
+    # Both ends held against twisting, Rx; the far end free to slide along, Tx.
+    s.support("Pinned bearing", "Pinned", (True, True, True, True, False, False))
+    s.support("Sliding bearing", "Sliding", (False, True, True, True, False, False))
+    a = component(s.grid, ASSEMBLE, "Assemble Model", s.title, MODEL, MAIN)
+    wire(flat(inp(a, 0)), *[out(m) for m in s.members])
+    wire(flat(inp(a, 1)), *[out(x) for x in s.supports])
+    wire(flat(inp(a, 3)), out(links))
+    modes = component(s.grid, NATURAL_VIBRATION, "Natural Vibration Analysis", None, ANALYSIS, MAIN)
+    wire(inp(modes, 0), out(a))
+    integer(inp(modes, 1), FOOTBRIDGE_MODES)
+    frequencies = panel(s.grid, "Frequencies [Hz]", out(modes, 3), 160, 130, ANALYSIS, MAIN, gap=30)
+    s.assembled = a
+    s.parts["5"] += [a, modes, frequencies]
+    mode = slider(s.grid, "Mode", 0, FOOTBRIDGE_MODES - 1, 0, 0, VIEWS, SHOWN, gap=30)
+    view = s.deformed("Footbridge mode", out(modes), 1, title="Mode shape, largest movement 1", loads=False, bands=True)
+    wire(inp(view, V_STEP), mode)
+    # A mode has no size of its own: it is read with its largest movement 1, in m, from 0 to 1.
+    result_unit(view, DISPLACEMENT, MAGNITUDE, 2)
+    menu_setting(view, "_ckWires", "Active", True)
+    s.parts["6"].append(mode)
+    s.at_rest()
+    s.finish({"1": "Geometry: a deck on a steel box girder down its middle, held at both ends",
+              "2": "Members: the steel box, its depth a slider, a 200 mm concrete deck as ASD Shells, rigid links between them",
+              "3": "Supports: a pinned bearing at the start, a sliding one at the far end, both holding it against twisting",
+              "5": "Analysis: the first {0} natural modes; the mass is the bridge's own".format(FOOTBRIDGE_MODES),
+              "6": "Results: the mode Mode picks, in iso-surfaces, over the bridge at rest"},
+             "Footbridge - a footbridge's natural modes, and whether people walking set it swinging.\n\n"
+             "A concrete deck 200 mm thick on a steel box girder down its middle, 1.6 m wide, its depth a slider, "
+             "the deck tied to the box by rigid links so that they bend together. It spans between two bearings "
+             "under the box, the far one sliding along, both holding it against twisting.\n\n"
+             "The Natural Vibration Analysis finds its first six modes, its own weight the mass that swings. People "
+             "walk at 1.6 to 2.4 steps a second, which a mode near that frequency picks up and bounces with; "
+             "sideways, they sway at half that. Drag Mode to see each one; drag Box depth or Span to move them.")
+
+
+# ---------------------------------------------------------------- 13 - sticks that draw a response spectrum
+
+def sticks(doc):
+    s = Structure(doc, "Response spectrum sticks", "sticks", [
+        ("Sticks", "Sticks", 2, 60, 30, 0),
+        ("Shortest", "Shortest [m]", 0.5, 3, 1.0, 2),
+        ("Tallest", "Tallest [m]", 3, 15, 10, 1),
+        ("Spacing", "Spacing [m]", 0.5, 3, 1.2, 2),
+    ], [
+        ("Scale", "Ground motion scale", 0, 3, 1.0, 2),
+        ("Duration", "Duration [s]", 2, 31, 12, 1),
+        ("Damping", "Damping [%]", 0, 10, 5, 1),
+        ("Mass", "Mass [kg]", 500, 20000, 4000, 0),
+    ])
+    s.geometry(["Lines", "Feet", "Tops"])
+    steel = s.steel()
+    tube = component(s.grid, SECTION, "Steel Section Library", "219.1x8", SECTIONS, MAIN, gap=30)
+    words(inp(tube, 0), "219.1x8")
+    wire(inp(tube, 1), out(steel))
+    stick = component(s.grid, BEAM, "ForceBeamColumn", "Sticks", MEMBERS, MAIN, gap=30)
+    wire(inp(stick, B_LINE), s.g("Lines"))
+    wire(inp(stick, B_SECTION), out(tube))
+    s.members.append(stick)
+    s.parts["2"] += [tube, stick]
+    s.support("Built in", "Feet", (True,) * 6)
+    # The mass on each stick's top, the same along x, y and z.
+    mass = component(s.grid, VECTOR_XYZ, "Vector XYZ", "Mass [kg]", WIDTHS, LOADED, gap=30)
+    for k in range(3):
+        wire(inp(mass, k), s.sliders["Mass"])
+    masses = component(s.grid, MASS_POINT, "Mass Point", "Mass on top", LOADS, LOADED, gap=30)
+    wire(inp(masses, 0), s.g("Tops"))
+    wire(inp(masses, 1), out(mass))
+    s.parts["4"] += [mass, masses]
+    # El Centro along x, and a copy of its pattern for every stick, on the masses' branches: each
+    # stick's model gets its mass and the ground motion, and nothing of the others'.
+    pattern = s.earthquake("X")
+    s.patterns.remove(pattern)
+    copies = component(s.grid, DUPLICATE, "Duplicate Data", "A pattern a stick", PATTERNS, LOADED, gap=30)
+    wire(inp(copies, 0), out(pattern))
+    wire(inp(copies, 1), s.sliders["Sticks"])
+    each = component(s.grid, UNFLATTEN, "Unflatten Tree", "On the masses' branches", PATTERNS, LOADED, gap=30)
+    wire(inp(each, 0), out(copies))
+    wire(inp(each, 1), out(masses))
+    s.parts["4"] += [copies, each]
+
+    # A model per stick: its line, its foot, its mass and the ground motion. Only the displacements
+    # are recorded: thirty sticks, six thousand steps each, read back step by step.
+    record = recorder(s.grid, "Displacements only", ["displacement"], MODEL, MAIN, gap=30)
+    a = component(s.grid, ASSEMBLE, "Assemble Model", s.title, MODEL, MAIN)
+    wire(inp(a, 0), out(stick))
+    wire(inp(a, 1), out(s.supports[0]))
+    wire(inp(a, 2), out(masses), out(each))
+    wire(inp(a, 4), out(record))
+    # Each stick's frequency, and damping of Damping % of critical at it: Rayleigh's, alphaM = zeta w
+    # and betaK = zeta / w at both of its frequencies, gives exactly that at w.
+    modes = component(s.grid, NATURAL_VIBRATION, "Natural Vibration Analysis", "Each stick's period", MODEL, MAIN, gap=30)
+    wire(inp(modes, 0), out(a))
+    integer(inp(modes, 1), 1)
+    # LAPACK's dense solver: a stick has one node free, and ARPACK wants more than twice as many
+    # degrees of freedom with a mass as the modes it is asked for.
+    words(inp(modes, 2), "-fullGenLapack")
+    zeta = s.sliders["Damping"]
+    alpha = expression(s.grid, "f(z,f)=0.0628319*z*f", [zeta, out(modes, 3)], "alphaM", MODEL, MAIN, gap=30)
+    beta = expression(s.grid, "f(z,f)=0.0015915*z/f", [zeta, out(modes, 3)], "betaK", MODEL, MAIN, gap=30)
+    damping = component(s.grid, DAMPING, "Damping", "Rayleigh", MODEL, MAIN, gap=30)
+    wire(inp(damping, 0), out(alpha))
+    wire(inp(damping, 3), out(beta))
+    integrator = component(s.grid, INTEGRATOR, "Integrator", "Newmark", MODEL, MAIN, gap=30)
+    switch_unit(integrator, NEWMARK)
+    # A step a quarter of the record's, 0.005 s: the stiffest sticks swing ten times a second.
+    count = expression(s.grid, "f(n)=4*n", [out(s.record, 3)], "Steps", MODEL, MAIN, gap=30)
+    steps = component(s.grid, ANALYSIS_STEP, "Analysis Step", "0.005 s steps", MODEL, MAIN, gap=30)
+    wire(inp(steps, 0), out(count))
+    number(inp(steps, 1), 0.005)
+    settings = component(s.grid, ANALYSIS_SETTINGS, "Analysis Settings", "Transient", ANALYSIS, MAIN)
+    wire(inp(settings, A_DAMPING), out(damping))
+    words(inp(settings, A_ALGORITHM), "Linear")
+    # A banded solver on one core: Mumps spends longer starting its threads than solving six equations.
+    words(inp(settings, A_SYSTEM), "BandGen")
+    wire(inp(settings, A_INTEGRATOR), out(integrator))
+    words(inp(settings, A_TYPE), "Transient")
+    wire(inp(settings, A_STEPS), out(steps))
+    run = component(s.grid, RUN_ANALYSIS, "Run Analysis", None, ANALYSIS, MAIN, gap=30)
+    wire(inp(run, 0), out(a))
+    wire(inp(run, 1), out(settings))
+    s.assembled, s.run = a, run
+    s.parts["5"] += [record, a, modes, alpha, beta, damping, integrator, count, steps, settings, run]
+
+    # The spectrum: how far each stick's top moved at the most, and what that is as an acceleration.
+    # Node 2 of each stick's model is its top, node 1 its foot.
+    history = component(s.grid, NODAL_DISPLACEMENTS, "Nodal Displacements", "Tops, every step", VIEWS, MAIN, gap=30)
+    wire(inp(history, 0), out(run))
+    booleans(inp(history, 1), True)
+    integer(inp(history, 3), 2)
+    tree = GH_ParamAccess.tree
+    as_point, as_vector = GH_Point3dHint(), GH_Vector3dHint()
+    chart = python_component(s.grid, "Response spectrum", "spectrum",
+                             [("Periods", s.as_float, tree), ("Displacements", as_vector, tree), ("Tops", as_point, tree)],
+                             ["Period", "Sd", "PSa", "Spectrum", "Grid"], VIEWS, MAIN)
+    wire(inp(chart, 0), out(modes, 2))
+    wire(inp(chart, 1), out(history, 1))
+    wire(inp(chart, 2), s.g("Tops"))
+    periods = panel(s.grid, "Period [s]", out(chart, 1), 110, 160, LEGENDS, MAIN, gap=30)
+    accelerations = panel(s.grid, "PSa [g]", out(chart, 3), 110, 160, LEGENDS, MAIN, gap=30)
+    s.parts["6"] += [history, chart, periods, accelerations]
+
+    # Step goes as far as the whole record does, in 0.005 s steps: 6 200.
+    view = s.shaking("Sticks shaking", STICKS_VIEW[0], STICKS_VIEW[1], 500, supports=STICKS_VIEW[2], steps=6200)
+    # Model View solves every stick's model, a branch each, but its preview draws the last branch only:
+    # a Mesh parameter draws them all from its Geometry output, coloured as it colours them.
+    view.Hidden = True
+    every = s.grid.put(emit(MESH_PARAM, "The Mesh parameter"), LEGENDS, SHOWN, gap=30)
+    every.NickName = "Every stick"
+    wire(every, out(view, 1))
+    # One legend: every stick's colours are the same, over the same range, so the first stick's
+    # branch stands for all of them.
+    legend = s.parts["6"][-2]
+    for k, name in ((L_VALUES, "Values"), (L_COLORS, "Colors")):
+        first = component(s.grid, TREE_BRANCH, "Tree Branch", "First stick's " + name, LEGENDS, SHOWN, gap=30)
+        wire(inp(first, 0), out(view, R_VALUES if k == L_VALUES else R_COLORS))
+        inp(first, 1).PersistentData.Append(GH_StructurePath(GH_Path(System.Array[int]([0, 0, 0]))))
+        inp(legend, k).RemoveAllSources()
+        wire(inp(legend, k), out(first))
+        s.parts["6"].append(first)
+    s.parts["6"].append(every)
+    s.finish({"1": "Geometry: a row of sticks from short to tall, their heights spread for their periods to be",
+              "2": "Members: a steel tube, 219.1x8, built in at the ground",
+              "3": "Supports: every stick built in at the ground",
+              "4": "Ground motion: a mass on every top, and El Centro 1940 along x, copied for every stick",
+              "5": "Analysis: a model per stick - its period, damping of 5% at it, a transient analysis in 0.005 s steps",
+              "6": "Results: the most each top moved, as a spectrum behind the sticks; the sticks at Step, drawn by Every stick"},
+             "Response spectrum sticks - a row of sticks shaken by one earthquake, which together draw its response "
+             "spectrum.\n\n"
+             "Each stick is a steel tube built in at the ground with a mass on top: an oscillator with one way to "
+             "swing, at its own period. Short ones are stiff and quick, tall ones soft and slow; their heights are "
+             "spread so that their periods are spread evenly, from about 0.1 s to 3 s.\n\n"
+             "Each stick is a model of its own, a branch of the trees, so that each can have damping of exactly "
+             "Damping % of critical at its own frequency, which its Natural Vibration Analysis gives. A transient "
+             "analysis shakes every one with the same ground motion, El Centro 1940, 0.005 s at a time.\n\n"
+             "The most its top moves from the ground, Sd, is the spectral displacement at its period; times "
+             "(2 pi / T) squared, the pseudo-acceleration PSa. Plotted against the periods, they are the earthquake's "
+             "response spectrum: the curve a response spectrum analysis reads its accelerations from.")
+
+
+# The sticks' view: its deformation scale, the top of its colours in mm, the size of its supports.
+STICKS_VIEW = (3, 280, 0.4)
+
+
+# ---------------------------------------------------------------- 14 - a shell form-found to work in compression
+
+# The shell's view: its deformation scale, and the top of its colours in mm - eight bands.
+SHELL_VIEW = (2000, 0.32)
+
+
+def shell(doc):
+    s = Structure(doc, "Compressed shell", "compressed_shell", [
+        ("Span", "Span [m]", 10, 40, 20, 1),
+    ], [])
+    s.geometry(["Net", "Ends"])
+    # 2 - Kangaroo: the net refined, its edges pulling in like strings shortening to nothing, held at
+    # the ends of its legs, every node pushed up by Lift: it rises until the strings hold it, all in
+    # tension - turned over, a form that carries a load like its own in compression.
+    # 0.6 raises the crown 8 m above the ends of the legs; the rise goes as Lift.
+    lift = slider(s.grid, "Lift", 0, 2, 0.6, 2, SLIDERS, LOADED, gap=30)
+    pull = slider(s.grid, "Edge strength", 1, 5, 3, 1, SLIDERS, LOADED, gap=30)
+    refine = component(s.grid, REFINE, "Refine", "Refined twice", SECTIONS, LOADED, gap=30)
+    wire(inp(refine, 0), s.g("Net"))
+    integer(inp(refine, 1), 2)
+    edges = component(s.grid, MESH_EDGES, "Mesh Edges", "Edges", MEMBERS, LOADED, gap=30)
+    wire(inp(edges, 0), out(refine))
+    nodes = component(s.grid, DECONSTRUCT_MESH, "Deconstruct Mesh", "Nodes", MEMBERS, LOADED, gap=30)
+    wire(inp(nodes, 0), out(refine))
+    distance = component(s.grid, PULL_POINT, "Pull Point", "To the leg ends", WIDTHS, LOADED, gap=30)
+    wire(inp(distance, 0), out(nodes, 0))
+    wire(inp(distance, 1), s.g("Ends"))
+    near = component(s.grid, SMALLER_THAN, "Smaller Than", "On an end", VECTORS, LOADED, gap=30)
+    wire(inp(near, 0), out(distance, 1))
+    number(inp(near, 1), 0.01)
+    feet = component(s.grid, CULL_PATTERN, "Cull Pattern", "Feet", LOADS, LOADED, gap=30)
+    wire(inp(feet, 0), out(nodes, 0))
+    wire(inp(feet, 1), out(near, 0))
+    show = component(s.grid, SHOW, "Show", "The net", PATTERNS, LOADED, gap=30)
+    wire(inp(show, 0), out(refine))
+    strings = component(s.grid, LENGTH_LINE, "Length(Line)", "Edges pull in", PATTERNS, LOADED, gap=30)
+    # Not flattened: the goals' outputs keep paths as deep as the net's, so that flattened into the
+    # solver the net's Show stays first, and the form is the first thing out.
+    wire(inp(strings, 0), out(edges, 0), out(edges, 1))
+    number(inp(strings, 1), 0.0)
+    wire(inp(strings, 2), pull)
+    # Lift as the length of the push, through Unit Z's factor: Load's Weighting, wired, stops Rhino 8
+    # behind an alert.
+    up = component(s.grid, UNIT_Z, "Unit Z", "Up", LOADS, LOADED, gap=30)
+    wire(inp(up, 0), lift)
+    push = component(s.grid, LOAD, "Load", "Pushed up", PATTERNS, LOADED, gap=30)
+    wire(inp(push, 0), out(nodes, 0))
+    wire(inp(push, 1), out(up))
+    held = component(s.grid, ANCHOR, "Anchor", "Held", PATTERNS, LOADED, gap=30)
+    wire(inp(held, 0), out(feet))
+    zombie = component(s.grid, ZOMBIE, "Zombie Solver", "Zombie Solver", MODEL, LOADED, gap=30)
+    flat(wire(inp(zombie, 0), out(show), out(strings), out(push), out(held)))
+    form = component(s.grid, LIST_ITEM, "List Item", "The form", ANALYSIS, LOADED, gap=30)
+    wire(inp(form, 0), out(zombie, 2))
+    integer(inp(form, 1), 0)
+    kangaroo = [lift, pull, refine, edges, nodes, distance, near, feet, show, strings, up, push, held, zombie, form]
+
+    # 3 - The form as a concrete shell; 4 - held where the net was; 5 - its own weight.
+    thickness = slider(s.grid, "Thickness [m]", 0.05, 0.4, 0.15, 2, SECTIONS, MAIN, gap=30)
+    s.slabs("Shell", out(form), thickness)
+    concrete_shell = [thickness] + s.parts["2"][-3:]
+    support = s.support("Built in", out(feet), (True,) * 6)
+    weight = component(s.grid, GRAVITY, "Gravity Load", "Own weight", LOADS, LOADED, gap=30)
+    pattern = s.pattern("Own weight", [weight])
+    run = s.assemble()
+    analysis = s.parts["5"][-3:]
+    view = s.deformed("Shell deformed", out(run), SHELL_VIEW[0], palette="shell", bands=True, loads=False)
+    if SHELL_VIEW[1]:
+        view_range = inp(view, V_RANGE)
+        view_range.PersistentData.Clear()
+        view_range.PersistentData.Append(GH_Interval(Interval(0.0, SHELL_VIEW[1])))
+    menu_setting(view, "_ckWires", "Active", True)
+    menu_setting(view, "_ckShowSupports", "Active", True)
+    s.loads_view()
+    s.parts = {"1": s.parts["1"], "2": kangaroo, "3": concrete_shell, "4": [support], "5": [weight, pattern],
+               "6": analysis, "7": s.parts["6"]}
+    s.finish({"1": "Geometry: a cross of four legs, a coarse net of 16 quads",
+              "2": "Form finding: Kangaroo pushes the refined net up against its edges, held at the ends of its legs",
+              "3": "Shell: the form in concrete, Thickness thick, as ASD Shells",
+              "4": "Supports: built in where the net was held",
+              "5": "Load: its own weight",
+              "6": "Analysis: Assemble and Run Analysis",
+              "7": "Results: the displacement, in iso-surfaces, drawn {0} times".format(SHELL_VIEW[0])},
+             "Compressed shell - a concrete shell form-found with Kangaroo to carry its own weight in compression.\n\n"
+             "A cross of four legs, 20 m from end to end. Its coarse net is refined twice; Kangaroo holds it at the "
+             "ends of its legs, makes every edge a string that pulls in, shortening towards nothing, and pushes "
+             "every node up. The net rises until the strings hold it: all in tension under an upward load, it "
+             "is the hanging form turned over, and so works in compression under its own weight. Lift sets how "
+             "high it rises.\n\n"
+             "The form becomes a concrete shell, Thickness thick, built in at the ends of its legs, under its own "
+             "weight. Model View draws its displacement in iso-surfaces: bands of equal movement.")
+
+
+# ---------------------------------------------------------------- 15 - a tank's first hundred modes
+
+# The tank's view: the deformation scale - a mode is drawn its largest movement 8% of the tank's size
+# at 1 - and whether it is drawn in iso-surfaces; the number of colours that gives, which the Legend
+# takes from the first mode; and a column for the Legend and the labels, right of the others.
+TANK_VIEW = (0.6, False)
+TANK_COLOURS = 8 if TANK_VIEW[1] else 9
+TAGS_COLUMN = LEGENDS + 1
+
+
+def tank(doc):
+    s = Structure(doc, "Tank modes", "tank", [
+        ("Radius", "Radius [m]", 0.5, 5, 2, 2),
+        ("Height", "Height [m]", 1, 15, 5, 2),
+        ("Around", "Elements around", 12, 120, 64, 0),
+        ("Up", "Elements up", 4, 60, 30, 0),
+        ("Modes", "Modes", 1, 200, 100, 0),
+        ("Columns", "Columns", 1, 20, 10, 0),
+        ("Spacing", "Spacing [m]", 2, 20, 6, 2),
+    ], [])
+    s.geometry(["Wall", "Base", "Grid"])
+    wall = slider(s.grid, "Wall [mm]", 50, 400, 200, 0, SLIDERS, MAIN, gap=30)
+    s.parts["1"].append(wall)
+    # Concrete as an nD material, for the shells: E 30 GPa, nu 0.2, 2 500 kg/m3.
+    concrete = component(s.grid, ND_MATERIAL, "nD", "Concrete", SECTIONS, MAIN, gap=30)
+    words(inp(concrete, 0), "Concrete")
+    number(inp(concrete, 1), 30e6)
+    number(inp(concrete, 2), 30e6 / 2.4)
+    number(inp(concrete, 3), 0.2)
+    number(inp(concrete, 4), 2500)
+    inp(concrete, 5).PersistentData.Append(GH_Colour(AT_REST))
+    metres = expression(s.grid, "f(t)=t/1000", [wall], "Wall [m]", SECTIONS, MAIN, gap=30)
+    plate = component(s.grid, PLATE_FIBER, "Plate Fiber Section", "Wall", SECTIONS, MAIN, gap=30)
+    wire(inp(plate, 1), out(metres))
+    wire(inp(plate, 2), out(concrete))
+    shells = component(s.grid, SHELL, "ASD Shell", "Tank wall", MEMBERS, MAIN, gap=30)
+    wire(flat(inp(shells, 0)), s.g("Wall"))
+    wire(inp(shells, 1), out(plate))
+    s.members.append(shells)
+    s.parts["2"] += [concrete, metres, plate, shells]
+    s.support("Built in", "Base", (True,) * 6)
+    a = component(s.grid, ASSEMBLE, "Assemble Model", s.title, MODEL, MAIN)
+    wire(flat(inp(a, 0)), out(shells))
+    wire(flat(inp(a, 1)), *[out(x) for x in s.supports])
+    modes = component(s.grid, NATURAL_VIBRATION, "Natural Vibration Analysis", None, ANALYSIS, MAIN)
+    wire(inp(modes, 0), out(a))
+    wire(inp(modes, 1), s.sliders["Modes"])
+    frequencies = panel(s.grid, "Frequencies [Hz]", out(modes, 3), 160, 200, ANALYSIS, MAIN, gap=30)
+    s.assembled = a
+    s.parts["5"] += [a, modes, frequencies]
+
+    # Every mode at once: Step takes a list of them, 0 for the first, and Model View solves each in turn.
+    every = component(s.grid, SERIES, "Series", "Every mode", VIEWS, SHOWN, gap=30)
+    number(inp(every, 0), 0)
+    number(inp(every, 1), 1)
+    wire(inp(every, 2), s.sliders["Modes"])
+    view = s.deformed("Mode shapes", out(modes), TANK_VIEW[0], title="Mode shape, largest movement 1", loads=False,
+                      bands=TANK_VIEW[1])
+    wire(inp(view, V_STEP), out(every))
+    # A mode has no size of its own: it is read with its largest movement 1, in m, its colours over 0 to 1.
+    result_unit(view, DISPLACEMENT, MAGNITUDE, 2)
+    inp(view, V_RANGE).PersistentData.Clear()
+    inp(view, V_RANGE).PersistentData.Append(GH_Interval(Interval(0.0, 1.0)))
+    menu_setting(view, "_ckWires", "Active", True)
+    # Model View draws its last mode only: its Geometry, a coloured mesh a mode, is moved onto the
+    # grid, each mode to its own place, and drawn by a Mesh parameter.
+    view.Hidden = True
+    grid = component(s.grid, MOVE, "Move", "Onto the grid", LEGENDS, SHOWN, gap=30)
+    wire(inp(grid, 0), out(view, 1))
+    wire(inp(grid, 1), s.g("Grid")).DataMapping = GH_DataMapping.Graft
+    grid.Hidden = True
+    drawn = s.grid.put(emit(MESH_PARAM, "The Mesh parameter"), LEGENDS, SHOWN, gap=30)
+    drawn.NickName = "Every mode"
+    wire(drawn, out(grid, 0))
+    # Over each tank, its mode and its frequency, upright, centred at the bottom.
+    labels = python_component(s.grid, "Mode labels", "mode_labels",
+                              [("Frequencies", s.as_float, GH_ParamAccess.list),
+                               ("Grid", GH_Vector3dHint(), GH_ParamAccess.list), ("Radius", s.as_float),
+                               ("Height", s.as_float)],
+                              ["Places", "Texts"], LEGENDS, SHOWN)
+    wire(inp(labels, 0), out(modes, 3))
+    wire(inp(labels, 1), s.g("Grid"))
+    wire(inp(labels, 2), s.sliders["Radius"])
+    wire(inp(labels, 3), s.sliders["Height"])
+    labels.Hidden = True
+    tags = component(s.grid, TEXT_TAG, "Text Tag 3D", "Mode and frequency", TAGS_COLUMN, SHOWN, gap=30)
+    wire(inp(tags, 0), out(labels, 1))
+    wire(inp(tags, 1), out(labels, 2))
+    number(inp(tags, 2), 0.7)
+    inp(tags, 3).PersistentData.Clear()
+    inp(tags, 3).PersistentData.Append(GH_Colour(Color.FromArgb(255, 42, 45, 49)))
+    # One legend: every mode is coloured over 0 to 1, so the first mode's values and colours stand for
+    # them all. Model View hands out every mode's, one after the other: the first nine are the first's.
+    caption, legend = s.parts["6"][-2], s.parts["6"][-1]
+    s.grid.items = [(o, TAGS_COLUMN if o in (caption, legend) else c, r, g) for o, c, r, g in s.grid.items]
+    for k in (L_VALUES, L_COLORS):
+        first = component(s.grid, LIST_ITEM, "List Item", "First mode's " + ("Values" if k == L_VALUES else "Colors"),
+                          LEGENDS, SHOWN, gap=30)
+        flat(wire(inp(first, 0), out(view, R_VALUES if k == L_VALUES else R_COLORS)))
+        inp(first, 1).PersistentData.Clear()
+        for i in range(TANK_COLOURS):
+            inp(first, 1).PersistentData.Append(GH_Integer(i))
+        inp(legend, k).RemoveAllSources()
+        wire(inp(legend, k), out(first))
+        s.parts["6"].append(first)
+    s.parts["6"] += [every, grid, drawn, labels, tags]
+    s.finish({"1": "Geometry: a cylinder of quads, built in round its base, and a place on a grid for each mode",
+              "2": "Members: the concrete wall, Wall [mm] thick, as ASD Shells",
+              "3": "Supports: built in round the base",
+              "5": "Analysis: the first Modes natural modes; the mass is the tank's own",
+              "6": "Results: every mode at once, each on a copy of the tank in its place on the grid"},
+             "Tank modes - a concrete tank's first hundred natural modes, side by side.\n\n"
+             "A cylinder 4 m across and 5 m tall, its concrete wall 200 mm thick, built in round its base and open at "
+             "the top, as ASD Shells. The Natural Vibration Analysis finds its first Modes modes, its own weight the "
+             "mass that swings.\n\n"
+             "Model View takes every mode at once: a Series of steps, 0 for the first, into its Step. It draws only "
+             "the last, so its preview is off; its Geometry output, a coloured mesh a mode, is moved onto a grid, "
+             "Columns to a row, and drawn by the Mesh parameter Every mode, with each mode's number and frequency "
+             "under it. A round tank's modes come in pairs, the same shape turned round by half a wave: they have "
+             "the same frequency.")
+
+
 BUILDERS = {"hall": hall, "tower": tower, "canopy": canopy, "facade": facade, "vault": vault, "windtruss": windtruss,
-            "girder": girder, "cablestayed": cablestayed, "arch": arch, "building": building, "city": city}
+            "girder": girder, "cablestayed": cablestayed, "arch": arch, "building": building, "city": city,
+            "footbridge": footbridge, "sticks": sticks, "shell": shell, "tank": tank,
+            "twisting": twisting, "leaning": leaning, "curving": curving, "crescent": crescent,
+            "bundled": bundled, "braced": braced, "buttressed": buttressed, "outrigger": outrigger, "diagrid": diagrid}
 
 
 def build(doc):

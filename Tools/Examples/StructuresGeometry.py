@@ -11,6 +11,8 @@ from __future__ import division
 
 import math
 import Rhino.Geometry as rg
+from Grasshopper import DataTree
+from Grasshopper.Kernel.Data import GH_Path
 
 
 def P(x, y, z):
@@ -495,6 +497,128 @@ def city(Rows, ColumnsPerRow, Street, Bay, StoreyHeight):
     return Columns, Beams, Slabs, Feet, Watch, Storeys
 
 
+# ---------------------------------------------------------------- 12 - a footbridge's natural modes
+
+def footbridge(Span, Width, Segment, Depth):
+    """A footbridge of one span, Span long: a concrete deck Width wide and 200 mm thick on a steel box
+    girder Depth deep down its middle, cut every Segment or so. The deck is meshed in quads, one
+    across each half, its middle plane at Z = 0; the box's axis is under it, its top against the
+    deck's underside, and each of its nodes is tied to the deck's node above by a rigid link, so that
+    the two bend together. The box is held at both ends: a pinned bearing at the start, one sliding
+    along at the far end. Box: its lines; Deck: the deck's mesh; Under and Over: each link's two
+    nodes, the box's and the deck's; Pinned and Sliding: the box's two ends."""
+    n = max(2, int(round(Span / Segment)))
+    xs = [Span * i / n for i in range(n + 1)]
+    z = -(0.1 + 0.5 * Depth)
+    Box = chain([P(x, 0, z) for x in xs])
+    Deck = [grid_mesh(xs, [-0.5 * Width, 0.0, 0.5 * Width], 0.0)]
+    Under = [P(x, 0, z) for x in xs]
+    Over = [P(x, 0, 0) for x in xs]
+    return Box, Deck, Under, Over, [Under[0]], [Under[-1]]
+
+
+# ---------------------------------------------------------------- 13 - sticks that draw a response spectrum
+
+def sticks(Sticks, Shortest, Tallest, Spacing):
+    """A row of Sticks steel sticks along x, Spacing apart, from Shortest to Tallest: each a
+    cantilever from the ground to a mass at its top, an oscillator of one degree of freedom along
+    the shaking. A cantilever's period goes as its height to the power 1.5, so their heights are
+    spread for their periods to be spread evenly: along the row, x reads as the period axis of a
+    response spectrum. Each stick is a model of its own, a branch of the trees: Lines, one line;
+    Feet, where it is held; Tops, where its mass sits."""
+    n = max(2, int(Sticks))
+    low, high = Shortest ** 1.5, Tallest ** 1.5
+    Lines, Feet, Tops = DataTree[object](), DataTree[object](), DataTree[object]()
+    for i in range(n):
+        h = (low + (high - low) * i / (n - 1)) ** (2.0 / 3.0)
+        foot, top = P(i * Spacing, 0, 0), P(i * Spacing, 0, h)
+        path = GH_Path(i)
+        Lines.Add(L(foot, top), path)
+        Feet.Add(foot, path)
+        Tops.Add(top, path)
+    return Lines, Feet, Tops
+
+
+# How tall the spectrum stands behind the sticks: metres to 1 g of pseudo-acceleration.
+SPECTRUM_SCALE = 8.0
+# How far behind the sticks it stands, m.
+SPECTRUM_BEHIND = 3.0
+
+
+def spectrum(Periods, Displacements, Tops):
+    """The response spectrum the sticks draw. Periods: each stick's, a branch each, from its Natural
+    Vibration Analysis; Displacements: the sticks' displacements at every step of their
+    transient analyses, from Nodal Displacements with History on, a branch a step. Sd is
+    the most its top moved from the ground at any step, along x, in mm; PSa, its pseudo-acceleration, Sd times
+    (2 pi / T) squared, in g. Spectrum and Grid draw them as a chart standing behind the sticks, its
+    period axis along the row and its PSa SPECTRUM_SCALE m to the g: a line through each stick's
+    PSa, and lines at every 0.25 g."""
+    periods = [max(Periods.Branch(p)) for p in Periods.Paths if Periods.Branch(p).Count]
+    n = len(periods)
+    # Nodal Displacements gives a branch a step, every stick's nodes in it one after another, in the
+    # order of the sticks; each stick's top moves the most.
+    peaks = [0.0] * n
+    for path in Displacements.Paths:
+        moves = list(Displacements.Branch(path))
+        each = len(moves) // n if n else 0
+        for i in range(n if each else 0):
+            peaks[i] = max([peaks[i]] + [abs(v.X) for v in moves[i * each:(i + 1) * each]])
+    Period, Sd, PSa = [], [], []
+    for T, peak in zip(periods, peaks):
+        Period.append(T)
+        Sd.append(1000.0 * peak)
+        PSa.append((2 * math.pi / T) ** 2 * peak / 9.81)
+    xs = [Tops.Branch(p)[0].X for p in Tops.Paths][:len(PSa)]
+    y = SPECTRUM_BEHIND
+    Spectrum = rg.Polyline([P(x, y, a * SPECTRUM_SCALE) for x, a in zip(xs, PSa)]).ToNurbsCurve()
+    Grid = []
+    if xs:
+        for k in range(int(math.ceil(max(PSa) / 0.25)) + 1):
+            z = 0.25 * k * SPECTRUM_SCALE
+            Grid.append(L(P(xs[0], y, z), P(xs[-1], y, z)))
+    return Period, Sd, PSa, Spectrum, Grid
+
+
+# ---------------------------------------------------------------- 14 - a shell form-found to work in compression
+
+# The plan of the shell, a cross of four legs 20 m from end to end, in 16 quads round its middle: the
+# coarse net Kangaroo refines and pushes up. Its corners, from the middle out, x and y in m.
+SHELL_QUADS = [
+    ((-9.925, -1.207), (-9.925, 0.0), (-4.521, 0.0), (-5.356, -2.616)),
+    ((-5.356, -2.616), (-4.521, 0.0), (0.0, -5.0), (-2.544, -5.451)),
+    ((-2.544, -5.451), (0.0, -5.0), (0.0, -10.0), (-1.132, -10.0)),
+    ((-4.521, 0.0), (-2.0, 0.0), (0.0, -2.0), (0.0, -5.0)),
+]
+
+
+def compressed_shell(Span):
+    """A shell's net before it is form-found: a cross of four legs, Span from the end of one to the end
+    of the one opposite, as one mesh of 16 quads, a quarter of them mirrored three ways. Ends: the
+    straight edge at the end of each leg, where the shell stands."""
+    k = Span / 20.0
+    mesh, at = rg.Mesh(), {}
+
+    def v(x, y):
+        key = (round(x, 6), round(y, 6))
+        if key not in at:
+            at[key] = mesh.Vertices.Count
+            mesh.Vertices.Add(P(k * x, k * y, 0.0))
+        return at[key]
+
+    for sx, sy in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+        for quad in SHELL_QUADS:
+            corners = [v(sx * x, sy * y) for x, y in quad]
+            if sx * sy < 0:
+                corners.reverse()
+            mesh.Faces.AddFace(*corners)
+    mesh.Normals.ComputeNormals()
+    Ends = [L(P(-9.925 * k, -1.207 * k, 0), P(-9.925 * k, 1.207 * k, 0)),
+            L(P(9.925 * k, -1.207 * k, 0), P(9.925 * k, 1.207 * k, 0)),
+            L(P(-1.132 * k, -10 * k, 0), P(1.132 * k, -10 * k, 0)),
+            L(P(-1.132 * k, 10 * k, 0), P(1.132 * k, 10 * k, 0))]
+    return [mesh], Ends
+
+
 # ---------------------------------------------------------------- the ground motion
 
 # El Centro, 18 May 1940, the north-south component recorded at the Imperial Valley Irrigation District
@@ -669,3 +793,569 @@ def elcentro(Duration, Scale):
     Accelerations = [9.81 * Scale * a for a in EL_CENTRO[:n]]
     Steps = n - 1
     return Times, Accelerations, Steps
+
+
+# ---------------------------------------------------------------- 15 - a tank's first hundred modes
+
+def tank(Radius, Height, Around, Up, Modes, Columns, Spacing):
+    """A cylindrical tank, Radius and Height, open at the top: a mesh of quads, Around round it and Up
+    up it, standing on Z = 0, and the nodes of its base, where it is built in. Grid: one move a mode,
+    Modes of them, Columns to a row, Spacing apart, that set each mode's copy of the tank in its place
+    of a grid, the first at the back left, reading as a page does."""
+    around, up = max(3, int(Around)), max(1, int(Up))
+    mesh = rg.Mesh()
+    for j in range(up + 1):
+        for i in range(around):
+            a = 2 * math.pi * i / around
+            mesh.Vertices.Add(P(Radius * math.cos(a), Radius * math.sin(a), Height * j / up))
+    for j in range(up):
+        for i in range(around):
+            k, n = j * around, (i + 1) % around
+            mesh.Faces.AddFace(k + i, k + n, k + around + n, k + around + i)
+    mesh.Normals.ComputeNormals()
+    Base = [P(Radius * math.cos(2 * math.pi * i / around), Radius * math.sin(2 * math.pi * i / around), 0)
+            for i in range(around)]
+    columns = max(1, int(Columns))
+    Grid = [rg.Vector3d(Spacing * (k % columns), -Spacing * (k // columns), 0) for k in range(max(1, int(Modes)))]
+    return [mesh], Base, Grid
+
+
+def mode_labels(Frequencies, Grid, Radius, Height):
+    """A label over each mode's tank in the grid, its number and its frequency, from the tank's left
+    edge, leaning back half way to lying flat, so that it reads from in front and from above, for
+    Text Tag 3D."""
+    Places, Texts = [], []
+    for k, move in enumerate(Grid):
+        if k >= len(Frequencies):
+            break
+        Places.append(rg.Plane(P(move.X - Radius, move.Y, Height + 1.0), rg.Vector3d.XAxis, rg.Vector3d(0, 1, 1)))
+        Texts.append("{0}: {1:.1f} Hz".format(k + 1, Frequencies[k]))
+    return Places, Texts
+
+
+# ---------------------------------------------------------------- 16 - buildings that are not straight
+
+def _key(p):
+    return (round(p.X, 4), round(p.Y, 4), round(p.Z, 4))
+
+
+class _Once(object):
+    """Lines and points kept once each, however often they are drawn: round a ring, the last bay's
+    far end is the first bay's near one."""
+
+    def __init__(self):
+        self.lines, self.points = set(), set()
+
+    def line(self, into, a, b):
+        k = frozenset([_key(a), _key(b)])
+        if k not in self.lines and _key(a) != _key(b):
+            self.lines.add(k)
+            into.append(L(a, b))
+
+    def point(self, into, p):
+        if _key(p) not in self.points:
+            self.points.add(_key(p))
+            into.append(p)
+
+
+def _unique(lines):
+    """lines without the ones drawn twice, either way round."""
+    kept, once = [], _Once()
+    for line in lines:
+        once.line(kept, line.From, line.To)
+    return kept
+
+
+def _mapped(floors, place, split):
+    """A frame on a grid of cells, as _building, but with each point of the grid put where
+    place(u, v, k) says on floor k, u and v the grid's coordinates: a building that twists, leans,
+    curves or goes round as its floors go up. floors, from the first up, are the cells (i, j) each
+    covers. Columns at every corner of a floor's cells, from the floor under it; beams round every
+    cell, cut split times, following the grid's curves; a slab mesh of quads on the beams' nodes."""
+    Columns, Beams, Slabs, Feet = [], [], [], []
+    once = _Once()
+    n = max(1, int(split))
+    corners = lambda cells: sorted(set((i + a, j + b) for (i, j) in cells for a in (0, 1) for b in (0, 1)))
+    edges = lambda cells: sorted(set(e for (i, j) in cells for e in
+                                     [((i, j), (i + 1, j)), ((i, j + 1), (i + 1, j + 1)), ((i, j), (i, j + 1)), ((i + 1, j), (i + 1, j + 1))]))
+    for (i, j) in corners(floors[0]):
+        once.point(Feet, place(i, j, 0))
+    for k, cells in enumerate(floors, 1):
+        for (i, j) in corners(cells):
+            once.line(Columns, place(i, j, k - 1), place(i, j, k))
+        for a, b in edges(cells):
+            for t in range(n):
+                p = place(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n, k)
+                q = place(a[0] + (b[0] - a[0]) * (t + 1) / n, a[1] + (b[1] - a[1]) * (t + 1) / n, k)
+                once.line(Beams, p, q)
+        mesh, at = rg.Mesh(), {}
+
+        def v(point):
+            if _key(point) not in at:
+                at[_key(point)] = mesh.Vertices.Count
+                mesh.Vertices.Add(point)
+            return at[_key(point)]
+
+        for (i, j) in sorted(cells):
+            for a in range(n):
+                for b in range(n):
+                    q = [place(i + (a + da) / n, j + (b + db) / n, k) for da, db in ((0, 0), (1, 0), (1, 1), (0, 1))]
+                    mesh.Faces.AddFace(*[v(p) for p in q])
+        mesh.Normals.ComputeNormals()
+        Slabs.append(mesh)
+    return Columns, Beams, Slabs, Feet
+
+
+def twisting(Bays, Bay, Storeys, StoreyHeight, Twist):
+    """A square tower Bays by Bays bays of Bay, each floor turned a little more than the one under it,
+    Twist degrees in all from the ground to the roof: its columns lean round it from floor to floor,
+    a concrete frame with a slab at every floor, meshed twice a bay. Watch: a corner of its roof."""
+    b, s = max(1, int(Bays)), max(1, int(Storeys))
+
+    def place(u, v, k):
+        a = math.radians(Twist) * k / s
+        x, y = (u - b / 2.0) * Bay, (v - b / 2.0) * Bay
+        return P(x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a), k * StoreyHeight)
+
+    Columns, Beams, Slabs, Feet = _mapped([_rect(b, b)] * s, place, 2)
+    return Columns, Beams, Slabs, Feet, [place(0, 0, s)]
+
+
+def leaning(BaysX, BaysY, Bay, Storeys, EastStoreys, StoreyHeight, Lean, Gap):
+    """Two towers leaning towards each other over a street, Lean degrees off the vertical, their feet
+    Gap apart across x: the west one Storeys tall, the east one EastStoreys, so that they sway out of
+    step. Each BaysX by BaysY bays of Bay, a steel frame with a slab at every floor, meshed twice a
+    bay, every floor moved over the one under it by the storey's height times the tangent of Lean.
+    Watch: the top of each one's leaning face."""
+    bx, by = max(1, int(BaysX)), max(1, int(BaysY))
+    run = StoreyHeight * math.tan(math.radians(Lean))
+    Columns, Beams, Slabs, Feet, Watch = [], [], [], [], []
+    for side, storeys in ((-1, max(1, int(Storeys))), (1, max(1, int(EastStoreys)))):
+        # The west tower leans east, the east one west: each one's inner face is at u = bx.
+        def place(u, v, k, side=side):
+            x = Gap / 2.0 + (bx - u) * Bay - k * run
+            return P(side * x, (v - by / 2.0) * Bay, k * StoreyHeight)
+        parts = _mapped([_rect(bx, by)] * storeys, place, 2)
+        Columns += parts[0]
+        Beams += parts[1]
+        Slabs += parts[2]
+        Feet += parts[3]
+        Watch.append(place(bx, 0, storeys))
+    return Columns, Beams, Slabs, Feet, Watch
+
+
+def curving(Around, Radius, Core, Storeys, StoreyHeight, Bend):
+    """A round tower whose floors move out along x and back as they go up, Bend at half its height:
+    rings of columns at Core, half way and Radius, Around of each, a steel frame with ring and radial
+    beams and a slab round the core at every floor. Watch: the roof's edge, on the side it bends to."""
+    n, s = max(3, int(Around)), max(1, int(Storeys))
+    height = s * StoreyHeight
+
+    def place(u, v, k):
+        a = 2 * math.pi * u / n
+        r = Core + (Radius - Core) * v / 2.0
+        z = k * StoreyHeight
+        return P(Bend * math.sin(math.pi * z / height) + r * math.cos(a), r * math.sin(a), z)
+
+    cells = frozenset((i, j) for i in range(n) for j in range(2))
+    Columns, Beams, Slabs, Feet = _mapped([cells] * s, place, 1)
+    return Columns, Beams, Slabs, Feet, [place(0, 2, s)]
+
+
+def crescent(Bays, Depth, Bay, Radius, Sweep, Storeys, StoreyHeight):
+    """A block curved in plan, Sweep degrees of a ring Radius across its inner face: Bays along it,
+    Depth bays of Bay deep, a concrete frame with a slab at every floor, meshed twice a bay. Its
+    middle is on the y axis, so that shaking along x twists it. Watch: a tip of its roof."""
+    b, d, s = max(1, int(Bays)), max(1, int(Depth)), max(1, int(Storeys))
+
+    def place(u, v, k):
+        a = math.radians(Sweep) * (u / b - 0.5)
+        r = Radius + v * Bay
+        return P(r * math.sin(a), r * math.cos(a) - Radius, k * StoreyHeight)
+
+    Columns, Beams, Slabs, Feet = _mapped([_rect(b, d)] * s, place, 2)
+    return Columns, Beams, Slabs, Feet, [place(0, d, s)]
+
+
+# ---------------------------------------------------------------- 17 - towers of a hundred storeys
+
+def _floors(levels, masters, load, areas):
+    """The trees a Rigid Diaphragm takes, a branch a floor - its nodes, and the one it is driven from -
+    and the Mass Points that give each floor its mass, load kg/m2 of its area shared between its
+    nodes."""
+    Floors, Masters = DataTree[object](), DataTree[object]()
+    MassPoints, Masses = [], []
+    for k, (points, master, area) in enumerate(zip(levels, masters, areas)):
+        Floors.AddRange(points, GH_Path(k))
+        Masters.Add(master, GH_Path(k))
+        m = load * area / len(points)
+        for p in points:
+            MassPoints.append(p)
+            Masses.append(rg.Vector3d(m, m, m))
+    return Floors, Masters, MassPoints, Masses
+
+
+# Where each of the nine tubes stops, out of 108 storeys: (column, row) from the south-west, x east,
+# y north. Two stop at the 50th floor, two at the 66th, three at the 90th; two go to the top.
+BUNDLED_TOPS = {(0, 2): 50, (2, 0): 50, (0, 0): 66, (2, 2): 66, (1, 2): 90, (2, 1): 90, (1, 0): 90,
+                (0, 1): 108, (1, 1): 108}
+BUNDLED_BELTS = (29, 64, 88)
+
+
+def bundled(Tube, Bays, Storeys, StoreyHeight, FloorMass):
+    """A bundled tube, after the Willis Tower in Chicago: nine square tubes of Tube, three by three,
+    each wall a frame of columns Bays to a side tied by deep spandrels, bundled up to the 50th floor
+    and stopping at the 50th, 66th, 90th and the top of 108, as BUNDLED_TOPS, scaled to Storeys. Belt
+    trusses, crossed braces in every bay of the walls, over two storeys at three floors. The floors are
+    rigid diaphragms, FloorMass kg/m2 at their nodes. Watch: the roof, and the top of a 50-storey tube."""
+    n, s = max(1, int(Bays)), max(1, int(Storeys))
+    a = Tube / n
+    top = dict((t, int(round(s * f / 108.0))) for t, f in BUNDLED_TOPS.items())
+    belts = [int(round(s * f / 108.0)) for f in BUNDLED_BELTS]
+    pt = lambda i, j, k: P(i * a, j * a, k * StoreyHeight)
+
+    def walls(k):
+        """The bays of the tubes' walls on floor k, as pairs of grid points."""
+        bays = set()
+        for (c, r), t in top.items():
+            if t >= k:
+                for m in range(n):
+                    bays.add(((c * n + m, r * n), (c * n + m + 1, r * n)))
+                    bays.add(((c * n + m, r * n + n), (c * n + m + 1, r * n + n)))
+                    bays.add(((c * n, r * n + m), (c * n, r * n + m + 1)))
+                    bays.add(((c * n + n, r * n + m), (c * n + n, r * n + m + 1)))
+        return sorted(bays)
+
+    Columns, Spandrels, Belts, Feet, levels, masters, areas = [], [], [], [], [], [], []
+    for k in range(1, s + 1):
+        bays = walls(k)
+        nodes = sorted(set(p for bay in bays for p in bay))
+        Columns += [L(pt(i, j, k - 1), pt(i, j, k)) for (i, j) in nodes]
+        Spandrels += [L(pt(p[0], p[1], k), pt(q[0], q[1], k)) for p, q in bays]
+        if any(b < k <= b + 2 for b in belts):
+            for p, q in bays:
+                Belts.append(L(pt(p[0], p[1], k - 1), pt(q[0], q[1], k)))
+                Belts.append(L(pt(q[0], q[1], k - 1), pt(p[0], p[1], k)))
+        if k == 1:
+            Feet = [pt(i, j, 0) for (i, j) in nodes]
+        levels.append([pt(i, j, k) for (i, j) in nodes])
+        masters.append(pt(n, n, k))
+        areas.append(sum(1 for t in top.values() if t >= k) * Tube * Tube)
+    Floors, Masters, MassPoints, Masses = _floors(levels, masters, FloorMass, areas)
+    Watch = [pt(n, n, s), pt(0, 3 * n, top[(0, 2)])]
+    return Columns, Spandrels, Belts, Feet, Floors, Masters, MassPoints, Masses, Watch
+
+
+def braced(Length, Width, TopLength, TopWidth, Storeys, StoreyHeight, XStoreys, FloorMass):
+    """A braced tube, after the John Hancock Center in Chicago: a tapering box, Length by Width at the
+    ground and TopLength by TopWidth at the roof, its four faces crossed by diagonals from corner to
+    corner, an X every XStoreys storeys and half of one at the top, on columns eight bays along its
+    long faces and five along its short ones, leaning in with it. The diagonals pass through every
+    floor, where the spandrels meet them. The floors are rigid diaphragms, FloorMass kg/m2 at their
+    nodes. Watch: a corner of the roof."""
+    s, m = max(1, int(Storeys)), max(2, int(XStoreys))
+    xs, rest = s // m, s - (s // m) * m
+    hx = lambda k: (Length + (TopLength - Length) * k / float(s)) / 2.0
+    hy = lambda k: (Width + (TopWidth - Width) * k / float(s)) / 2.0
+    corner = lambda c, k: P((-1, 1, 1, -1)[c % 4] * hx(k), (-1, -1, 1, 1)[c % 4] * hy(k), k * StoreyHeight)
+    face = lambda f, t, k: corner(f, k) + (corner(f + 1, k) - corner(f, k)) * t
+    bays = (8, 5, 8, 5)
+
+    def cross(k, x):
+        """How far along a face, from its first corner, the X x's rising diagonal crosses floor k;
+        the X above the last whole one is half an X, its diagonals meeting at the roof."""
+        if x < xs:
+            return (k - x * m) / float(m)
+        return 0.5 * (k - xs * m) / rest if rest else 0.0
+
+    Columns, Spandrels, Diagonals, Feet, levels, masters, areas = [], [], [], [], [], [], []
+    for k in range(s + 1):
+        t = cross(k, k // m)
+        ring = []
+        for f in range(4):
+            stops = set(i / float(bays[f]) for i in range(bays[f])) | set(x for x in (t, 1 - t) if x < 1 - 1e-9)
+            ring += [face(f, x, k) for x in sorted(round(x, 9) for x in stops)]
+        if k == 0:
+            Feet = [face(f, i / float(bays[f]), 0) for f in range(4) for i in range(bays[f])]
+            continue
+        for f in range(4):
+            for i in range(bays[f]):
+                Columns.append(L(face(f, i / float(bays[f]), k - 1), face(f, i / float(bays[f]), k)))
+        Spandrels += [L(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))]
+        # Each diagonal, floor by floor: from where it crosses the floor under to where it crosses this one.
+        x = (k - 1) // m
+        t0, t1 = cross(k - 1, x), cross(k, x)
+        for f in range(4):
+            Diagonals.append(L(face(f, t0, k - 1), face(f, t1, k)))
+            Diagonals.append(L(face(f, 1 - t0, k - 1), face(f, 1 - t1, k)))
+        levels.append(ring)
+        masters.append(corner(0, k))
+        areas.append(4 * hx(k) * hy(k))
+    Floors, Masters, MassPoints, Masses = _floors(levels, masters, FloorMass, areas)
+    return Columns, Spandrels, Diagonals, Feet, Floors, Masters, MassPoints, Masses, [corner(0, s)]
+
+
+def _walls(pieces):
+    """A mesh of wall panels, one quad a piece, each piece the pair of its foot's ends and the pair of
+    its top's, its nodes shared where panels meet."""
+    mesh, at = rg.Mesh(), {}
+
+    def v(point):
+        if _key(point) not in at:
+            at[_key(point)] = mesh.Vertices.Count
+            mesh.Vertices.Add(point)
+        return at[_key(point)]
+
+    for (a, b), (c, d) in pieces:
+        mesh.Faces.AddFace(v(a), v(b), v(d), v(c))
+    mesh.Normals.ComputeNormals()
+    return mesh
+
+
+def _level_points(lines, meshes, z):
+    """Every end of lines and every vertex of meshes at height z, each once. A mesh keeps its
+    vertices in single precision - 592 m up, one is 591.99998 - so heights match to a millimetre."""
+    points, once = [], _Once()
+    for line in lines:
+        for p in (line.From, line.To):
+            if abs(p.Z - z) < 1e-3:
+                once.point(points, p)
+    for mesh in meshes:
+        for i in range(mesh.Vertices.Count):
+            p = rg.Point3d(mesh.Vertices[i])
+            if abs(p.Z - z) < 1e-3:
+                once.point(points, P(p.X, p.Y, z))
+    return points
+
+
+def buttressed(Core, Corridor, WingWidth, Module, Modules, Storeys, StoreyHeight, Spire, FloorMass):
+    """A buttressed core, after the Burj Khalifa in Dubai: three wings round a hexagonal core of
+    concrete walls, Core from its middle to a corner, each wing two corridor walls Corridor apart
+    running out Modules modules of Module, in panels two modules long, with a hammerhead wall across
+    its end and columns down its faces, WingWidth wide, tied to the corridor walls by beams where
+    two panels meet. The wings step back a module at a
+    time, one wing after another round the tower, until only the core is left, which goes on to the
+    roof of Storeys and carries a steel spire Spire tall. The floors are rigid diaphragms, FloorMass
+    kg/m2 at their nodes. Watch: the spire's tip, and the roof."""
+    s, m0, h = max(1, int(Storeys)), max(1, int(Modules)), StoreyHeight
+    c, w = Corridor / 2.0, WingWidth / 2.0
+    apothem = Core * math.cos(math.pi / 6)
+    first, last = int(round(0.12 * s)), int(round(0.82 * s))
+    steps = [first + int(round(i * (last - first) / float(max(1, 3 * m0 - 1)))) for i in range(3 * m0)]
+    alive = lambda wing, k: m0 - sum(1 for i in range(wing, 3 * m0, 3) if steps[i] < k)
+    hexagon = lambda i, k: P(Core * math.cos(math.pi * i / 3), Core * math.sin(math.pi * i / 3), k * h)
+
+    def at(wing, along, across, k):
+        a = math.radians(90 + 120 * wing)
+        return P(along * math.cos(a) - across * math.sin(a), along * math.sin(a) + across * math.cos(a), k * h)
+
+    station = lambda j: apothem + j * Module
+    Walls, Columns, Beams, Spire_, Feet, levels, masters, areas = [], [], [], [], [], [], [], []
+    for k in range(1, s + 1):
+        plan = []   # the floor's wall pieces, as pairs of points at height 0
+        for i in range(6):
+            # The sides the wings meet - the 1st, 3rd and 5th - are cut where the corridor walls start.
+            if i % 2 == 1:
+                wing = (i // 2)
+                cuts = [-Core / 2.0, -c, c, Core / 2.0]
+                plan += [(at(wing, apothem, cuts[j], 0), at(wing, apothem, cuts[j + 1], 0)) for j in range(3)]
+            else:
+                plan.append((hexagon(i, 0), hexagon(i + 1, 0)))
+        lines = []
+        for wing in range(3):
+            n = alive(wing, k)
+            # The corridor walls in panels two modules long - a model of 160 storeys of walls is slow
+            # enough as it is - and the beams across to the faces where two panels meet.
+            for e in (-c, c):
+                plan += [(at(wing, station(j), e, 0), at(wing, station(min(j + 2, n)), e, 0)) for j in range(0, n, 2)]
+            if n > 0:
+                cuts = [-w, -c, c, w]
+                plan += [(at(wing, station(n), cuts[j], 0), at(wing, station(n), cuts[j + 1], 0)) for j in range(3)]
+            for e in (-w, w):
+                for j in range(1, n + 1):
+                    Columns.append(L(at(wing, station(j), e, k - 1), at(wing, station(j), e, k)))
+                    lines.append(Columns[-1])
+                for j in range(1, n):
+                    Beams.append(L(at(wing, station(j), e, k), at(wing, station(j + 1), e, k)))
+                    lines.append(Beams[-1])
+                    if j % 2 == 0:
+                        Beams.append(L(at(wing, station(j), e, k), at(wing, station(j), e * c / w, k)))
+                        lines.append(Beams[-1])
+        up = rg.Vector3d(0, 0, h)
+        panels = [((a + up * (k - 1), b + up * (k - 1)), (a + up * k, b + up * k)) for a, b in plan]
+        Walls.append(_walls(panels))
+        if k == 1:
+            Feet = _level_points(lines, [Walls[0]], 0.0)
+        levels.append(_level_points(lines, [Walls[-1]], k * h))
+        masters.append(hexagon(0, k))
+        areas.append(1.5 * math.sqrt(3) * Core * Core + sum(alive(i, k) * Module * WingWidth for i in range(3)))
+    # The spire: a steel mast that starts eight storeys down inside the core, held at every floor by
+    # spokes from the core's corners, and goes on over the roof in 10 m pieces.
+    top, foot = P(0, 0, s * h), max(0, s - 8)
+    for k in range(foot, s + 1):
+        Beams += [L(hexagon(i, k), P(0, 0, k * h)) for i in range(6)]
+    Spire_ = [L(P(0, 0, (k - 1) * h), P(0, 0, k * h)) for k in range(foot + 1, s + 1)] + \
+        pieces(top, top + rg.Vector3d(0, 0, Spire), max(1, int(round(Spire / 10.0))))
+    Floors, Masters, MassPoints, Masses = _floors(levels, masters, FloorMass, areas)
+    Watch = [top + rg.Vector3d(0, 0, Spire), hexagon(0, s)]
+    return Walls, Columns, Beams, Spire_, Feet, Floors, Masters, MassPoints, Masses, Watch
+
+
+def outrigger(StoreyHeight, Width, Flare, DamperMass, DamperPeriod, DamperDamping, FloorMass):
+    """Outriggers, after Taipei 101: a braced steel core of sixteen columns, 22 m square, and eight
+    super columns, two on each face, 45 m apart across the tower, tied together by outrigger trusses
+    two storeys deep at the foot of every one of eight modules of eight storeys. The modules flare
+    out, from Width at the foot to Width plus Flare at the top, each on the one under it, over a base
+    of 25 storeys that narrows as it rises and under a top of 12: 101 storeys in all. In the core, a
+    damper - DamperMass tonnes hung from the 92nd floor, a spring and a dashpot that swing it at
+    DamperPeriod with DamperDamping % of critical damping - sways against the tower. The floors are
+    rigid diaphragms, FloorMass kg/m2 at their nodes. Watch: the roof, and the damper."""
+    h, base, modules, height, top = StoreyHeight, 25, 8, 8, 12
+    s = base + modules * height + top
+    crown = base + modules * height
+    C, F, T = 11.0, 22.5, 15.0
+    xs = [-C, -C / 3, C / 3, C]
+    z = lambda k: k * h
+
+    def half(k, segment):
+        """The half width of the tower's perimeter on floor k, of the segment it is drawn for: -1
+        the base, 0 to 7 the modules, 8 the top."""
+        if segment < 0:
+            return Width + 10 - 10 * k / float(base)
+        if segment < modules:
+            return Width + Flare * (k - base - segment * height) / float(height)
+        return T
+
+    def ring(b, k):
+        points = []
+        for i in range(6):
+            points.append(P(-b + 2 * b * i / 6.0, -b, z(k)))
+        for i in range(6):
+            points.append(P(b, -b + 2 * b * i / 6.0, z(k)))
+        for i in range(6):
+            points.append(P(b - 2 * b * i / 6.0, b, z(k)))
+        for i in range(6):
+            points.append(P(-b, b - 2 * b * i / 6.0, z(k)))
+        return points
+
+    def segments(k):
+        """The segments a floor belongs to: two where one ends and the next begins."""
+        if k < base:
+            return [-1]
+        if k >= crown:
+            return [modules - 1, modules] if k == crown else [modules]
+        j = (k - base) // height
+        return [j - 1, j] if (k - base) % height == 0 and j > 0 else ([-1, 0] if k == base else [j])
+
+    CoreColumns, CoreBeams, CoreBraces, Supers, Perimeter, Rings, Outriggers, Feet = [], [], [], [], [], [], [], []
+    supers = [P(x, y, 0) for x in (-C, C) for y in (-F, F)] + [P(x, y, 0) for x in (-F, F) for y in (-C, C)]
+    partner = lambda p: P(C if p.X > 0 else -C, C if p.Y > 0 else -C, 0)
+    up = lambda p, k: P(p.X, p.Y, z(k))
+    for k in range(1, s + 1):
+        for x in xs:
+            for y in xs:
+                CoreColumns.append(L(P(x, y, z(k - 1)), P(x, y, z(k))))
+        for line in range(4):
+            for bay in range(3):
+                for a, b in (((xs[bay], xs[line]), (xs[bay + 1], xs[line])), ((xs[line], xs[bay]), (xs[line], xs[bay + 1]))):
+                    CoreBeams.append(L(P(a[0], a[1], z(k)), P(b[0], b[1], z(k))))
+                    if (k + bay) % 2 == 0:
+                        CoreBraces.append(L(P(a[0], a[1], z(k - 1)), P(b[0], b[1], z(k))))
+                    else:
+                        CoreBraces.append(L(P(b[0], b[1], z(k - 1)), P(a[0], a[1], z(k))))
+        if k <= crown:
+            Supers += [L(up(p, k - 1), up(p, k)) for p in supers]
+        # The perimeter: columns from the floor under in the same segment, and a ring of beams on
+        # every ring of the floor, with beams across where two segments meet.
+        here = segments(k)
+        below = segments(k - 1)
+        for g in here:
+            if g in below:
+                Perimeter += [L(a, b) for a, b in zip(ring(half(k - 1, g), k - 1), ring(half(k, g), k))]
+        rings = [ring(half(k, g), k) for g in here]
+        for r in rings:
+            Rings += [L(r[i], r[(i + 1) % 24]) for i in range(24)]
+        if len(rings) == 2 and abs(half(k, here[0]) - half(k, here[1])) > 1e-6:
+            Rings += [L(a, b) for a, b in zip(rings[0], rings[1])]
+        # Outriggers: two storeys deep under the foot of every module but the first, and under the top.
+        if any(k == base + j * height for j in range(1, modules + 1)):
+            for p in supers:
+                q = partner(p)
+                mid = P((p.X + q.X) / 2, (p.Y + q.Y) / 2, 0)
+                Outriggers += [L(up(q, k - 2), up(mid, k - 1)), L(up(mid, k - 1), up(p, k)),
+                               L(up(p, k - 2), up(mid, k - 1)), L(up(mid, k - 1), up(q, k)),
+                               L(up(q, k - 1), up(mid, k - 1)), L(up(mid, k - 1), up(p, k - 1)),
+                               L(up(q, k), up(p, k)), L(up(q, k - 2), up(p, k - 2))]
+    Feet = [P(x, y, 0) for x in xs for y in xs] + supers + ring(half(0, -1), 0)
+    # The damper: hung from four beams across the core's middle bay on the 92nd floor, sitting half
+    # a storey over the 88th, clear of every floor.
+    hang = P(0, 0, z(92))
+    mass = P(0, 0, z(88) + h / 2)
+    Hangers = [L(P(x, y, z(92)), hang) for x in xs[1:3] for y in xs[1:3]]
+    Damper = [L(hang, mass)]
+    allLines = CoreColumns + CoreBeams + CoreBraces + Supers + Perimeter + Rings + Outriggers + Hangers
+    byLevel = {}
+    for line in allLines:
+        for p in (line.From, line.To):
+            k = int(round(p.Z / h))
+            if k > 0 and abs(p.Z - z(k)) < 1e-6:
+                byLevel.setdefault(k, {})[_key(p)] = p
+    levels = [list(byLevel[k].values()) for k in range(1, s + 1)]
+    masters = [P(C, C, z(k)) for k in range(1, s + 1)]
+    areas = [max(4 * half(k, g) ** 2 for g in segments(k)) for k in range(1, s + 1)]
+    Floors, Masters, MassPoints, Masses = _floors(levels, masters, FloorMass, areas)
+    # The damper's spring and dashpot, from its mass and period: k = m w2, c = 2 zeta m w, in kN and t.
+    omega = 2 * math.pi / DamperPeriod
+    Stiffness = DamperMass * omega * omega
+    Dashpot = 2 * DamperDamping / 100.0 * DamperMass * omega
+    DamperMasses = rg.Vector3d(DamperMass * 1000, DamperMass * 1000, DamperMass * 1000)
+    Watch = [P(C, C, z(s)), mass]
+    CoreColumns, CoreBeams, CoreBraces, Supers, Perimeter, Rings, Outriggers, Hangers = [
+        _unique(x) for x in (CoreColumns, CoreBeams, CoreBraces, Supers, Perimeter, Rings, Outriggers, Hangers)]
+    return (CoreColumns, CoreBeams, CoreBraces, Supers, Perimeter, Rings, Outriggers, Hangers, Feet, Floors,
+            Masters, MassPoints, Masses, Damper, mass, DamperMasses, Stiffness, Dashpot, Watch)
+
+
+def diagrid(Radius, Bulge, Around, Storeys, StoreyHeight, NodeStoreys, Core, FloorMass):
+    """A diagrid, after the Guangzhou International Finance Center: a tube of steel diagonals round a
+    concrete core, its plan a triangle with rounded corners, Radius across at the ground and at the
+    roof and Bulge times more half way up. The diagonals cross each other at nodes Around round it,
+    every NodeStoreys storeys, and pass through every floor, where a ring beam meets them. The core
+    is a hexagon of walls, Core from its middle to a corner. The floors are rigid diaphragms,
+    FloorMass kg/m2 at their nodes. Watch: the roof."""
+    n, s, m = max(3, int(Around)), max(1, int(Storeys)), max(1, int(NodeStoreys))
+    h = StoreyHeight
+    radius = lambda a, k: Radius * (1 + Bulge * math.sin(math.pi * k / float(s))) * (1 + 0.08 * math.cos(3 * a))
+    on = lambda a, k: P(radius(a, k) * math.cos(a), radius(a, k) * math.sin(a), k * h)
+    node = lambda i, x: 2 * math.pi * (i + 0.5 * (x % 2)) / n
+
+    def angles(k, x):
+        t = (k - x * m) / float(m)
+        return [node(i, x) + d * t * math.pi / n for i in range(n) for d in (-1, 1)]
+
+    hexagon = lambda i, k: P(Core * math.cos(math.pi * i / 3), Core * math.sin(math.pi * i / 3), k * h)
+    Diagonals, Rings, Walls, levels, masters, areas = [], [], [], [], [], []
+    for k in range(1, s + 1):
+        x = (k - 1) // m
+        for a0, a1 in zip(angles(k - 1, x), angles(k, x)):
+            Diagonals.append(L(on(a0, k - 1), on(a1, k)))
+        around = sorted(set(round(a % (2 * math.pi), 9) for a in angles(k, k // m)))
+        ring = [on(a, k) for a in around]
+        Rings += [L(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))]
+        pieces_ = []
+        for i in range(6):
+            a, b, mid = hexagon(i, 0), hexagon(i + 1, 0), None
+            mid = (a + b) / 2
+            for p, q in ((a, mid), (mid, b)):
+                pieces_.append(((p + rg.Vector3d(0, 0, (k - 1) * h), q + rg.Vector3d(0, 0, (k - 1) * h)),
+                                (p + rg.Vector3d(0, 0, k * h), q + rg.Vector3d(0, 0, k * h))))
+        Walls.append(_walls(pieces_))
+        core = [hexagon(i, k) for i in range(6)] + [(hexagon(i, k) + hexagon(i + 1, k)) / 2 for i in range(6)]
+        levels.append(ring + core)
+        masters.append(hexagon(0, k))
+        areas.append(0.5 * abs(sum(ring[i].X * ring[(i + 1) % len(ring)].Y - ring[(i + 1) % len(ring)].X * ring[i].Y
+                                   for i in range(len(ring)))))
+    Feet = [on(node(i, 0), 0) for i in range(n)] + [hexagon(i, 0) for i in range(6)] + \
+        [(hexagon(i, 0) + hexagon(i + 1, 0)) / 2 for i in range(6)]
+    Floors, Masters, MassPoints, Masses = _floors(levels, masters, FloorMass, areas)
+    return Diagonals, Rings, Walls, Feet, Floors, Masters, MassPoints, Masses, [ring[0]]
