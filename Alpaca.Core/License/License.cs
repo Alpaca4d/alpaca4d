@@ -24,16 +24,26 @@ namespace Alpaca4d.License
         private static string adoptedFor = null;
 
         /// <summary>
-        /// The most elements a model may have and still be analysed without a license. Past it,
-        /// Run Analysis and Natural Vibration Analysis refuse to run.
+        /// The most elements a model may have and still be analysed, and drawn by Model View, without
+        /// a license. Past it, Run Analysis, Natural Vibration and Linear Buckling refuse to run, and
+        /// Model View to draw.
         /// </summary>
         public const int FreeElementLimit = 50;
 
         /// <summary>
         /// The most elements a model may have for Topology Optimisation to run on it without a
-        /// license. Past it, Topology Optimisation refuses to start.
+        /// license. Past it, Topology Optimisation refuses to start. The design it hands on is analysed
+        /// and drawn free up to the same limit (<see cref="FreeLimitFor"/>).
         /// </summary>
         public const int FreeTopologyElementLimit = 500;
+
+        /// <summary>
+        /// The most elements <paramref name="model"/> may have to be analysed, or drawn by Model View,
+        /// without a license: <see cref="FreeElementLimit"/>, or <see cref="FreeTopologyElementLimit"/>
+        /// for the design a topology optimisation handed on, which was free to find and so is free to check.
+        /// </summary>
+        public static int FreeLimitFor(Alpaca4d.Model model)
+            => model != null && model.IsTopologyDesign ? FreeTopologyElementLimit : FreeElementLimit;
 
         /// <summary>
         /// How often a refusal opens the License window. The refusal itself happens on every

@@ -199,6 +199,7 @@ namespace Alpaca4d.Optimisation
             {
                 Mass = masses,
                 Tollerance = model.Tollerance,
+                IsTopologyDesign = true,
             };
             design.Assemble();
             return design;

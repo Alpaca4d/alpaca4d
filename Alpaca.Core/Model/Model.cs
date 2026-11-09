@@ -195,6 +195,14 @@ namespace Alpaca4d
         public Model BeforeAnalysis { get; set; }
 
         /// <summary>
+        /// Set on the design a topology optimisation hands on (<see cref="Optimisation.TopologyDesign.Build"/>),
+        /// and kept by the models analysed from it. Free to optimise, it is free to check: it is analysed,
+        /// and drawn, without a license up to the optimisation's own limit. See
+        /// <see cref="Alpaca4d.License.License.FreeLimitFor"/>.
+        /// </summary>
+        public bool IsTopologyDesign { get; set; }
+
+        /// <summary>
         /// The model as it was before it was analysed, for an analysis of another kind on it: its
         /// modes, or its buckling, after a static analysis or a Section Optimiser. An analysed model is
         /// no longer a model to solve - its deck ends in "wipe", and Linear Buckling's has split beams -
