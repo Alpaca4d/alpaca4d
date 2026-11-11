@@ -110,6 +110,7 @@ public static class Shots
                     case "spectrum": list = Spectrum(); break;
                     case "momentcurvature": list = MomentCurvatureScene(); break;
                     case "pushover": list = PushoverScene(); break;
+                    case "reciprocalvault": list = VaultScene(); break;
                     case "earthquakes": list = Earthquakes("earthquakes"); break;
                     // The buildings that are not straight, and the towers of a hundred storeys and more.
                     case "quakebuildings": list = Earthquakes("buildings"); break;
@@ -3062,6 +3063,119 @@ public static class Shots
         var tree = Out(push, "Ductility").VolatileData;
         return tree.Paths.Select(path => tree.get_Branch(path).OfType<GH_Number>().Select(n => n.Value).ToArray()).ToList();
     }
+
+    /// <summary>
+    /// The reciprocal plywood vault of Tools/Examples/ReciprocalVault.py pressed down until it gives way,
+    /// ReciprocalVault.gh: its canvas; the vault at the peak of its curve, and at the end of the push, with
+    /// their charts; a frame every second point of the curve, the vault pressed a little further each time,
+    /// its colours over the whole push's range, with the chart of the curve so far in a folder of its own,
+    /// for publish.sh's animcharts; and the vault beside Grasshopper's own drawing of the curve.
+    /// </summary>
+    static List<(string, Func<bool>)> VaultScene() => new List<(string, Func<bool>)>
+    {
+        Do("vault", () =>
+        {
+            Open("ReciprocalVault.gh");
+            foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                Messages(c);
+            var push = Find<IGH_Component>("Pushover");
+            var view = Find<IGH_Component>("Vault pushed");
+            var legend = Find<IGH_Component>("Vault legend");
+            var curve = Find<IGH_Param>("Capacity curve drawn");
+            var labels = Find<IGH_Component>("Curve labels");
+            var point = Find<GH_NumberSlider>("Point on the curve");
+            var d = Values<GH_Number>(Out(push, "Displacement")).Select(n => Math.Abs(n.Value) * 1000.0).ToArray();
+            var f = Values<GH_Number>(Out(push, "Load Factor")).Select(n => Math.Abs(n.Value)).ToArray();
+            var hinges = Values<GH_Integer>(Out(push, "Yields At")).Select(n => n.Value).ToArray();
+            if (d.Length < 2) throw new Exception("the push gave no curve");
+            int last = d.Length - 1, peak = Array.IndexOf(f, f.Max());
+            Log($"  {d.Length} points to {d[last]:F0} mm; the peak {f[peak]:F2} times its weight at {d[peak]:F0} mm; {f[last]:F2} at the end");
+            Log($"  {hinges.Length} hinges, the first at point {(hinges.Length > 0 ? hinges.Min() : -1)}");
+            foreach (var line in Values<GH_String>(Out(push, "Hinges")).Take(8)) Log("    " + line.Value);
+            Canvas("reciprocal-vault-canvas");
+
+            // The planks grey, the hinges coloured by the ductility they have reached: the rings on the curve too.
+            var ductility = Ductilities(push);
+            Log($"  ductility by the end: {ductility.Count(x => x.Length > 0 && x.Last() >= 8)} hinges past 8, " +
+                $"{ductility.Count(x => x.Length > 0 && x.Last() >= 4 && x.Last() < 8)} from 4, {ductility.Count(x => x.Length > 0 && x.Last() >= 2 && x.Last() < 4)} from 2, " +
+                $"the most {ductility.Select(x => x.Length > 0 ? x.Last() : 0).DefaultIfEmpty(0).Max():0.#}");
+            Func<int, int, string> now = (k, formed) =>
+                $"Crown  {d[k]:0} mm      {f[k]:0.00} × its weight      Hinges  {formed}";
+            const string up = "Pressed down [× its own weight]", along = "Crown moves down [mm]";
+
+            ShowOnly(view, legend);
+            // How many balls Model View draws at a few points, how many of them have unloaded - faded - and how
+            // many would be left were only the points past yield at that step drawn, as before 2026-11-09.
+            foreach (int k in new[] { peak, (peak + last) / 2, last })
+            {
+                AtStep(point, k, view);
+                var stations = ((System.Collections.IEnumerable)Field(view, "_hinges") ?? new object[0]).Cast<object>().ToList();
+                Func<object, string, object> Get = (o, n) => o.GetType().GetProperty(n).GetValue(o);
+                int balls = stations.Count(o => Get(o, "Reached").ToString() != "Elastic");
+                int faded = stations.Count(o => (bool)Get(o, "Unloaded"));
+                int pastNow = stations.Count(o => Get(o, "State").ToString() != "Elastic");
+                Log($"  point {k}: {balls} balls, {faded} of them faded; past yield at that step alone: {pastNow}");
+            }
+            AtStep(point, last, view);
+            var vault = Drawn();
+            var framed = Aim(Grown(vault, 0.06), new Vector3d(0.9, -1.3, 0.55), Vector3d.ZAxis, magnify: 1.15);
+            FitInside(framed, vault, 0.17);
+            Shoot(framed, "reciprocal-vault", WithLegend);
+            PushoverChart(Path.Combine(outDir, "reciprocal-vault-chart.png"), d, f, last, WithLegend, hinges, up, along, now, ductility);
+            AtStep(point, peak, view);
+            Shoot(framed, "reciprocal-vault-peak", WithLegend);
+            PushoverChart(Path.Combine(outDir, "reciprocal-vault-peak-chart.png"), d, f, peak, WithLegend, hinges, up, along, now, ductility);
+
+            Directory.CreateDirectory(Path.Combine(outDir, "reciprocal-vault-frames"));
+            Directory.CreateDirectory(Path.Combine(outDir, "reciprocal-vault-charts"));
+            int frames = 0;
+            foreach (int k in Enumerable.Range(0, last + 1).Where(k => k % 2 == 0 || k == last))
+            {
+                AtStep(point, k, view);
+                Shoot(framed, Path.Combine("reciprocal-vault-frames", frames.ToString("D3")));
+                PushoverChart(Path.Combine(outDir, "reciprocal-vault-charts", frames.ToString("D3") + ".png"), d, f, k, 1, hinges, up, along, now, ductility);
+                frames++;
+            }
+            Log($"  {frames} frames and their charts, every second point of the curve");
+
+            // As the example opens: the curve Grasshopper draws beside the vault, at the last point.
+            ShowOnly(view, legend, curve, labels);
+            AtStep(point, last, view);
+            var both = Drawn();
+            var side = Aim(Grown(both, 0.05), new Vector3d(0.15, -1, 0.2), Vector3d.ZAxis, magnify: 1.1);
+            FitInside(side, both, 0.17);
+            Shoot(side, "reciprocal-vault-and-curve", WithLegend);
+
+            // Pushed sideways instead, Direction Y, to 1 000 mm: the curve into the log, and the vault at the end.
+            var direction = Find<GH_Panel>("Direction");
+            direction.SetUserText("Y");
+            direction.ExpireSolution(false);
+            Find<GH_NumberSlider>("Push to [mm]").SetSliderValue(1000m);
+            doc.NewSolution(false);
+            var dy = Values<GH_Number>(Out(push, "Displacement")).Select(n => Math.Abs(n.Value) * 1000.0).ToArray();
+            var fy = Values<GH_Number>(Out(push, "Load Factor")).Select(n => Math.Abs(n.Value)).ToArray();
+            var hy = Values<GH_Integer>(Out(push, "Yields At")).Select(n => n.Value).ToArray();
+            foreach (var m in push.RuntimeMessages(GH_RuntimeMessageLevel.Remark).Concat(push.RuntimeMessages(GH_RuntimeMessageLevel.Warning)))
+                Log("  sideways: " + m);
+            for (int k = 0; k < dy.Length; k += Math.Max(1, dy.Length / 10))
+                Log($"  sideways: {dy[k]:0} mm, {fy[k]:0.00} g");
+            if (dy.Length > 1)
+            {
+                int end = dy.Length - 1;
+                Log($"  sideways: {dy.Length} points to {dy[end]:0} mm at {fy[end]:0.00} g; {hy.Length} hinges, the first at point {(hy.Length > 0 ? hy.Min() : -1)}");
+                ShowOnly(view, legend);
+                AtStep(point, end, view);
+                var leaning = Drawn();
+                var leaned = Aim(Grown(leaning, 0.06), new Vector3d(1, -0.25, 0.35), Vector3d.ZAxis, magnify: 1.15);
+                FitInside(leaned, leaning, 0.17);
+                Shoot(leaned, "reciprocal-vault-sideways", WithLegend);
+                PushoverChart(Path.Combine(outDir, "reciprocal-vault-sideways-chart.png"), dy, fy, end, WithLegend, hy,
+                              "Pushed sideways [g]", "Crown moves sideways [mm]",
+                              (k, formed) => $"Crown  {dy[k]:0} mm      {fy[k]:0.00} g      Hinges  {formed}", Ductilities(push));
+            }
+            Close();
+        }),
+    };
 
     /// <summary>
     /// How far each floor of a pushed model moved along X at the end of the push, its least and its most,

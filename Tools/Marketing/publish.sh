@@ -646,7 +646,28 @@ pushover() {
   cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-curve.png" "$d/$slug-pushing.mp4" "$e/"
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover"
+# The reciprocal plywood vault pressed down until it gives way: the vault at the end of the push and at its
+# peak, each again with its curve under it, and pushed sideways instead, with its curve; the push as GIF and MP4, the curve so far under every frame; the
+# vault beside the curve Grasshopper draws, as the example opens, and beside its canvas; and the example's
+# pictures.
+reciprocalvault() {
+  local slug=reciprocal-vault-pushover
+  local d=$M/pushover/$slug e=$M/../examples/$slug
+  mkdir -p "$d" "$e"
+  trim reciprocalvault/reciprocal-vault "$d/$slug.png" 0 12
+  $P stack "$d/$slug-2.png" "$d/$slug.png" "$OUT/reciprocalvault/reciprocal-vault-chart.png" 0
+  trim reciprocalvault/reciprocal-vault-peak "$d/$slug-peak.png" 0 12
+  $P stack "$d/$slug-3.png" "$d/$slug-peak.png" "$OUT/reciprocalvault/reciprocal-vault-peak-chart.png" 0
+  trim reciprocalvault/reciprocal-vault-sideways "$d/$slug-sideways.png" 0 12
+  $P stack "$d/$slug-4.png" "$d/$slug-sideways.png" "$OUT/reciprocalvault/reciprocal-vault-sideways-chart.png" 0
+  trim reciprocalvault/reciprocal-vault-and-curve "$d/$slug-curve.png" 0 12
+  $P animcharts "$OUT/reciprocalvault/reciprocal-vault-frames" "$OUT/reciprocalvault/reciprocal-vault-charts" "$d/$slug-pushing" 40 800 12 2
+  canvas reciprocalvault/reciprocal-vault-canvas "$d/grasshopper-definition.png"
+  pair "$d/$slug-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/$slug-curve.png"
+  cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-3.png" "$d/$slug-4.png" "$d/$slug-curve.png" "$d/$slug-pushing.mp4" "$e/"
+}
+
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done
