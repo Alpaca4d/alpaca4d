@@ -3004,7 +3004,9 @@ public static class Shots
             var framed = Aim(Grown(frame, 0.06), new Vector3d(0.55, -1.3, 0.65), Vector3d.ZAxis, magnify: 1.2);
             FitInside(framed, frame, 0.17);
             Shoot(framed, "pushover-building", WithLegend);
-            PushoverChart(Path.Combine(outDir, "pushover-building-chart.png"), d, v, last, WithLegend, hinges);
+            var ductility = Ductilities(push);
+            var failedAt = FailedAt(push);
+            PushoverChart(Path.Combine(outDir, "pushover-building-chart.png"), d, v, last, WithLegend, hinges, ductility: ductility, failedAt: failedAt);
 
             Directory.CreateDirectory(Path.Combine(outDir, "pushover-building-frames"));
             Directory.CreateDirectory(Path.Combine(outDir, "pushover-building-charts"));
@@ -3014,7 +3016,7 @@ public static class Shots
             {
                 AtStep(point, k, view);
                 Shoot(framed, Path.Combine("pushover-building-frames", frames.ToString("D3")));
-                PushoverChart(Path.Combine(outDir, "pushover-building-charts", frames.ToString("D3") + ".png"), d, v, k, 1, hinges);
+                PushoverChart(Path.Combine(outDir, "pushover-building-charts", frames.ToString("D3") + ".png"), d, v, k, 1, hinges, ductility: ductility, failedAt: failedAt);
                 frames++;
             }
             Log($"  {frames} frames and their charts, every third point of the curve");
@@ -3030,6 +3032,36 @@ public static class Shots
             Close();
         }),
     };
+
+    /// <summary>
+    /// The colours Model View draws a plastic hinge in by the ductility it has reached, from 1, 2, 4 and 8 times
+    /// its yield strain (Alpaca4d.Result.PlasticHinges.BandColours).
+    /// </summary>
+    static readonly Color[] HingeBands =
+    {
+        Color.FromArgb(242, 201, 76), Color.FromArgb(235, 108, 63), Color.FromArgb(214, 40, 40), Color.FromArgb(122, 14, 28),
+    };
+
+    static int HingeBand(double ductility) => ductility >= 8 ? 3 : ductility >= 4 ? 2 : ductility >= 2 ? 1 : 0;
+
+    /// <summary>
+    /// The point of the curve each of Pushover Analysis' Hinges failed at - its concrete crushed, a bar at its ultimate
+    /// strain - read from its line ("...; C25/30 crushed at point 124: ..."), -1 for none.
+    /// </summary>
+    static int[] FailedAt(IGH_Component push) =>
+        Values<GH_String>(Out(push, "Hinges")).Select(h =>
+        {
+            var failed = h.Value.Split(';').Skip(1).FirstOrDefault(part => part.Contains(" at point ") && !part.Contains("ductility"));
+            var m = failed == null ? null : System.Text.RegularExpressions.Regex.Match(failed, @" at point (\d+)");
+            return m != null && m.Success ? int.Parse(m.Groups[1].Value) : -1;
+        }).ToArray();
+
+    /// <summary>Pushover Analysis' Ductility: a branch a hinge, a value a point of the curve.</summary>
+    static List<double[]> Ductilities(IGH_Component push)
+    {
+        var tree = Out(push, "Ductility").VolatileData;
+        return tree.Paths.Select(path => tree.get_Branch(path).OfType<GH_Number>().Select(n => n.Value).ToArray()).ToList();
+    }
 
     /// <summary>
     /// How far each floor of a pushed model moved along X at the end of the push, its least and its most,
@@ -3065,7 +3097,7 @@ public static class Shots
     /// </summary>
     static void PushoverChart(string path, double[] d, double[] v, int k, double scale, int[] hinges,
                               string upTitle = "Base shear [kN]", string alongTitle = "Roof displacement [mm]",
-                              Func<int, int, string> nowText = null)
+                              Func<int, int, string> nowText = null, List<double[]> ductility = null, int[] failedAt = null)
     {
         float s = (float)scale;
         int w = (int)(2400 * s), h = (int)(820 * s);
@@ -3113,10 +3145,24 @@ public static class Shots
             if (k > 0)
                 using (var pen = new Pen(LightBlue, 7 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
                     g.DrawLines(pen, all.Take(k + 1).ToArray());
-            // Where hinges formed, so far: one ring a point of the curve, however many formed at it.
-            using (var ring = new Pen(Orange, 4 * s))
-                foreach (int at in hinges.Where(h => h <= k && h < all.Length).Distinct())
+            // Where hinges formed, so far: one ring a point of the curve, however many formed at it - in the
+            // colour of the furthest any of them has gone by now, as Model View colours the hinges, given their
+            // Ductility; orange without.
+            foreach (var atPoint in Enumerable.Range(0, hinges.Length).Where(i => hinges[i] <= k && hinges[i] < all.Length).GroupBy(i => hinges[i]))
+            {
+                var colour = Orange;
+                if (ductility != null)
+                {
+                    double most = atPoint.Max(i => i < ductility.Count && k < ductility[i].Length ? ductility[i][k] : 1.0);
+                    colour = HingeBands[HingeBand(most)];
+                }
+                // Purple once one of them has failed by now - concrete crushed, a bar at its ultimate strain - as its ball is.
+                if (failedAt != null && atPoint.Any(i => i < failedAt.Length && failedAt[i] >= 0 && failedAt[i] <= k))
+                    colour = Purple;
+                int at = atPoint.Key;
+                using (var ring = new Pen(colour, 4 * s))
                     g.DrawEllipse(ring, all[at].X - 9 * s, all[at].Y - 9 * s, 18 * s, 18 * s);
+            }
             using (var dot = new SolidBrush(Orange))
                 g.FillEllipse(dot, all[k].X - 13 * s, all[k].Y - 13 * s, 26 * s, 26 * s);
 
