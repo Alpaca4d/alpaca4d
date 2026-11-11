@@ -161,9 +161,10 @@ namespace Alpaca4d.Section
                     $"A layered shell section needs at least {MinLayers} layers; \"{this.SectionName}\" has {this.Layers.Count}. " +
                     "OpenSees refuses fewer.");
 
+            // A plastic material is named by its plate form: see J2PlasticityMaterial.
             var stack = new StringBuilder();
             foreach (var layer in this.Layers)
-                stack.Append($" {layer.Material.Id} {layer.Thickness}");
+                stack.Append($" {Alpaca4d.Material.J2PlasticityMaterial.ShellTag(layer.Material)} {layer.Thickness}");
 
             return $"section LayeredShell {this.Id} {this.Layers.Count}{stack}\n";
         }

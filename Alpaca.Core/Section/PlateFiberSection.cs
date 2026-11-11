@@ -26,7 +26,8 @@ namespace Alpaca4d.Section
 
         public string WriteTcl()
         {
-            return $"section PlateFiber {this.Id} {this.Material.Id} {this.Thickness}\n";
+            // A plastic material is named by its plate form: see J2PlasticityMaterial.
+            return $"section PlateFiber {this.Id} {Alpaca4d.Material.J2PlasticityMaterial.ShellTag(this.Material)} {this.Thickness}\n";
         }
     }
 }

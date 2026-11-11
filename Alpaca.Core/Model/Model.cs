@@ -1400,6 +1400,9 @@ namespace Alpaca4d
             if (material is Alpaca4d.Material.ElasticOrthotropicMaterial orthotropic)
                 return Math.Max(orthotropic.Ex, Math.Max(orthotropic.Ey, orthotropic.Ez));
 
+            if (material is Alpaca4d.Material.J2PlasticityMaterial plastic)
+                return plastic.E;
+
             return 0.0;
         }
 
