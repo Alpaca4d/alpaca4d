@@ -30,7 +30,8 @@ namespace Alpaca4d.Gh
             "Numbers the labels run from the smallest to the largest of - the Values output of Model View, " +
             "which follows the Range given to it. To label a range of your own, give its two ends.\n" +
             "Each branch is a legend of its own, drawn beside the one before: Model View gives a branch per result it draws.\n" +
-            "One value more than there are colours, as Model View gives with Iso-surfaces on, labels the edges between the colours rather than the colours.";
+            "One value more than there are colours, as Model View gives with Iso-surfaces on, labels the edges between the colours rather than the colours.\n" +
+            "A value for each colour, or each edge, rising, is written as it is: bands that are not evenly spaced keep their numbers.";
 
         private const string TitleDescription =
             "Legend title. With a branch of Values per legend, a title per legend, in the order of the branches.";
@@ -130,7 +131,12 @@ namespace Alpaca4d.Gh
             // edges of its bands: a label at each edge, between the swatches. A flat range is one
             // value either way, and one swatch.
             bool edges = data.Count == colors.Count + 1;
-            var values = ColourScale.LabelValues(min, max, colors.Count + (edges ? 1 : 0));
+            // A value for each colour, or each edge, rising: those are the labels, as they are - bands that are
+            // not evenly spaced, as a plastic hinge's ductility from 1, 2, 4 and 8, keep their numbers. Model
+            // View's are evenly spaced, so spreading them again gave the same.
+            bool given = finite.Count == data.Count && data.Count > 1 && (data.Count == colors.Count || edges)
+                         && data.Zip(data.Skip(1), (a, b) => b > a).All(rising => rising);
+            var values = given ? data : ColourScale.LabelValues(min, max, colors.Count + (edges ? 1 : 0));
             int swatches = values.Count > 1 && edges ? values.Count - 1 : values.Count;
 
             _conduit.Add(title, colors.Take(swatches).ToList(), values.Select(value => ColourScale.Format(value, min, max)).ToList(), position, scale);
