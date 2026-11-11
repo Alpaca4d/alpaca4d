@@ -278,6 +278,28 @@ public static class GrasshopperCheck
         Check(yieldsAt.Count > 0 && yieldsAt[0] == point,
               $"it yields at point {(yieldsAt.Count > 0 ? yieldsAt[0] : -1)}, the first past Δ = {firstYield * 1000:0.0} mm: point {point}");
         Check(yieldsAt.SequenceEqual(yieldsAt.OrderBy(x => x)), "the hinges come in the order they form");
+        Check(hinges.All(h => h.Contains("ductility ") && h.Contains(" by the end")), "each names the ductility it reaches by the end");
+
+        // The ductility each has reached at each point of the curve: a branch a hinge, as long as the curve,
+        // 0 before it yields, at least 1 from the point it does, and never coming down.
+        var tree = Out(push, "Ductility").VolatileData;
+        bool shaped = tree.PathCount == hinges.Count && tree.Paths.All(path => tree.get_Branch(path).Count == d.Count);
+        Check(shaped, $"Ductility: a branch a hinge ({tree.PathCount} against {hinges.Count}), a value a point of the curve ({d.Count})");
+        var ductility = tree.Paths.Select(path => tree.get_Branch(path).Cast<GH_Number>().Select(x => x.Value).ToList()).ToList();
+        bool zeroBefore = true, oneFrom = true, neverDown = true;
+        for (int h = 0; h < ductility.Count && h < yieldsAt.Count; h++)
+        {
+            var series = ductility[h];
+            for (int j = 0; j < series.Count; j++)
+            {
+                if (j < yieldsAt[h] && series[j] != 0.0) zeroBefore = false;
+                if (j >= yieldsAt[h] && series[j] < 1.0) oneFrom = false;
+                if (j > 0 && series[j] < series[j - 1]) neverDown = false;
+            }
+        }
+        Check(zeroBefore && oneFrom && neverDown, $"0 before each yields ({zeroBefore}), at least 1 from then ({oneFrom}), never coming down ({neverDown})");
+        double footDuctility = ductility.Count > 0 ? ductility[0].Last() : double.NaN;
+        Check(footDuctility > 1.0, $"the foot reaches {footDuctility:0.###} times its yield strain by 0.15 m");
 
         // Model View's own hinges: none yielded the point before, the foot at that point.
         var hingeView = Reader<Alpaca4d.Gh.ModelView>(doc, push, steps[point - 1]);
@@ -287,13 +309,27 @@ public static class GrasshopperCheck
         hingeView.ExpireSolution(false);
         doc.Solve();
         var field = typeof(Alpaca4d.Gh.ModelView).GetField("_hinges", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        int Yielded() => ((System.Collections.IEnumerable)field.GetValue(hingeView) ?? new object[0]).Cast<Alpaca4d.Result.HingeStation>()
-                                                                                                      .Count(h => h.State != Alpaca4d.Result.HingeState.Elastic);
+        List<Alpaca4d.Result.HingeStation> Stations() =>
+            ((System.Collections.IEnumerable)field.GetValue(hingeView) ?? new object[0]).Cast<Alpaca4d.Result.HingeStation>().ToList();
+        // A ball for every station that has yielded by the step drawn.
+        int Yielded() => Stations().Count(h => h.Reached != Alpaca4d.Result.HingeState.Elastic);
         int beforeYield = Yielded();
         Set(hingeView, "Step", new GH_Integer(steps[point]));
         doc.Solve();
         int atYield = Yielded();
         Check(beforeYield == 0 && atYield >= 1, $"Model View, Plastic hinges: none the point before, {atYield} at it");
+
+        // At the last point, a ball for every hinge Pushover Analysis lists - they stay - and the foot's coloured by the
+        // ductility it lists for it.
+        Set(hingeView, "Step", new GH_Integer(steps.Last()));
+        doc.Solve();
+        int atEnd = Yielded();
+        Check(atEnd == hinges.Count, $"at the last point a ball for each of the {hinges.Count} hinges: {atEnd}");
+        var foot = Stations().Where(h => h.Reached != Alpaca4d.Result.HingeState.Elastic).OrderByDescending(h => h.Ductility).FirstOrDefault();
+        var footStation = Stations().FirstOrDefault(h => h.Position.DistanceTo(Point3d.Origin) < 1e-9 && h.Along <= 1e-9);
+        double drawn = footStation?.Ductility ?? double.NaN;
+        Check(Near(drawn, footDuctility, 1e-9), $"the foot's ductility drawn is the one listed: {drawn:G8} against {footDuctility:G8}");
+        Check(foot != null && Near(foot.Ductility, footDuctility, 1e-9), "and it is the largest, as a cantilever's foot is");
         Check(!hingeView.RuntimeMessages(GH_RuntimeMessageLevel.Warning).Any() && !hingeView.RuntimeMessages(GH_RuntimeMessageLevel.Remark).Any(m => m.Contains("Plastic")),
               "and it has nothing to say about them");
 
