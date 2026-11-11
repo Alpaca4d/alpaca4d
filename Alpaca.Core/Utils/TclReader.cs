@@ -381,6 +381,10 @@ namespace Alpaca4d
                             ReadElementId(tokens);
                             break;
 
+                        case "alpaca:density":
+                            ReadDensity(tokens);
+                            break;
+
                         case "mass":
                             ReadMass(tokens);
                             break;
@@ -488,10 +492,66 @@ namespace Alpaca4d
                     Number(tokens, 6), Number(tokens, 7), Number(tokens, 8),
                     rho);
             }
+            else if (string.Equals(type, "J2Plasticity", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(type, "J2", StringComparison.OrdinalIgnoreCase))
+            {
+                // nDMaterial J2Plasticity $tag $K $G $sig0 $sigInf $delta $H <$eta>. Alpaca4d keeps
+                // E and nu, and writes K and G from them.
+                double k = Number(tokens, 3);
+                double g = Number(tokens, 4);
+                double sig0 = Number(tokens, 5);
+                double sigInf = tokens.Length > 6 && TryNumber(tokens[6], out double si) ? si : sig0;
+                double delta = tokens.Length > 7 && TryNumber(tokens[7], out double d) ? d : 0.0;
+                double h = tokens.Length > 8 && TryNumber(tokens[8], out double hh) ? hh : 0.0;
+
+                double e = 9.0 * k * g / (3.0 * k + g);
+                double nu = (3.0 * k - 2.0 * g) / (2.0 * (3.0 * k + g));
+
+                if (sigInf != sig0 && delta != 0.0)
+                    Warn($"nDMaterial J2Plasticity {tag}: the saturation hardening (sigInf {sigInf}, delta {delta}) is not kept; " +
+                         "only the linear hardening H is.");
+                if (tokens.Length > 9 && TryNumber(tokens[9], out double eta) && eta != 0.0)
+                    Warn($"nDMaterial J2Plasticity {tag}: the viscosity eta {eta} is not kept.");
+
+                try
+                {
+                    _ndMaterials[tag] = new J2PlasticityMaterial($"nDMaterial_{tag}", e, nu, sig0, h);
+                }
+                catch (ArgumentException ex)
+                {
+                    Warn($"nDMaterial J2Plasticity {tag} was skipped: {ex.Message}");
+                }
+            }
+            else if (string.Equals(type, "PlateFromPlaneStress", StringComparison.OrdinalIgnoreCase))
+            {
+                // The plate form Alpaca4d writes next to a J2Plasticity material, for the shell
+                // sections to name: it reads back as that material. Around anything else it is a
+                // material Alpaca4d does not model.
+                if (tokens.Length > 3 && TryTag(tokens[3], out int inner) &&
+                    _ndMaterials.TryGetValue(inner, out var wrapped) && wrapped is J2PlasticityMaterial)
+                    _ndMaterials[tag] = wrapped;
+                else
+                    Warn($"nDMaterial PlateFromPlaneStress {tag} is supported only around a J2Plasticity material, and was skipped.");
+            }
             else
             {
                 Warn($"nDMaterial {type} is not supported and was skipped.");
             }
+        }
+
+        /// <summary>
+        /// Reads an "# alpaca:density $tag $rho" line: the density, in kg/m³, of a material whose
+        /// OpenSees command takes none - J2Plasticity - which Gravity Load still needs.
+        /// </summary>
+        private void ReadDensity(string[] tokens)
+        {
+            if (tokens.Length < 3 || !TryTag(tokens[1], out int tag) || !TryNumber(tokens[2], out double rho))
+                return;
+
+            if (_ndMaterials.TryGetValue(tag, out var material) && material is J2PlasticityMaterial plastic)
+                plastic.Rho = rho;
+            else
+                Warn($"alpaca:density names material {tag}, which is not a J2Plasticity material read from the file.");
         }
 
         private void ReadSection(string[] tokens)
