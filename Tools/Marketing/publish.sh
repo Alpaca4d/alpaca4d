@@ -667,7 +667,43 @@ reciprocalvault() {
   cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-3.png" "$d/$slug-4.png" "$d/$slug-curve.png" "$d/$slug-pushing.mp4" "$e/"
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault"
+# The steel beam with holes pushed past first yield: the beam at the last step, and again with its
+# load-deflection curve under it; the push as GIF and MP4, a frame a step, the curve so far under
+# every frame; the beam beside the curve Grasshopper draws, as the example opens, and beside its
+# canvas; and the example's pictures.
+perforatedbeam() {
+  local slug=beam-with-holes
+  local d=$M/plasticity/$slug e=$M/../examples/$slug
+  mkdir -p "$d" "$e"
+  trim perforatedbeam/perforated-beam "$d/$slug.png" 0 12
+  $P stack "$d/$slug-2.png" "$d/$slug.png" "$OUT/perforatedbeam/perforated-beam-chart.png" 0
+  trim perforatedbeam/perforated-beam-and-curve "$d/$slug-curve.png" 0 12
+  $P animcharts "$OUT/perforatedbeam/perforated-beam-frames" "$OUT/perforatedbeam/perforated-beam-charts" "$d/$slug-pushing" 40 900 4 3
+  canvas perforatedbeam/perforated-beam-canvas "$d/grasshopper-definition.png"
+  pair "$d/$slug-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/$slug-curve.png"
+  cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-curve.png" "$d/$slug-pushing.mp4" "$d/$slug-pushing.gif" "$e/"
+}
+
+# The four definitions of Plasticity.py, steel that yields pushed past first yield: for each, the model at
+# the last step, and again with its load-displacement curve under it; the push as GIF and MP4, a frame a
+# step, the curve so far under every frame; the model beside the curve Grasshopper draws, and beside its
+# canvas; and the example's pictures.
+plasticity() {
+  local slug d e
+  for slug in pipe-t-joint yield-lines plate-with-a-hole thick-pipe; do
+    d=$M/plasticity/$slug e=$M/../examples/$slug
+    mkdir -p "$d" "$e"
+    trim plasticity/$slug "$d/$slug.png" 0 12
+    $P stack "$d/$slug-2.png" "$d/$slug.png" "$OUT/plasticity/$slug-chart.png" 0
+    trim plasticity/$slug-and-curve "$d/$slug-curve.png" 0 12
+    $P animcharts "$OUT/plasticity/$slug-frames" "$OUT/plasticity/$slug-charts" "$d/$slug-pushing" 40 900 4 3
+    canvas plasticity/$slug-canvas "$d/grasshopper-definition.png"
+    pair "$d/$slug-in-grasshopper.png" "$d/grasshopper-definition.png" "$d/$slug-curve.png"
+    cp "$d/$slug.png" "$d/$slug-2.png" "$d/$slug-curve.png" "$d/$slug-pushing.mp4" "$d/$slug-pushing.gif" "$e/"
+  done
+}
+
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done

@@ -111,6 +111,20 @@ public static class Shots
                     case "momentcurvature": list = MomentCurvatureScene(); break;
                     case "pushover": list = PushoverScene(); break;
                     case "reciprocalvault": list = VaultScene(); break;
+                    case "perforatedbeam": list = PerforatedBeamScene(); break;
+                    case "plasticity":
+                        // The T-joint at step 17, 544 kN, the yielding spread over the chord face before the chord
+                        // starts to yield at its held ends too; the plate at 1 105 kN/m2, its yield lines an X.
+                        list = PlasticityScene("PlasticityTJoint.gh", "pipe-t-joint", new Vector3d(0.55, -1, 0.45), false,
+                                               "Load", "kN", "Brace end moves down [mm]", "Brace end", 16)
+                            .Concat(PlasticityScene("PlasticityYieldLines.gh", "yield-lines", new Vector3d(0.45, -1, 0.75), false,
+                                               "Pressure", "kN/m²", "Deflection at the middle [mm]", "Middle", 16))
+                            .Concat(PlasticityScene("PlasticityPlateHole.gh", "plate-with-a-hole", Vector3d.ZAxis, true,
+                                               "Load", "kN", "Pulled end moves [mm]", "Pulled end"))
+                            .Concat(PlasticityScene("PlasticityPipe.gh", "thick-pipe", Vector3d.ZAxis, true,
+                                               "Pressure", "MPa", "Bore widens [mm]", "Bore"))
+                            .ToList();
+                        break;
                     case "earthquakes": list = Earthquakes("earthquakes"); break;
                     // The buildings that are not straight, and the towers of a hundred storeys and more.
                     case "quakebuildings": list = Earthquakes("buildings"); break;
@@ -3288,6 +3302,226 @@ public static class Shots
             var now = nowText != null ? nowText(k, formed) : $"Roof  {roof:0} mm      Base shear  {shear:0} kN      Hinges  {formed}";
             var nowSize = g.MeasureString(now, big);
             g.DrawString(now, big, ink, r.Right - nowSize.Width, r.Top - 100 * s);
+            bitmap.Save(path, ImageFormat.Png);
+        }
+    }
+
+    // ------------------------------------------------------------------ a steel beam pushed past yield
+
+    /// <summary>
+    /// The steel beam with holes of Tools/Examples/PerforatedBeam.py, J2Plasticity in ten node
+    /// tetrahedra, pushed past first yield: its canvas; the beam at the last step in its Von Mises
+    /// bands, the yielding steel orange, and the chart of its load-deflection curve; the beam beside the
+    /// curve Grasshopper draws, as the example opens; and a frame for every step, the beam pushed a
+    /// little further each time, with the chart of the curve so far in a folder of its own.
+    /// </summary>
+    static List<(string, Func<bool>)> PerforatedBeamScene() => new List<(string, Func<bool>)>
+    {
+        Do("beam", () =>
+        {
+            SoftEdges(SlaveEdges);
+            Open("PerforatedBeam.gh");
+            foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                Messages(c);
+            var view = Find<IGH_Component>("Beam pushed");
+            var legend = Find<IGH_Component>("Beam pushed legend");
+            var step = Find<GH_NumberSlider>("Step");
+            var curve = Find<IGH_Component>("Load-deflection");
+            var elastic = Find<IGH_Component>("Elastic");
+            var yielding = Find<IGH_Component>("Yielding");
+            var axes = Find<IGH_Component>("Axes");
+            var d = Values<GH_Number>(Out(curve, "Deflection")).Select(n => n.Value).ToArray();
+            var p = Values<GH_Number>(Out(curve, "Load")).Select(n => n.Value).ToArray();
+            double yd = Values<GH_Number>(Out(curve, "YieldDeflection")).Select(n => n.Value).DefaultIfEmpty(double.NaN).First();
+            double yl = Values<GH_Number>(Out(curve, "YieldLoad")).Select(n => n.Value).DefaultIfEmpty(double.NaN).First();
+            if (d.Length < 2) throw new Exception("the beam gave no curve");
+            int steps = d.Length - 1;
+            Log($"  {steps} steps to {p[steps]:F0} kN and {d[steps]:F1} mm; first yield at {yl:F0} kN and {yd:F1} mm");
+            Canvas("perforated-beam-canvas");
+
+            // The beam at the last step, from in front and a little above, its holes square on.
+            ShowOnly(view, legend);
+            AtStep(step, steps - 1, view);
+            var beam = Drawn();
+            var framed = Aim(Grown(beam, 0.04), new Vector3d(0.25, -1, 0.3), Vector3d.ZAxis, magnify: 1.15);
+            FitInside(framed, beam, 0.17);
+            Shoot(framed, "perforated-beam", WithLegend);
+            LoadDeflectionChart(Path.Combine(outDir, "perforated-beam-chart.png"), d, p, yd, yl, steps, WithLegend);
+
+            Directory.CreateDirectory(Path.Combine(outDir, "perforated-beam-frames"));
+            Directory.CreateDirectory(Path.Combine(outDir, "perforated-beam-charts"));
+            for (int k = 0; k < steps; k++)
+            {
+                AtStep(step, k, view);
+                Shoot(framed, Path.Combine("perforated-beam-frames", k.ToString("D3")));
+                LoadDeflectionChart(Path.Combine(outDir, "perforated-beam-charts", k.ToString("D3") + ".png"), d, p, yd, yl, k + 1, 1);
+            }
+            Log($"  {steps} frames and their charts, a step each");
+
+            // As the example opens: the curve Grasshopper draws under the beam, at the last step. Last,
+            // as it aims the one viewport the frames are shot in somewhere else.
+            ShowOnly(view, legend, elastic, yielding, axes);
+            AtStep(step, steps - 1, view);
+            var both = Drawn();
+            var side = Aim(Grown(both, 0.05), new Vector3d(0.1, -1, 0.1), Vector3d.ZAxis, magnify: 1.1);
+            FitInside(side, both, 0.17);
+            Shoot(side, "perforated-beam-and-curve", WithLegend);
+            Close();
+        }),
+    };
+
+    /// <summary>
+    /// One of Tools/Examples/Plasticity.py's definitions - steel that yields, pushed past first yield:
+    /// its canvas; the model at the last step in its Von Mises bands, the yielding steel orange, from
+    /// along eye (from above when top), and the chart of its load-displacement curve; the model beside
+    /// the curve Grasshopper draws; and a frame for every step with the chart of the curve so far. The
+    /// stills are at step still, the last when it is -1: a plate's yield lines show before the whole
+    /// of its face has yielded.
+    /// </summary>
+    static List<(string, Func<bool>)> PlasticityScene(string file, string slug, Vector3d eye, bool top,
+                                                     string loadName, string unit, string alongTitle, string alongName,
+                                                     int still = -1) =>
+        new List<(string, Func<bool>)>
+    {
+        Do(slug, () =>
+        {
+            SoftEdges(SlaveEdges);
+            Open(file);
+            foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                Messages(c);
+            var view = Find<IGH_Component>("Steel pushed");
+            var legend = Find<IGH_Component>("Steel pushed legend");
+            var step = Find<GH_NumberSlider>("Step");
+            var curve = Find<IGH_Component>("Load-displacement");
+            var elastic = Find<IGH_Component>("Elastic");
+            var yielding = Find<IGH_Component>("Yielding");
+            var axes = Find<IGH_Component>("Axes");
+            var d = Values<GH_Number>(Out(curve, "Deflection")).Select(n => n.Value).ToArray();
+            var p = Values<GH_Number>(Out(curve, "Load")).Select(n => n.Value).ToArray();
+            double yd = Values<GH_Number>(Out(curve, "YieldDeflection")).Select(n => n.Value).DefaultIfEmpty(double.NaN).First();
+            double yl = Values<GH_Number>(Out(curve, "YieldLoad")).Select(n => n.Value).DefaultIfEmpty(double.NaN).First();
+            if (d.Length < 2) throw new Exception("no curve: did the analysis run?");
+            int steps = d.Length - 1;
+            Log($"  {steps} steps to {p[steps]:G4} {unit} and {d[steps]:G3} mm; first yield at {yl:G4} {unit} and {yd:G3} mm");
+            Canvas(slug + "-canvas");
+            int at = still < 0 ? steps - 1 : Math.Min(still, steps - 1);
+
+            ShowOnly(view, legend);
+            AtStep(step, at, view);
+            var model = Drawn();
+            var framed = top ? Top(Grown(model, 0.06)) : Aim(Grown(model, 0.04), eye, Vector3d.ZAxis, magnify: 1.15);
+            FitInside(framed, model, 0.17);
+            Shoot(framed, slug, WithLegend);
+            LoadDeflectionChart(Path.Combine(outDir, slug + "-chart.png"), d, p, yd, yl, at + 1, WithLegend, loadName, unit, alongTitle, alongName);
+
+            Directory.CreateDirectory(Path.Combine(outDir, slug + "-frames"));
+            Directory.CreateDirectory(Path.Combine(outDir, slug + "-charts"));
+            for (int k = 0; k < steps; k++)
+            {
+                AtStep(step, k, view);
+                Shoot(framed, Path.Combine(slug + "-frames", k.ToString("D3")));
+                LoadDeflectionChart(Path.Combine(outDir, slug + "-charts", k.ToString("D3") + ".png"), d, p, yd, yl, k + 1, 1, loadName, unit, alongTitle, alongName);
+            }
+            Log($"  {steps} frames and their charts, a step each");
+
+            ShowOnly(view, legend, elastic, yielding, axes);
+            AtStep(step, at, view);
+            var both = Drawn();
+            var side = top ? Top(Grown(both, 0.05)) : Aim(Grown(both, 0.05), new Vector3d(0.1, -1, 0.1), Vector3d.ZAxis, magnify: 1.1);
+            FitInside(side, both, 0.17);
+            Shoot(side, slug + "-and-curve", WithLegend);
+            Close();
+        }),
+    };
+
+    /// <summary>
+    /// The load-deflection curve at point k, 2400 px wide times scale: the load up, the deflection at
+    /// midspan along, the whole curve in light grey, the curve so far light blue while the beam is
+    /// elastic and orange from first yield, first yield marked, the point now a dot, and the two values
+    /// now, top right.
+    /// </summary>
+    static void LoadDeflectionChart(string path, double[] d, double[] p, double yd, double yl, int k, double scale,
+                                    string loadName = "Load", string unit = "kN", string alongTitle = "Deflection at midspan [mm]",
+                                    string alongName = "Deflection")
+    {
+        float s = (float)scale;
+        int w = (int)(2400 * s), h = (int)(820 * s);
+        var r = new RectangleF(260 * s, 130 * s, w - 380 * s, 520 * s);
+        double right = Nice(d.Max() * 1.02), top = Nice(p.Max() * 1.08);
+        // As many intervals on each axis as make round ticks: 15 mm in five of 3, not four of 3.75;
+        // 1 500 kN/m2 in five of 300.
+        int along = Divisions(right), up = Divisions(top);
+        Func<double, float> X = x => r.Left + (float)(x / right) * r.Width;
+        Func<double, float> Y = y => r.Bottom - (float)(y / top) * r.Height;
+        k = Math.Max(0, Math.Min(k, d.Length - 1));
+        bool yields = !double.IsNaN(yl);
+        // The curve with first yield put in it, and the points at or below it - the elastic part.
+        var all = new List<PointF>();
+        int bend = -1;
+        for (int i = 0; i < d.Length; i++)
+        {
+            if (yields && bend < 0 && p[i] > yl)
+            {
+                bend = all.Count;
+                all.Add(new PointF(X(yd), Y(yl)));
+            }
+            all.Add(new PointF(X(d[i]), Y(p[i])));
+        }
+        int now = k + (yields && bend >= 0 && k >= bend ? 1 : 0);
+        using (var bitmap = new Bitmap(w, h))
+        using (var g = Graphics.FromImage(bitmap))
+        using (var big = new Font(ChartFont, 42 * s, GraphicsUnit.Pixel))
+        using (var small = new Font(ChartFont, 32 * s, GraphicsUnit.Pixel))
+        using (var axis = new Pen(ChartAxis, 2 * s))
+        using (var ink = new SolidBrush(DarkTech))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.Clear(Background);
+            for (int i = 0; i <= up; i++)
+            {
+                double y = top * i / up;
+                g.DrawLine(axis, r.Left, Y(y), r.Right, Y(y));
+                var label = y.ToString("0.##", Inv);
+                var size = g.MeasureString(label, small);
+                g.DrawString(label, small, ink, r.Left - size.Width - 14 * s, Y(y) - size.Height / 2);
+            }
+            for (int i = 0; i <= along; i++)
+            {
+                double x = right * i / along;
+                g.DrawLine(axis, X(x), r.Bottom, X(x), r.Bottom + 10 * s);
+                var label = x.ToString("0.##", Inv);
+                var size = g.MeasureString(label, small);
+                g.DrawString(label, small, ink, X(x) - size.Width / 2, r.Bottom + 16 * s);
+            }
+            g.DrawString($"{loadName} [{unit}]", big, ink, r.Left - 8 * s, r.Top - 100 * s);
+            var title = alongTitle;
+            var titleSize = g.MeasureString(title, small);
+            g.DrawString(title, small, ink, r.Left + (r.Width - titleSize.Width) / 2, r.Bottom + 66 * s);
+
+            using (var faint = new Pen(ChartFaint, 4 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                g.DrawLines(faint, all.ToArray());
+            // First yield: a short dashed line to the load axis, and its load beside it.
+            if (yields)
+            {
+                using (var dash = new Pen(ChartFaint, 3 * s) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash })
+                    g.DrawLine(dash, r.Left, Y(yl), X(yd), Y(yl));
+                var mark = $"first yield {yl:0} {unit}";
+                g.DrawString(mark, small, new SolidBrush(Orange), r.Left + 16 * s, Y(yl) - 46 * s);
+            }
+            int elasticEnd = yields && bend >= 0 ? Math.Min(now, bend) : now;
+            if (elasticEnd > 0)
+                using (var pen = new Pen(LightBlue, 7 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                    g.DrawLines(pen, all.Take(elasticEnd + 1).ToArray());
+            if (yields && bend >= 0 && now > bend)
+                using (var pen = new Pen(Orange, 7 * s) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                    g.DrawLines(pen, all.Skip(bend).Take(now - bend + 1).ToArray());
+            using (var dot = new SolidBrush(DarkTech))
+                g.FillEllipse(dot, all[now].X - 12 * s, all[now].Y - 12 * s, 24 * s, 24 * s);
+
+            var text = $"{loadName}  {Math.Round(p[k]):0} {unit}      {alongName}  {d[k].ToString(d.Max() < 3 ? "0.00" : "0.0", Inv)} mm";
+            var textSize = g.MeasureString(text, big);
+            g.DrawString(text, big, ink, r.Right - textSize.Width, r.Top - 100 * s);
             bitmap.Save(path, ImageFormat.Png);
         }
     }
