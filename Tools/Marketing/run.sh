@@ -24,7 +24,7 @@ cd "$(dirname "$0")"
 here=$(pwd)
 repo=$(cd ../.. && pwd)
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight"
 SCENES=${*:-$ALL}
 OUT=${OUT:-$here/out}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}
@@ -37,7 +37,7 @@ RHINOCODE="/Applications/Rhino 8.app/Contents/Resources/bin/rhinocode"
 
 # Run only when named: printingbuckling makes the 3D printing scenes' buckling modes again, alone, into
 # their folders, at the moments those scenes found - run them once first.
-EXTRA="printingbuckling"
+EXTRA="printingbuckling footfallhelicalviews"
 for scene in $SCENES; do
   case " $ALL $EXTRA " in *" $scene "*) ;; *) echo "no scene $scene; the scenes are: $ALL $EXTRA"; exit 1 ;; esac
 done

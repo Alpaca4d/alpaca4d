@@ -525,6 +525,37 @@ footbridge() {
   cp "$d/footbridge-mode-1.png" "$M/../doc/how-to/analysis/natural-frequencies.png"
 }
 
+# Footfall on stairs: the response factor where people walk from a corner and from above, the stair's
+# fundamental mode, still and swinging, its canvas, and the example's pictures. $1 the scene, $2 the
+# name of its pictures, $3 the marketing case, $4 the example's slug.
+footfall_stair() {
+  local d=$M/footfall/$3 e=$M/../examples/$4
+  mkdir -p "$d" "$e"
+  trim $1/$2-response "$d/$2-response.png" 0 12
+  trim $1/$2-response-above "$d/$2-response-above.png" 0 12
+  trim $1/$2-mode "$d/$2-mode.png" 0 12
+  $P anim "$OUT/$1/$2-mode-frames" "$d/$2-mode" 40 900 15 0
+  canvas $1/$2-canvas "$d/grasshopper-definition.png"
+  cp "$d/$2-response.png" "$e/$4.png"
+  cp "$d/$2-response-above.png" "$e/$4-2.png"
+  cp "$d/$2-mode.png" "$e/$4-3.png"
+  cp "$d/$2-mode.gif" "$e/$4-mode.gif"
+}
+footfallstair() { footfall_stair footfallstair footfall-stair double-landing-stair footfall-stair; }
+footfallhelical() { footfall_stair footfallhelical footfall-helical-stair helical-stair footfall-helical-stair; }
+footfallstraight() { footfall_stair footfallstraight footfall-straight-stair straight-stair footfall-straight-stair; }
+# The helical stair from more sides: the response factor in plan, from the far side and into its
+# opening; its fundamental mode in plan, into the opening, from the side and the far side; and the mode
+# swinging as the camera goes once round the stair.
+footfallhelicalviews() {
+  local d=$M/footfall/helical-stair v
+  mkdir -p "$d"
+  for v in response-plan response-far-side response-opening mode-plan mode-opening mode-side mode-far-side; do
+    trim footfallhelicalviews/footfall-helical-stair-$v "$d/footfall-helical-stair-$v.png" 0 12
+  done
+  $P anim "$OUT/footfallhelicalviews/footfall-helical-stair-mode-spin-frames" "$d/footfall-helical-stair-mode-spin" 40 900 15 0
+}
+
 # A tank's first hundred modes: the close look at the grid, the whole grid receding, the grid from
 # above with each mode's number and frequency, the close look swinging, its canvas, and the natural
 # vibration example's pictures.
@@ -703,13 +734,13 @@ plasticity() {
   done
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done
 fi
 # Run only when named: the buckling modes alone of the 3D printing scenes.
-EXTRA="printingbuckling"
+EXTRA="printingbuckling footfallhelicalviews"
 for scene in $scenes; do
   case " $ALL $EXTRA " in *" $scene "*) ;; *) echo "no scene $scene; the scenes are: $ALL"; exit 1 ;; esac
   echo "=== $scene"

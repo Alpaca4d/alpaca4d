@@ -105,6 +105,32 @@ public static class Shots
                     case "structures": list = Structures(); break;
                     case "shell": list = Structures("compressed-shell"); break;
                     case "footbridge": list = Footbridge(); break;
+                    case "footfallstair": list = FootfallStairScene("FootfallStair.gh", "footfall-stair", new Vector3d(-1, -1.3, 0.9), new Vector3d(-0.25, -0.45, 1.6)); break;
+                    // Their sweeps gave the examples' pages their tables; name the slider and its values again
+                    // (Ribbon [mm] 10-40, Stringer depth [mm] 300-1000) to make them again.
+                    case "footfallhelical": list = FootfallStairScene("FootfallHelicalStair.gh", "footfall-helical-stair", new Vector3d(-0.55, -0.85, 1.25), new Vector3d(-0.2, -0.35, 1.6), 1.8); break;
+                    // The helical stair from more sides, and its fundamental mode swinging as the camera goes round
+                    // it: it climbs from +X anticlockwise, 300 degrees, so its open side faces +X -Y.
+                    case "footfallhelicalviews":
+                        list = FootfallStairScene("FootfallHelicalStair.gh", "footfall-helical-stair", new Vector3d(-0.55, -0.85, 1.25),
+                                                  new Vector3d(-0.2, -0.35, 1.6), 1.8,
+                                                  responseViews: new[]
+                                                  {
+                                                      ("plan", new Vector3d(0, 0, 1), 1.05),
+                                                      ("far-side", new Vector3d(0.55, 0.85, 1.25), 1.5),
+                                                      ("opening", new Vector3d(0.87, -0.5, 0.6), 1.4),
+                                                  },
+                                                  modeViews: new[]
+                                                  {
+                                                      ("plan", new Vector3d(0, 0, 1), 1.05),
+                                                      ("opening", new Vector3d(0.87, -0.5, 0.6), 1.4),
+                                                      ("side", new Vector3d(-0.5, -0.87, 0.2), 1.4),
+                                                      ("far-side", new Vector3d(0.55, 0.85, 1.25), 1.5),
+                                                  },
+                                                  spin: new Vector3d(0.87, -0.5, 0.6))
+                            .Where(s => s.Item1 == "open" || s.Item1 == "canvas" || s.Item1 == "views" || s.Item1 == "spin" || s.Item1 == "close").ToList();
+                        break;
+                    case "footfallstraight": list =FootfallStairScene("FootfallStraightStair.gh", "footfall-straight-stair", new Vector3d(-0.55, -1, 0.5), new Vector3d(-0.15, -0.5, 1.6), 1.3); break;
                     case "tank": list = Tank(); break;
                     case "tankstills": list = Tank().Where(x => x.Item1 != "swinging").ToList(); break;
                     case "spectrum": list = Spectrum(); break;
@@ -951,6 +977,229 @@ public static class Shots
             }));
         list.Add(Do("close", Close));
         return list;
+    }
+
+    // ------------------------------------------------------------------ footfall on stairs
+
+    /// <summary>
+    /// A footfall stair from Tools/Examples/FootfallStair.py - FootfallStair.gh, FootfallHelicalStair.gh or
+    /// FootfallStraightStair.gh: its canvas; when <paramref name="sweep"/> names a slider, the fundamental
+    /// frequency and the largest response factor at each of <paramref name="values"/>, for the example's
+    /// page; the response factor where people walk, with its Legend, the largest R and its marker, from a
+    /// corner and from above, the map's mesh edges light grey; and the fundamental mode the report names, a
+    /// still with its legend (titled with its frequency) and a loop of it swinging.
+    /// </summary>
+    static List<(string, Func<bool>)> FootfallStairScene(string file, string name, Vector3d eye, Vector3d above,
+                                                         double zoom = 1.3, string sweep = null, double[] values = null,
+                                                         (string, Vector3d, double)[] responseViews = null,
+                                                         (string, Vector3d, double)[] modeViews = null, Vector3d? spin = null)
+    {
+        int fundamental = 0;
+        var list = new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open(file)),
+            Do("canvas", () =>
+            {
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                    Messages(c);
+                var modes = doc.Objects.OfType<IGH_Component>().First(c => c.Name.StartsWith("Natural Vibration"));
+                var f = Values<GH_Number>(Out(modes, "Frequencies")).Select(n => n.Value).ToList();
+                Log("  frequencies " + string.Join(", ", f.Select(v => v.ToString("G4", Inv))) + " Hz");
+                var footfall = doc.Objects.OfType<IGH_Component>().First(c => c.Name.StartsWith("Footfall Analysis"));
+                string report = Values<GH_String>(Out(footfall, "Report")).Select(v => v.Value).FirstOrDefault() ?? "";
+                foreach (var line in report.Split('\n').Where(l => l.Trim().Length > 0))
+                    Log("  " + line.TrimEnd());
+                var label = Values<GH_String>(Out(Find<IGH_Component>("Response map"), "Label")).Select(v => v.Value).FirstOrDefault();
+                Log("  on the walking surface: " + label);
+                // The mode the report names as the fundamental, for the pictures of the mode.
+                const string Marker = "Fundamental frequency ";
+                int at = report.IndexOf(Marker, StringComparison.Ordinal);
+                if (at >= 0 && f.Count > 0)
+                {
+                    var number = new string(report.Substring(at + Marker.Length).TakeWhile(ch => char.IsDigit(ch) || ch == '.').ToArray());
+                    if (double.TryParse(number, NumberStyles.Float, Inv, out double f0))
+                        fundamental = Enumerable.Range(0, f.Count).OrderBy(i => Math.Abs(f[i] - f0)).First();
+                }
+                Log("  the fundamental is mode " + fundamental);
+                Canvas(name + "-canvas");
+            }),
+        };
+        if (sweep != null)
+            list.Add(Do("sweep", () =>
+            {
+                // The fundamental and the largest response factor where people walk as the slider moves,
+                // for the example's page; the slider is put back where the definition opens at.
+                var slider = Find<GH_NumberSlider>(sweep);
+                double opened = (double)slider.Slider.Value;
+                var footfall = doc.Objects.OfType<IGH_Component>().First(c => c.Name.StartsWith("Footfall Analysis"));
+                var map = Find<IGH_Component>("Response map");
+                foreach (double v in values)
+                {
+                    Slider(sweep, v);
+                    doc.NewSolution(false);
+                    string report = Values<GH_String>(Out(footfall, "Report")).Select(x => x.Value).FirstOrDefault() ?? "";
+                    string Line(string start) => report.Split('\n').FirstOrDefault(l => l.StartsWith(start))?.Trim() ?? "";
+                    string label = Values<GH_String>(Out(map, "Label")).Select(x => x.Value).FirstOrDefault() ?? "";
+                    Log(string.Format(Inv, "  {0} {1}: {2} | walking surface {3} | {4}", sweep, v, Line("Fundamental"), label, Line("Largest")));
+                }
+                Slider(sweep, opened);
+                doc.NewSolution(false);
+            }));
+        list.Add(Do("response", () =>
+        {
+            ShowOnly(Find<IGH_DocumentObject>("Response factor map"), Find<IGH_DocumentObject>("Peak marker"),
+                     Find<IGH_Component>("Response factor"), Find<IGH_Component>("Largest R"), Find<IGH_Component>("Stair at rest"));
+            MapEdges(true);
+            Shoot(Aim(Grown(Drawn(), 0.03), eye, Vector3d.ZAxis, 50, zoom), name + "-response", WithLegend);
+            Shoot(Aim(Grown(Drawn(), 0.03), above, Vector3d.ZAxis, 50, zoom), name + "-response-above", WithLegend);
+            MapEdges(false);
+        }));
+        list.Add(Do("mode", () =>
+        {
+            var view = Find<IGH_Component>("Stair mode");
+            ShowOnly(view, Find<IGH_Component>("Stair mode legend"));
+            Slider("Mode", fundamental);
+            doc.NewSolution(false);
+            Log("  " + Info(view));
+            Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis, 50, zoom * 0.88), name + "-mode", WithLegend);
+            Vibrating(view, eye, name + "-mode-frames", 36, 1.0);
+        }));
+        if (responseViews != null || modeViews != null)
+            list.Add(Do("views", () =>
+            {
+                // The response factor from each of responseViews and the fundamental mode from each of
+                // modeViews: (its name, the eye, the zoom). Straight down is turned with +Y up.
+                RhinoView At(BoundingBox box, Vector3d at, double z) =>
+                    Aim(box, at, Math.Abs(at.Z) > 0.999 * at.Length ? Vector3d.YAxis : Vector3d.ZAxis, 50, z);
+                if (responseViews != null)
+                {
+                    var tag = Find<IGH_Component>("Largest R");
+                    ShowOnly(Find<IGH_DocumentObject>("Response factor map"), Find<IGH_DocumentObject>("Peak marker"),
+                             Find<IGH_Component>("Response factor"), tag, Find<IGH_Component>("Stair at rest"));
+                    MapEdges(true);
+                    // The label lies flat on the point it is given, in world XY, and reads upside down from
+                    // the +Y side: for each view it is laid in a level plane turned to face the camera, and
+                    // wired back after (the definition is closed unsaved).
+                    var location = (GH_PersistentParam<GH_Plane>)tag.Params.Input[0];
+                    var sources = location.Sources.ToList();
+                    var label = location.VolatileData.AllData(true).OfType<GH_Plane>().Select(p => p.Value.Origin).FirstOrDefault();
+                    foreach (var (suffix, at, z) in responseViews)
+                    {
+                        var right = Vector3d.CrossProduct(-at, Vector3d.ZAxis);
+                        if (!right.Unitize()) right = Vector3d.XAxis;
+                        location.RemoveAllSources();
+                        location.PersistentData.Clear();
+                        location.PersistentData.Append(new GH_Plane(new Plane(label, right, Vector3d.CrossProduct(Vector3d.ZAxis, right))));
+                        location.ExpireSolution(false);
+                        doc.NewSolution(false);
+                        Shoot(At(Grown(Drawn(), 0.03), at, z), name + "-response-" + suffix, WithLegend);
+                    }
+                    location.PersistentData.Clear();
+                    foreach (var s in sources) location.AddSource(s);
+                    location.ExpireSolution(false);
+                    doc.NewSolution(false);
+                    MapEdges(false);
+                }
+                if (modeViews != null)
+                {
+                    var view = Find<IGH_Component>("Stair mode");
+                    ShowOnly(view, Find<IGH_Component>("Stair mode legend"));
+                    Slider("Mode", fundamental);
+                    doc.NewSolution(false);
+                    foreach (var (suffix, at, z) in modeViews)
+                        Shoot(At(Grown(Drawn(), 0.05), at, z * 0.88), name + "-mode-" + suffix, WithLegend);
+                }
+            }));
+        if (spin != null)
+            list.Add(Do("spin", () =>
+            {
+                // The fundamental mode swinging while the camera goes once round the stair, from spin.
+                var view = Find<IGH_Component>("Stair mode");
+                ShowOnly(view, Find<IGH_Component>("Stair mode legend"));
+                Slider("Mode", fundamental);
+                doc.NewSolution(false);
+                SpinningVibrating(view, spin.Value, name + "-mode-spin-frames", 96, 4, 1.0, 1.5, 0.12);
+            }));
+        list.Add(Do("close", Close));
+        return list;
+    }
+
+    /// <summary>
+    /// A mode swinging <paramref name="swings"/> times, reach times the scale it is drawn at, while the
+    /// camera goes once round it about the vertical through its middle, from along <paramref name="eye"/>:
+    /// <paramref name="frames"/> frames into folder, a loop. Framed once, on what is drawn at both ends of
+    /// the swing, as seen from eye, magnified <paramref name="zoom"/> times and slid <paramref name="slide"/>
+    /// of the width left, towards the legend, and turned whole after, so it does not breathe: a model about
+    /// as wide from every side, a stair round a well, stays in the picture. The colours fade with the swing
+    /// (<see cref="FadeWithSwing"/>).
+    /// </summary>
+    static void SpinningVibrating(IGH_Component results, Vector3d eye, string folder, int frames, int swings, double reach,
+                                  double zoom = 1.0, double slide = 0.0)
+    {
+        var scale = Field(results, "_slDeformScale");
+        var value = scale.GetType().GetProperty("Value");
+        double start = Convert.ToDouble(value.GetValue(scale));
+        SetWidget(results, "_ckDeformed", "Active", true);
+        scale.GetType().GetProperty("MinValue").SetValue(scale, -2.0);
+        scale.GetType().GetProperty("MaxValue").SetValue(scale, 2.0);
+        value.SetValue(scale, reach);
+        results.ExpireSolution(false);
+        doc.NewSolution(false);
+        var box = Drawn();
+        var own = ((IGH_PreviewObject)results).ClippingBox;
+        value.SetValue(scale, -reach);
+        results.ExpireSolution(false);
+        doc.NewSolution(false);
+        box.Union(Drawn());
+        own.Union(((IGH_PreviewObject)results).ClippingBox);
+        var view = Aim(Grown(box, 0.06), eye, Vector3d.ZAxis, 50, zoom);
+        if (slide != 0) Slide(view, slide);
+        var vp = view.ActiveViewport;
+        // The camera and its target turned together about the vertical through the middle of the model,
+        // so that it turns where it stands: the target is off that middle once slid, and turning round
+        // the target would carry the model across the picture.
+        var location = vp.CameraLocation;
+        var target = vp.CameraTarget;
+        var middle = own.Center;
+        Directory.CreateDirectory(Path.Combine(outDir, folder));
+        FadeWithSwing(results, reach);
+        try
+        {
+            for (int k = 0; k < frames; k++)
+            {
+                value.SetValue(scale, reach * Math.Sin(2 * Math.PI * swings * k / frames));
+                results.ExpireSolution(false);
+                doc.NewSolution(false);
+                var round = Transform.Rotation(2 * Math.PI * k / frames, Vector3d.ZAxis, middle);
+                Point3d at = location, to = target;
+                at.Transform(round);
+                to.Transform(round);
+                vp.SetCameraLocations(to, at);
+                vp.CameraUp = Vector3d.ZAxis;
+                Shoot(view, Path.Combine(folder, k.ToString("D3")));
+            }
+        }
+        finally
+        {
+            FadeWithSwing(results, 0);
+        }
+        value.SetValue(scale, start);
+        results.ExpireSolution(false);
+        doc.NewSolution(false);
+        Log($"  {frames} frames once round, swinging {swings} times +-{reach} times the mode's drawn size");
+    }
+
+    /// <summary>
+    /// The edges of Grasshopper's meshes drawn, light grey and opaque (160, 168, 178), as every meshed
+    /// model in the pictures has them; off, the default red preview colour back.
+    /// </summary>
+    static void MapEdges(bool on)
+    {
+        CentralSettings.PreviewMeshEdges = on;
+        var colour = doc.GetType().GetProperty("PreviewColour");
+        if (colour != null && colour.CanWrite)
+            colour.SetValue(doc, on ? Color.FromArgb(255, 160, 168, 178) : Color.FromArgb(150, 255, 0, 0));
+        doc.NewSolution(false);
     }
 
     /// <summary>
