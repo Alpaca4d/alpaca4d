@@ -817,8 +817,12 @@ namespace Alpaca4d
                     $"OpenSees executable not found at: \"{openSeesPath}\". " +
                     "Update it via Alpaca4d \u2192 Settings in the Grasshopper menu.");
 
-            var outputBuilder = new System.Text.StringBuilder();
-            var errorBuilder = new System.Text.StringBuilder();
+            // Capped: a deck can print without end - a plastic shell that diverged printed "More than
+            // 25 iterations in constituive subroutine J2-plasticity" 39 million times, 2.6 GB in four
+            // minutes, and holding it all ran Rhino out of memory and down. The first and the last
+            // megabyte of each stream are kept, which hold what is read from them.
+            var outputBuilder = new CappedLog();
+            var errorBuilder = new CappedLog();
 
             // Read once: the wait and the message it may produce have to agree, whatever
             // else does to the setting meanwhile.
@@ -892,6 +896,66 @@ namespace Alpaca4d
 
                 this.IsAnalysed = true;
                 return (outputBuilder.ToString().Trim(), error, exitCode);
+            }
+        }
+
+        /// <summary>
+        /// A solver's output as it comes, line by line, but no more than <see cref="Cap"/> characters of
+        /// its start and as much of its end: what lies between is counted and left out. What is read
+        /// off a log - the analysis result at the end of stdout, Tcl's trace of an error at the end of
+        /// stderr, the first warnings - is at one end or the other.
+        /// </summary>
+        public sealed class CappedLog
+        {
+            public const int Cap = 1 << 20;
+
+            private readonly System.Text.StringBuilder _head = new System.Text.StringBuilder();
+            private readonly Queue<string> _tail = new Queue<string>();
+            private long _tailLength;
+            private readonly object _lock = new object();
+
+            /// <summary>Lines left out between the start and the end kept.</summary>
+            public long Dropped { get; private set; }
+
+            /// <summary>Characters left out.</summary>
+            public long DroppedLength { get; private set; }
+
+            public int Length { get { lock (_lock) return _head.Length + (int)Math.Min(int.MaxValue, _tailLength); } }
+
+            public void AppendLine(string line)
+            {
+                lock (_lock)
+                {
+                    if (_head.Length + line.Length < Cap && _tail.Count == 0)
+                    {
+                        _head.AppendLine(line);
+                        return;
+                    }
+                    _tail.Enqueue(line);
+                    _tailLength += line.Length + 1;
+                    while (_tailLength > Cap && _tail.Count > 1)
+                    {
+                        string gone = _tail.Dequeue();
+                        _tailLength -= gone.Length + 1;
+                        Dropped++;
+                        DroppedLength += gone.Length + 1;
+                    }
+                }
+            }
+
+            public override string ToString()
+            {
+                lock (_lock)
+                {
+                    if (_tail.Count == 0)
+                        return _head.ToString();
+                    var all = new System.Text.StringBuilder(_head.ToString());
+                    if (Dropped > 0)
+                        all.AppendLine($"... {Dropped} lines ({DroppedLength / (1 << 20)} MB) left out ...");
+                    foreach (var line in _tail)
+                        all.AppendLine(line);
+                    return all.ToString();
+                }
             }
         }
 
