@@ -237,8 +237,18 @@ namespace Alpaca4d.Gh
                 return;
             }
 
+            // ARPACK hands back 0 for every mode it did not converge on, after "Maximum number of
+            // iteration reached": modes that look solved, at 0 Hz, but are not there.
+            int unsolved = eigenValue.Count(eigen => eigen == 0.0);
+            if (unsolved > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"{unsolved} of the {eigenValue.Count} modes came back at 0 Hz: the solver did not converge on them" +
+                    (stderr.IndexOf("Maximum number of iteration", StringComparison.Ordinal) >= 0 ? " (ARPACK reached its iteration limit)" : "") +
+                    ". Ask for fewer modes, or use -fullGenLapack, which solves every mode of a small model.");
+
             var frequencies = eigenValue.Select(eigen => Math.Sqrt(eigen) / (2 * Math.PI)).ToList();
             var period = frequencies.Select(x => 1 / x).ToList();
+            analysisModel.Eigenvalues = eigenValue;
 
             DA.SetData(ModelOutput, analysisModel);
             DA.SetDataList(EigenvaluesOutput, eigenValue);
