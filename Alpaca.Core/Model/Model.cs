@@ -179,6 +179,12 @@ namespace Alpaca4d
         public int NumberOfModes { get; set; }
 
         /// <summary>
+        /// Set by Natural Vibration Analysis on the model it hands on: one eigenvalue per mode, ω² in
+        /// rad²/s², lowest first. Footfall Analysis reads the modes' frequencies from it.
+        /// </summary>
+        public List<double> Eigenvalues { get; set; }
+
+        /// <summary>
         /// Set by Linear Buckling Analysis on the model it hands on: its steps are buckling modes,
         /// step 0 the first, and its beams may be split.
         /// </summary>
