@@ -306,6 +306,15 @@ namespace Alpaca4d.FemDesign
                     exportMaterial.Nu = isotropic.Nu;
                     exportMaterial.Rho = isotropic.Rho ?? 0.0;
                     break;
+                // Its elastic part: FEM-Design gets the stiffness and density, and does its own
+                // design to the yield stress of the grade it is mapped to.
+                case Materials.J2PlasticityMaterial plastic:
+                    exportMaterial.Name = plastic.MatName;
+                    exportMaterial.E = plastic.E;
+                    exportMaterial.G = plastic.G;
+                    exportMaterial.Nu = plastic.Nu;
+                    exportMaterial.Rho = plastic.Rho ?? 0.0;
+                    break;
                 case Materials.ElasticOrthotropicMaterial orthotropic:
                     exportMaterial.Name = orthotropic.MatName;
                     exportMaterial.IsOrthotropic = true;
