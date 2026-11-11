@@ -28,6 +28,18 @@ the path of every file on disk. Its `HOLD` and `NOTES` say which posts should wa
 page's Open folder and Show in Finder buttons need `python3 finder.py` running: a browser page cannot
 open Finder, so they link to that helper on 127.0.0.1, which opens only paths inside `marketing/`.
 
+`teaser.py` cuts the videos already in `marketing/` into a 45-second teaser of everything Alpaca4d
+does, `marketing/teaser/capabilities/alpaca4d-teaser.mp4` (`--small` for a quick look, `--stills` for
+a still of every shot in `out/teaser/stills/`). It needs Pillow and numpy besides ffmpeg; the shots
+are listed at its top, a chapter per capability. Run it again after a scene's videos change.
+`explorer.py` records the Explorer page in use for it - the sample footbridge study filtered, sorted and
+a design opened in 3D - into `marketing/explorer/footbridge-study/explorer-study.mp4`: it drives the page
+in Chrome, headless, with Playwright (`pip install playwright`), and draws the mouse pointer and a
+camera moving over the screenshots after (`--compose` to redo only that). `posters.py` makes the
+teaser's posters for a LinkedIn carousel - a cover, one a capability, an end card, 4:5, and all of them
+as one PDF - into `marketing/teaser/posters/`, from the stills in `marketing/` (its Explorer poster uses
+the frames `explorer.py` recorded).
+
 ## The scenes
 
 | Scene | Example | Into `marketing/` |
