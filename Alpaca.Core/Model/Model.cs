@@ -265,6 +265,31 @@ namespace Alpaca4d
 
         public bool HasTenNodeTetrahedron => this.Bricks.Any(brick => brick.ElementClass == ElementClass.TenNodeTetrahedron);
 
+        /// <summary>
+        /// How many shells and solids are made of a J2Plasticity material, in any layer. OpenSees
+        /// takes no density for it, so these elements have no mass there: see <see cref="MasslessPlasticElements"/>.
+        /// </summary>
+        public int PlasticElementCount =>
+            this.Shells.Count(shell => shell.Section?.Materials?.Any(material => material is J2PlasticityMaterial) == true) +
+            this.Bricks.Count(brick => brick.Material is J2PlasticityMaterial);
+
+        /// <summary>
+        /// What Natural Vibration and a time history say about the elements of a J2Plasticity
+        /// material, or null when the model has none. Gravity Load reads the density itself, so a
+        /// static analysis is not affected.
+        /// </summary>
+        public string MasslessPlasticElements(string consequence)
+        {
+            int count = this.PlasticElementCount;
+            if (count == 0)
+                return null;
+
+            string elements = count == 1 ? "1 element is" : $"{count} elements are";
+            return $"{elements} of a J2Plasticity material, which takes no density in OpenSees: they have no mass here, so {consequence} " +
+                   "Self-weight from Gravity Load is right. For a natural vibration, give them an Elastic Isotropic material with the same " +
+                   "E, ν and Rho - J2Plasticity is that material until it yields.";
+        }
+
         public bool HasTriShell
         {
             get
@@ -1703,6 +1728,16 @@ namespace Alpaca4d
 
             var uniqueSections = crossSections.Distinct().ToList();
             var uniqueMaterials = materials.Distinct().ToList();
+
+            // An SSP brick sets its hourglass stiffness once, from the material's elastic tangent
+            // (SSPbrick::GetStab), and it never softens: past first yield the brick is too strong -
+            // on a clamped beam with six bricks through the depth, a third over the load it levels
+            // off at, and still rising. Up to first yield it is right.
+            int plasticSsp = this.Bricks.Count(brick => brick.ElementClass == ElementClass.SSPBrick && brick.Material is J2PlasticityMaterial);
+            if (plasticSsp > 0)
+                this.Remarks.Add($"{(plasticSsp == 1 ? "1 SSP Brick is" : $"{plasticSsp} SSP Bricks are")} of a J2Plasticity material. " +
+                                 "An SSP brick is right up to first yield, but too strong after it: its hourglass stiffness stays elastic. " +
+                                 "A Ten Node Tetrahedron carries a plastic material best.");
 
             foreach (var material in uniqueMaterials)
             {
