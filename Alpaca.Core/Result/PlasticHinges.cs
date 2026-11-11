@@ -45,7 +45,26 @@ namespace Alpaca4d.Result
         /// <summary>What has gone furthest, in words: "B450C in tension", "C25/30 crushed".</summary>
         public string Governs { get; internal set; }
 
+        /// <summary>Where it is at this step alone: past its yield strain now, or back under it.</summary>
         public HingeState State => Ultimate >= 1.0 ? HingeState.Ultimate : Yield >= 1.0 ? HingeState.Yielded : HingeState.Elastic;
+
+        /// <summary>
+        /// The largest <see cref="Yield"/> at this step or any before it: the ductility the station has reached,
+        /// its most strained fibre's strain over its yield strain. Past 1 it has yielded, and stays yielded
+        /// whatever it does after - a fibre that yielded keeps the strain it took. The step alone, from
+        /// <see cref="PlasticHinges.At"/>, has only <see cref="Yield"/> to go by.
+        /// </summary>
+        public double Ductility { get; internal set; }
+
+        /// <summary>The largest <see cref="Ultimate"/> at this step or any before it.</summary>
+        public double UltimateReached { get; internal set; }
+
+        /// <summary>How far it has gone by this step: yielded once it has been past its yield strain, failed once past the strain it fails at.</summary>
+        public HingeState Reached =>
+            UltimateReached >= 1.0 ? HingeState.Ultimate : Ductility >= 1.0 ? HingeState.Yielded : HingeState.Elastic;
+
+        /// <summary>Yielded at a step before, and back under its yield strain at this one: unloaded, the plastic strain it took left in it.</summary>
+        public bool Unloaded => Reached == HingeState.Yielded && Yield < 1.0;
     }
 
     /// <summary>When a station of a beam first yielded, and first failed, over a run of steps.</summary>
@@ -64,6 +83,80 @@ namespace Alpaca4d.Result
 
         /// <summary>What failed first, in words, when something did.</summary>
         public string Failed { get; internal set; }
+
+        /// <summary>
+        /// The ductility it had reached at each of the steps given - its most strained fibre's largest strain
+        /// so far over its yield strain - 0 before it yields. It never comes down: a yielded fibre keeps its strain.
+        /// </summary>
+        public List<double> DuctilityAt { get; internal set; } = new List<double>();
+
+        /// <summary>The ductility it had reached by the last step given.</summary>
+        public double Ductility => DuctilityAt.Count == 0 ? 0.0 : DuctilityAt[DuctilityAt.Count - 1];
+    }
+
+    /// <summary>
+    /// Every station of the beams on fibre sections at every recorded step, read once: <see cref="At"/> gives
+    /// a step's stations with what each has reached by then - its ductility so far, and whether it has
+    /// failed - without the file. What Model View draws as a push is stepped through.
+    /// </summary>
+    public sealed class HingeHistory
+    {
+        private readonly List<HingeStation> _stations;
+        private readonly double[][] _yield, _ultimate;
+
+        internal HingeHistory(List<List<HingeStation>> steps)
+        {
+            // The stations as the first step has them; the others matched to them by beam and station, so
+            // that a beam a step leaves out shifts nothing.
+            _stations = steps.Count > 0 ? steps[0] : new List<HingeStation>();
+            var index = new Dictionary<(int, int), int>();
+            for (int i = 0; i < _stations.Count; i++)
+                index[(_stations[i].Beam, _stations[i].Station)] = i;
+            _yield = new double[steps.Count][];
+            _ultimate = new double[steps.Count][];
+            for (int k = 0; k < steps.Count; k++)
+            {
+                _yield[k] = new double[_stations.Count];
+                _ultimate[k] = new double[_stations.Count];
+                foreach (var s in steps[k])
+                {
+                    if (!index.TryGetValue((s.Beam, s.Station), out int i)) continue;
+                    _yield[k][i] = s.Yield;
+                    _ultimate[k][i] = s.Ultimate;
+                }
+            }
+        }
+
+        /// <summary>How many steps it holds.</summary>
+        public int Steps => _yield.Length;
+
+        /// <summary>
+        /// Every station at <paramref name="step"/> - held to the steps there are - with its strains then, and
+        /// the largest it has reached at that step or any before it.
+        /// </summary>
+        public List<HingeStation> At(int step)
+        {
+            var result = new List<HingeStation>(_stations.Count);
+            if (Steps == 0) return result;
+            step = Math.Max(0, Math.Min(step, Steps - 1));
+            for (int i = 0; i < _stations.Count; i++)
+            {
+                double ductility = 0.0, ultimate = 0.0;
+                for (int k = 0; k <= step; k++)
+                {
+                    ductility = Math.Max(ductility, _yield[k][i]);
+                    ultimate = Math.Max(ultimate, _ultimate[k][i]);
+                }
+                var s = _stations[i];
+                result.Add(new HingeStation
+                {
+                    Beam = s.Beam, Station = s.Station, Along = s.Along, Position = s.Position,
+                    Yield = _yield[step][i], Ultimate = _ultimate[step][i],
+                    Ductility = ductility, UltimateReached = ultimate,
+                });
+            }
+            return result;
+        }
     }
 
     /// <summary>
@@ -89,9 +182,64 @@ namespace Alpaca4d.Result
         public static bool HasFibreBeams(Model model) =>
             model?.Beams != null && model.Beams.Any(beam => !(beam is Alpaca4d.Element.Truss) && beam.Section is FiberSection);
 
-        /// <summary>The state of every station of every beam on a fibre section, at a recorded step.</summary>
-        public static List<HingeStation> At(Model model, int step) =>
-            Evaluate(model, Read.SectionDeformations(model, step), new Dictionary<FiberSection, Limits>());
+        /// <summary>
+        /// The state of every station of every beam on a fibre section, at a recorded step, and that step
+        /// alone: a station that yielded at a step before and has unloaded since reads elastic. For what each
+        /// has reached by a step, read the analysis once with <see cref="Track"/>.
+        /// </summary>
+        public static List<HingeStation> At(Model model, int step)
+        {
+            var stations = Evaluate(model, Read.SectionDeformations(model, step), new Dictionary<FiberSection, Limits>());
+            foreach (var s in stations)
+            {
+                s.Ductility = s.Yield;
+                s.UltimateReached = s.Ultimate;
+            }
+            return stations;
+        }
+
+        /// <summary>
+        /// Every station at every recorded step, read once - the file opened once - for <see cref="HingeHistory.At"/>
+        /// to give any step's stations with what each has reached by then.
+        /// </summary>
+        public static HingeHistory Track(Model model)
+        {
+            int count = Read.StepCount(model);
+            var steps = Enumerable.Range(0, Math.Max(0, count)).ToList();
+            var limits = new Dictionary<FiberSection, Limits>();
+            var all = steps.Count == 0 ? new List<Dictionary<int, double[][]>>() : Read.SectionDeformations(model, steps);
+            return new HingeHistory(all.Select(step => Evaluate(model, step, limits)).ToList());
+        }
+
+        /// <summary>
+        /// The ductility a hinge is drawn by: four bands, from first yield to twice the yield strain, to four
+        /// times, to eight, and past - their lower ends. Failed is a fifth state, drawn on its own.
+        /// </summary>
+        public static readonly double[] DuctilityBands = { 1.0, 2.0, 4.0, 8.0 };
+
+        /// <summary>The band, 0 to 3, a ductility of at least 1 falls in.</summary>
+        public static int Band(double ductility)
+        {
+            int band = 0;
+            for (int i = 1; i < DuctilityBands.Length; i++)
+                if (ductility >= DuctilityBands[i]) band = i;
+            return band;
+        }
+
+        /// <summary>
+        /// The colour of each band: yellow, orange, red and dark red - from Alpaca4d's orange, the colour a hinge
+        /// had before it had bands - and purple for failed, as before.
+        /// </summary>
+        public static readonly System.Drawing.Color[] BandColours =
+        {
+            System.Drawing.Color.FromArgb(242, 201, 76),
+            System.Drawing.Color.FromArgb(235, 108, 63),
+            System.Drawing.Color.FromArgb(214, 40, 40),
+            System.Drawing.Color.FromArgb(122, 14, 28),
+        };
+
+        /// <summary>A failed station's colour: Alpaca4d's purple.</summary>
+        public static readonly System.Drawing.Color FailedColour = System.Drawing.Color.FromArgb(158, 53, 218);
 
         /// <summary>
         /// When each station first yielded, and first failed, over <paramref name="steps"/> - a pushover's
@@ -102,13 +250,17 @@ namespace Alpaca4d.Result
             var events = new Dictionary<(int, int), HingeEvent>();
             var limits = new Dictionary<FiberSection, Limits>();
             var all = Read.SectionDeformations(model, steps);
+            // Every station's largest yield ratio so far, for the ductility a hinge has reached at each step.
+            var most = new Dictionary<(int, int), double>();
             for (int k = 0; k < steps.Count; k++)
             {
                 foreach (var station in Evaluate(model, all[k], limits))
                 {
+                    var key = (station.Beam, station.Station);
+                    most.TryGetValue(key, out double sofar);
+                    most[key] = Math.Max(sofar, station.Yield);
                     if (station.State == HingeState.Elastic)
                         continue;
-                    var key = (station.Beam, station.Station);
                     if (!events.TryGetValue(key, out var e))
                     {
                         events[key] = e = new HingeEvent
@@ -122,6 +274,12 @@ namespace Alpaca4d.Result
                         e.FirstUltimate = k;
                         e.Failed = station.Governs;
                     }
+                }
+                // A hinge's steps before it yielded, 0; from then on, the most it has reached.
+                foreach (var e in events.Values)
+                {
+                    while (e.DuctilityAt.Count < k) e.DuctilityAt.Add(0.0);
+                    e.DuctilityAt.Add(most[(e.Beam, e.Station)]);
                 }
             }
             return events.Values.OrderBy(e => e.FirstYield).ThenBy(e => e.Beam).ThenBy(e => e.Station).ToList();
