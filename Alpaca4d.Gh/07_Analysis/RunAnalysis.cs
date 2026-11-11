@@ -166,6 +166,32 @@ namespace Alpaca4d.Gh
                     "The model has tension-only or compression-only bars or one-way supports, and the Linear algorithm solves once " +
                     "with them all holding both ways. Pick Newton in Analysis Settings, with several steps, so that they can let go.");
 
+            // A material that yields needs Newton: the Linear algorithm solves once with the elastic
+            // stiffness and takes whatever stress comes back, so past yield the answer is not in
+            // equilibrium. One step goes straight to the full load, and shows nothing of where it
+            // yielded first. And steps only grow the load when a pattern's time series grows with
+            // them: Load Pattern's default is constant, so Load Control's pseudo-time changes nothing
+            // and the whole load goes on at the first step - found building the beam-with-holes example.
+            if (model.PlasticElementCount > 0)
+            {
+                int steps = settings?.AnalysisStep?.NumIncr ?? 1;
+                bool loadGrows = model.LoadPatterns.Any(pattern => pattern.TimeSeries != null && !(pattern.TimeSeries is Alpaca4d.TimeSeries.Constant));
+
+                if (settings?.Algorithm?.Type == Alpaca4d.Algorithm.AlgorithmType.Linear)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        "The model has a J2Plasticity material, and the Linear algorithm solves once with its elastic stiffness: past yield " +
+                        "the answer is not in equilibrium. Pick Newton in Analysis Settings, with several steps.");
+                else if (settings?.Analysis?.Type == Analysis.AnalysisType.Static && steps <= 1)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        "The model has a J2Plasticity material and is solved in one step. To see where and at what load it starts to yield, " +
+                        "apply the load in steps: a Linear Time Series in the Load Pattern, and Load Control of 0.05 with an Analysis Step of 20, say.");
+                else if (settings?.Analysis?.Type == Analysis.AnalysisType.Static && !loadGrows)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        $"The model has a J2Plasticity material and is solved in {steps} steps, but every load pattern has a constant time series: " +
+                        "the whole load goes on at the first step, and the steps after it change nothing. Give the Load Pattern a Linear Time " +
+                        "Series, and the load grows by Load Control's increment at every step.");
+            }
+
             if (settings != null && model.HasOneWay)
             {
                 var safer = settings.WithTestFor(model);
@@ -199,6 +225,10 @@ namespace Alpaca4d.Gh
                 {
                     recorder = Alpaca4d.Recorder.MpcoTransient(recorderName, model);
                     analysisModel.IsTransient = true;
+
+                    string massless = model.MasslessPlasticElements("their inertia is missing from the time history.");
+                    if (massless != null)
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, massless);
                 }
 
                 // Recorders from Assemble Model are the user's choice and go in, in place of the one

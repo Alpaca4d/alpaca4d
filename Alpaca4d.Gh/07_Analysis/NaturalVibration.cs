@@ -154,6 +154,10 @@ namespace Alpaca4d.Gh
             if (!LicenseGate.AllowsModel(this, model))
                 return;
 
+            string massless = model.MasslessPlasticElements("the frequencies come out too high and their mass is missing from the modal masses.");
+            if (massless != null)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, massless);
+
             // create a shallow copy
             var analysisModel = model.ShallowCopy();
             analysisModel.Tcl = new List<string>(analysisModel.Tcl);
