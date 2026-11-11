@@ -37,7 +37,7 @@ namespace Alpaca4d.Gh
 
         private const int ModelInput = 0, PointInput = 1, DirectionInput = 2, TargetInput = 3, StepsInput = 4, LoadsInput = 5, PDeltaInput = 6;
         private const int ModelOutput = 0, DisplacementOutput = 1, ShearOutput = 2, FactorOutput = 3, StepOutput = 4,
-                          HingesOutput = 5, HingePointsOutput = 6, YieldsAtOutput = 7, LogOutput = 8;
+                          HingesOutput = 5, HingePointsOutput = 6, YieldsAtOutput = 7, LogOutput = 8, DuctilityOutput = 9;
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
@@ -93,7 +93,8 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.list);
             pManager.AddTextParameter("Hinges", "Hinges",
                 "Every point of a beam on a fibre section that yields during the push, in the order it does: which beam, where " +
-                "along it, the point of the curve it yields at, and when its concrete crushes or a bar reaches its ultimate strain. " +
+                "along it, the point of the curve it yields at, the ductility it reaches by the end - its most strained fibre's " +
+                "largest strain over its yield strain - and when its concrete crushes or a bar reaches its ultimate strain. " +
                 "Model View draws them, ticked Plastic hinges, at whatever Step it draws.",
                 GH_ParamAccess.list);
             pManager.AddPointParameter("Hinge Points", "Hinge Points",
@@ -105,6 +106,13 @@ namespace Alpaca4d.Gh
             pManager.AddTextParameter("log", "log",
                 "What OpenSees printed, a line repeated written once with its count. Read it when the push stops short.",
                 GH_ParamAccess.item);
+            // Last, so that the outputs before it keep their places in a definition saved before it came.
+            pManager.AddNumberParameter("Ductility", "Ductility",
+                "The ductility each of the Hinges has reached at each point of the curve - its most strained fibre's largest " +
+                "strain so far over its yield strain - a branch a hinge, in the order of Hinges, and 0 before it yields. It " +
+                "never comes down: a fibre that yielded keeps the strain it took. Model View colours a hinge by it: from 1 " +
+                "yellow, from 2 orange, from 4 red, from 8 dark red.",
+                GH_ParamAccess.tree);
         }
 
         protected override void BeforeSolveInstance()
@@ -337,11 +345,16 @@ namespace Alpaca4d.Gh
                 $"point {k}: {curve.Displacement[k] * 1000.0:0} mm, {curve.BaseShear[k]:0} {Units.Force}";
 
             var text = events.Select(e =>
-                $"{Name(e.Beam)}, {Alpaca4d.Result.PlasticHinges.Where(e.Along)}: yields at {At(e.FirstYield)}" +
+                $"{Name(e.Beam)}, {Alpaca4d.Result.PlasticHinges.Where(e.Along)}: yields at {At(e.FirstYield)}; " +
+                $"ductility {e.Ductility:0.#} by the end" +
                 (e.FirstUltimate >= 0 ? $"; {e.Failed} at {At(e.FirstUltimate)}" : "")).ToList();
             DA.SetDataList(HingesOutput, text);
             DA.SetDataList(HingePointsOutput, events.Select(e => e.Position));
             DA.SetDataList(YieldsAtOutput, events.Select(e => e.FirstYield));
+            var ductility = new Grasshopper.DataTree<double>();
+            for (int i = 0; i < events.Count; i++)
+                ductility.AddRange(events[i].DuctilityAt, new Grasshopper.Kernel.Data.GH_Path(i));
+            DA.SetDataTree(DuctilityOutput, ductility);
 
             if (events.Count == 0)
             {
@@ -350,9 +363,11 @@ namespace Alpaca4d.Gh
             }
             var first = events[0];
             int failed = events.Count(e => e.FirstUltimate >= 0);
+            var most = events.OrderByDescending(e => e.Ductility).First();
             AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                 $"{events.Count} hinge{(events.Count == 1 ? "" : "s")}; the first at {At(first.FirstYield)}, {Name(first.Beam)}, " +
-                $"{Alpaca4d.Result.PlasticHinges.Where(first.Along)}" +
+                $"{Alpaca4d.Result.PlasticHinges.Where(first.Along)}; the largest ductility {most.Ductility:0.#}, {Name(most.Beam)}, " +
+                $"{Alpaca4d.Result.PlasticHinges.Where(most.Along)}" +
                 (failed > 0 ? $"; {failed} reached the strain they fail at." : "."));
         }
 
