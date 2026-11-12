@@ -159,6 +159,9 @@ namespace Alpaca4d.Gh
 
         internal MenuCheckBox _ckBands;
         internal MenuCheckBox _ckValues;
+
+        /// <summary>The largest and the smallest value of each result written where they are, with a dot.</summary>
+        internal MenuCheckBox _ckExtremes;
         internal MenuCheckBox _ckHinges;
         internal MenuSlider _slHingeSize;
 
@@ -350,8 +353,10 @@ namespace Alpaca4d.Gh
 
             _ckBands = new MenuCheckBox(2, "IsoSurfaces", "Iso-surfaces");
             _ckValues = new MenuCheckBox(3, "Values", "Show values");
+            _ckExtremes = new MenuCheckBox(5, "Extremes", "Max and min");
             resultsPanel.AddControl(_ckBands);
             resultsPanel.AddControl(_ckValues);
+            resultsPanel.AddControl(_ckExtremes);
 
             // Beams on fibre sections: where they have yielded at the step drawn. See ModelView.Hinges.cs.
             _ckHinges = new MenuCheckBox(4, "Hinges", "Plastic hinges");
@@ -461,7 +466,7 @@ namespace Alpaca4d.Gh
         /// end, rather than by its place in the menu, which may change: a file finds each control by
         /// its number.
         /// </summary>
-        private static ResultControls ResultControlsFor(ResultFamily family)
+        internal static ResultControls ResultControlsFor(ResultFamily family)
         {
             int number = (int)family;
             var names = ResultField.ComponentNames(family);
@@ -540,7 +545,7 @@ namespace Alpaca4d.Gh
 
             foreach (var widget in new GH_Attr_Widget[]
                      {
-                         _ckValues, _ckWires, _slTextSize,
+                         _ckValues, _ckExtremes, _ckWires, _slTextSize,
                          _ckNodeIds, _ckElementIds, _ckSectionNames, _ckLocalAxes, _slAxesSize, _ckReleases, _slReleaseSize,
                          _ckShowLoads, _ckShowLoadValues, _slLoadScale, _ckShowSupports, _slSupportScale, _slHingeSize
                      })
@@ -643,7 +648,7 @@ namespace Alpaca4d.Gh
             // its elements.
             bool any = !ModelOnly;
             Show(_results.Any(x => x.Tick.Active && x.Family != ResultFamily.BeamForce), _ckBands);
-            Show(any, _ckValues);
+            Show(any, _ckValues, _ckExtremes);
             Show(!any, _txColourBy, _ddColourBy);
 
             // A scale and an animation over a shape that is not being deformed do nothing.
@@ -668,7 +673,7 @@ namespace Alpaca4d.Gh
 
         /// <summary>Whether anything is written on the model, which is what Text size sizes.</summary>
         private bool Labelled =>
-            (!ModelOnly && (_ckValues?.Active ?? false))
+            (!ModelOnly && ((_ckValues?.Active ?? false) || (_ckExtremes?.Active ?? false)))
             || (_ckNodeIds?.Active ?? false) || (_ckElementIds?.Active ?? false)
             || (_ckSectionNames?.Active ?? false) || (_ckShowLoadValues?.Active ?? false);
 
@@ -1015,11 +1020,34 @@ namespace Alpaca4d.Gh
 
             /// <summary>Colours elements, rather than drawing beside them as diagrams and arrows do.</summary>
             public bool Paints => Family != ResultFamily.BeamForce && Family != ResultFamily.Reaction;
+
+            /// <summary>Its largest and its smallest value as drawn, and where: what Max and min writes.</summary>
+            public Extreme Largest, Smallest;
         }
+
+        /// <summary>A value where it is drawn - on the model, at a diagram's tip, at an arrow's head.</summary>
+        private struct Extreme
+        {
+            public Point3d At;
+            public double Value, Lift;
+            public bool Set;
+
+            public Extreme(Point3d at, double value, double lift)
+            {
+                At = at;
+                Value = value;
+                Lift = lift;
+                Set = true;
+            }
+        }
+
+        /// <summary>The result being built, whose largest and smallest <see cref="Candidate"/> keeps.</summary>
+        private ShownResult _current;
 
         /// <summary>A result made the one the building code reads; see <see cref="ShownResult"/>.</summary>
         private void Use(ShownResult shown)
         {
+            _current = shown;
             _field = shown.Field;
             _min = shown.Min;
             _max = shown.Max;
@@ -1177,9 +1205,22 @@ namespace Alpaca4d.Gh
         /// result per component picked, which is one but for beam forces. None, with an error, when
         /// it cannot be read.
         /// </summary>
+        /// <summary>
+        /// For the Report's footfall pictures: a value per node, by its tag, drawn as the displacement
+        /// would be - coloured, with its range and its values - in place of what the recorder holds,
+        /// under <see cref="NodeValuesLabel"/>. Null, as it always is but for the Report.
+        /// </summary>
+        internal Dictionary<int, double> NodeValues;
+        internal string NodeValuesLabel = "";
+
         private List<ShownResult> Read(ResultControls controls, int step)
         {
             var family = controls.Family;
+            if (NodeValues != null && family == ResultFamily.Displacement)
+            {
+                var given = new ResultField { ByNode = NodeValues, Component = 0, Label = NodeValuesLabel };
+                return new List<ShownResult> { new ShownResult { Family = family, Component = 0, Unit = new ResultUnit("-", 1.0), Field = given } };
+            }
             string name = ResultField.FamilyNames[(int)family];
             var picked = controls.Picked.ToList();
             if (picked.Count == 0)
@@ -1417,6 +1458,9 @@ namespace Alpaca4d.Gh
                     ViewportLabels.Draw(args.Display, args.Viewport, label.Item2.ToString("G4"), colour, label.Item1 + towardsCamera * label.Item3, height);
             }
 
+            if (!model && (_ckExtremes?.Active ?? false))
+                DrawExtremes(args);
+
             DrawOverlays(args);
         }
 
@@ -1451,8 +1495,48 @@ namespace Alpaca4d.Gh
                                               label.Item1 + new Vector3d(reach, reach, reach)));
             }
 
+            // The largest and the smallest, with their labels.
+            if (_shown.Count > 0 && (_ckExtremes?.Active ?? false))
+            {
+                double reach = 3.0 * (_slTextSize?.Value ?? 0.5);
+                foreach (var e in Extremes().Select(x => x.Item1))
+                    box.Union(new BoundingBox(e.At - new Vector3d(reach + e.Lift, reach + e.Lift, reach + e.Lift),
+                                              e.At + new Vector3d(reach + e.Lift, reach + e.Lift, reach + e.Lift)));
+            }
+
             box.Union(OverlayExtent());
             return box;
+        }
+
+        /// <summary>The largest and the smallest of each result drawn - one, where the two are the same - and the word for each.</summary>
+        private IEnumerable<Tuple<Extreme, string>> Extremes()
+        {
+            foreach (var shown in _shown.Where(x => x.Largest.Set))
+            {
+                yield return Tuple.Create(shown.Largest, "max");
+                if (shown.Smallest.Set && shown.Smallest.Value < shown.Largest.Value)
+                    yield return Tuple.Create(shown.Smallest, "min");
+            }
+        }
+
+        /// <summary>
+        /// Max and min: a dot where each result is largest and where it is smallest, and its value
+        /// written over the dot - on the model, at a diagram's tip, at an arrow's head - so a picture
+        /// says the numbers its legend only spans.
+        /// </summary>
+        private void DrawExtremes(IGH_PreviewArgs args)
+        {
+            double height = _slTextSize?.Value ?? 0.5;
+            var colour = AlpacaSettings.Colour(DisplayItem.Values);
+            var towardsCamera = -args.Viewport.CameraDirection;
+            towardsCamera.Unitize();
+
+            foreach (var mark in Extremes())
+            {
+                var at = mark.Item1.At + towardsCamera * mark.Item1.Lift;
+                args.Display.DrawPoint(at, Rhino.Display.PointStyle.RoundSimple, 4, colour);
+                ViewportLabels.Draw(args.Display, args.Viewport, $"{mark.Item2} {mark.Item1.Value:G4}", colour, at, height, 1.0);
+            }
         }
 
         #endregion

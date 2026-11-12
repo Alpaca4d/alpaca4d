@@ -298,6 +298,10 @@ namespace Alpaca4d.Gh
             // A diagram for each beam force ticked, each in the colours of its force.
             var forces = _shown.Where(x => x.Family == ResultFamily.BeamForce).ToList();
 
+            // Found again as the shape is built, which an animation does at every frame.
+            foreach (var shown in _shown)
+                shown.Largest = shown.Smallest = default(Extreme);
+
             foreach (var beam in _model.Beams)
             {
                 var start = Move(beam.Curve.PointAtStart, beam.INode, displacement);
@@ -368,6 +372,8 @@ namespace Alpaca4d.Gh
                                         .Select(i => Tuple.Create(i / (double)steps, from + (to - from) * i / steps))
                                         .ToList();
                 Paint(beam, start, end, samples);
+                Candidate(start, from, lift);
+                Candidate(end, to, lift);
 
                 Label((start + end) * 0.5, Math.Max(from, to), lift);
                 return;
@@ -401,6 +407,15 @@ namespace Alpaca4d.Gh
 
             var diagram = Diagram(beam, start, end, forces, component, _diagramUnit);
             if (diagram != null) _diagrams.Add(diagram);
+
+            // Each station's force at the diagram's tip there.
+            if (forces != null && forces.Count > 0)
+            {
+                var stations = Stations(beam, forces.Count);
+                var away = DiagramDirection(beam, start, end, component);
+                for (int i = 0; i < forces.Count; i++)
+                    Candidate(start + (end - start) * stations[i] + away * forces[i] * _diagramUnit, forces[i]);
+            }
 
             // One label per beam, at whichever station carries the most. Every station
             // labelled is unreadable on anything but a single member.
@@ -631,6 +646,8 @@ namespace Alpaca4d.Gh
                 .ToList();
 
             Paint(beam, start, end, samples);
+            for (int i = 0; i < values.Count; i++)
+                Candidate(start + axis * stations[i], values[i], lift);
 
             int worst = 0;
             for (int i = 1; i < values.Count; i++)
@@ -791,8 +808,10 @@ namespace Alpaca4d.Gh
                     var origin = start + axis * ring.Item1;
                     for (int j = 0; j < count; j++)
                     {
-                        mesh.Vertices.Add(origin + z * strip.At[j].X + y * strip.At[j].Y);
+                        var point = origin + z * strip.At[j].X + y * strip.At[j].Y;
+                        mesh.Vertices.Add(point);
                         double value = section.At(strip.Points[j], ring.Item2, _field.Component);
+                        Candidate(point, value, lift);
                         if (worst < 0 || Math.Abs(value) > Math.Abs(values[worst]))
                         {
                             worst = values.Count;
@@ -899,6 +918,9 @@ namespace Alpaca4d.Gh
                 return;
             }
 
+            for (int i = 0; i < corners.Length && i < mesh.Vertices.Count; i++)
+                Candidate(mesh.Vertices[i], corners[i]);
+
             if (_banded)
             {
                 _shaded.Add(IsoBands.Paint(mesh, Faded(corners), _palette, _min, _max));
@@ -980,6 +1002,7 @@ namespace Alpaca4d.Gh
             if (moment)
                 _arrows.Add(Tuple.Create(new Line(at + offset * 0.75, at + offset * 0.95), Colour(Math.Abs(value))));
 
+            Candidate(line.To, value);
             Label(line.To, value);
         }
 
@@ -1027,6 +1050,19 @@ namespace Alpaca4d.Gh
                 : BoundingBox.Unset;
 
             return box.IsValid && box.Diagonal.Length > 0.0 ? box.Diagonal.Length * 0.08 : 1.0;
+        }
+
+        /// <summary>
+        /// A value drawn at <paramref name="at"/>, kept if it is the largest or the smallest yet of the
+        /// result being built: what Max and min writes. Every value drawn, not only the one Show values
+        /// writes on each element, which is the element's largest in size and may be neither.
+        /// </summary>
+        private void Candidate(Point3d at, double value, double lift = 0.0)
+        {
+            var shown = _current;
+            if (shown == null || double.IsNaN(value) || double.IsInfinity(value)) return;
+            if (!shown.Largest.Set || value > shown.Largest.Value) shown.Largest = new Extreme(at, value, lift);
+            if (!shown.Smallest.Set || value < shown.Smallest.Value) shown.Smallest = new Extreme(at, value, lift);
         }
 
         /// <summary>A value to write on the model, when Show values is ticked; see <see cref="_labels"/>.</summary>
