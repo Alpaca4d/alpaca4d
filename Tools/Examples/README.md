@@ -16,7 +16,7 @@ are here at the top.
 | `Design/` | Section and member design: the Utilisation, Interaction Domain and Moment Curvature examples |
 | `Optimisation/` | The Section Optimiser examples, the Explorer's footbridge study and the twisted ring |
 | `Topology/` | Topology Optimisation, Multi-Material Topology and BESO, and the nodes in space |
-| `Solids/` | Ten node tetrahedra - the cow, the femur, the Rebellious Slave - and the scripts that mesh them |
+| `Solids/` | Ten node tetrahedra - the cow, the femur, the Rebellious Slave - and the scripts that mesh them; a vault of bricks from Mesh Loft and Mesh Series to Brick |
 | `Plasticity/` | Steel that yields, J2Plasticity: the beam with holes and four more |
 | `Printing/` | 3D printing in fresh concrete: the cylinder and the shapes printed along their sections |
 | `Benchmarks/` | The speed tests of Assemble and the solver, and the principal stress lines against closed forms |
@@ -104,6 +104,7 @@ script too:
     # Solids/
     ./make.sh Solids/SpotTheCow.py              # tetrahedra: a concrete cow under its own weight
     ./make.sh Solids/Femur.py                   # tetrahedra: a femur under the force of the hip - but see Femur.py below
+    ./make.sh Solids/MeshLoftBricks.py          # a vault of bricks from polylines: Mesh Loft and Mesh Series to Brick
     ./make.sh Solids/RebelliousSlave.py         # tetrahedra: Michelangelo's Rebellious Slave, its weight and modes
 
     # Plasticity/
@@ -184,6 +185,7 @@ script too:
 | `SpotTheCow.py` | A tetrahedron example: Spot the cow, a solid concrete cow 2.4 m long standing on its hooves under its own weight, in 5 030 tetrahedra, with the vertical stress drawn over it. |
 | `Femur.py` | A tetrahedron example on a bone: the Standardised Femur, held at the knee with the force of the hip on its head, in 3 813 tetrahedra, drawn deformed. Femur.gh is not what it writes: Assemble's Tolerance of 0.1 mm, without which three edge nodes at the knee are left unsupported and OpenSees does not converge, and the modes were set in Grasshopper (d3c2004), so do not write it over - upgrade it in Grasshopper instead. |
 | `RebelliousSlave.py` | A tetrahedron example in marble: Michelangelo's Rebellious Slave, 2.13 m and 875 kg on its plinth, in 28 119 tetrahedra, held under the plinth, its vertical stress under its own weight drawn in iso-surfaces, and its first six modes, a slider picking which a second Model View draws. Assemble's Tolerance is 0.1 mm: the default 1 cm would weld the middle nodes of its 2.5 cm edges to their corners. |
+| `MeshLoftBricks.py` | A concrete barrel vault in bricks, from polylines: a GhPython component (`MeshLoftBricksGeometry.py`) draws Layers + 1 surfaces through its thickness, a branch of polylines each; Mesh Loft lofts each into a mesh, Mesh Series to Brick makes a layer of SSP Bricks between each two. Both springings held, its own weight; drawn deformed and coloured by Von Mises stress. Five layers of bricks through its 400 mm to start with (1 440 bricks), the slider up to 10. The website's Mesh Loft - Mesh Series to Bricks example. |
 
 ### Plasticity/
 
