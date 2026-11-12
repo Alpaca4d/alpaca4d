@@ -22,7 +22,7 @@ TOPICS = [
     ("examples", "Design checks and studies"), ("domain-moment-curvature", "Column domain"),
     ("topology-optimisation", "Topology optimisation"), ("principal-stress-lines", "Principal stress lines"),
     ("solids", "Solids"), ("model-view", "Model View"), ("how-to", "How-to guides"), ("components", "Components"),
-    ("support", "Support"), ("playground", "Playground"), ("twisted-ring", "Twisted ring"),
+    ("support", "Support"), ("playground", "Playground"), ("twisted-ring", "Twisted ring"), ("report", "Report"),
 ]
 # Posts that should wait, and why; matched against the start of a case's id.
 HOLD = {
@@ -32,6 +32,7 @@ HOLD = {
     "pushover/": "Not out yet: Pushover Analysis is only in 0.12.0_Dev, in no Yak beta, and the example page is not pushed. Release a beta and push the website first.",
     "plasticity/": "Not out yet: J2Plasticity is only in 0.12.0_Dev, in no Yak beta, and the example page is not pushed. Release a beta and push the website first.",
     "teaser/": "Shows Pushover, J2 Plasticity and Footfall, which are in no Yak beta yet: post once they are, or cut those chapters out of teaser.py (posters 04 and 05 out of the carousel) first.",
+    "report/": "Not out yet: the Report component is only on the report-module branch, in no Yak beta, and has no example page on the website. Merge it, release a beta and publish an example first.",
     "inigo-the-dragon": "Its example is gone: the Rebellious Slave took its place on the Ten Node Tetrahedron page (2026-11-06), so the post's link leads nowhere.",
 }
 # Posts left off the page, matched exactly against a case's id, and why; their folders and READMEs stay.
