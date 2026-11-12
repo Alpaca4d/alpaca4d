@@ -44,7 +44,9 @@ MENU_GAP = 6
 MENU_FONT = 12
 CONTROL_FONT = 14
 CHAR = 8.6              # Overpass Mono at 14 px, per character
-ROW = {"check": 24, "dropdown": 32, "slider": 28, "text": 18, "plug": 32, "checks": 24}
+ROW = {"check": 24, "dropdown": 32, "slider": 28, "text": 18, "plug": 32, "checks": 24, "pad": 6}
+INDENT = 16             # how far a frame's controls stand in from the frame's own edge
+
 MIN_H = 80              # NODE_MINIMUM_HEIGHT
 PORT_FONT = 18          # NODE_PORT_LABEL_FONT_SIZE
 PORT_OFFSET = 12        # NODE_PORT_LABEL_OFFSET
@@ -55,19 +57,50 @@ CHIP = 9                # NODE_PORT_CHIP_SIZE
 MARGIN = 10
 
 
+def grid_columns(c):
+    """How many columns a grid of checkboxes has: so many, or as even rows of at most three."""
+    n = len(c["items"])
+    if c.get("grid", -1) > 0:
+        return min(c["grid"], n)
+    rows = max(1, -(-n // 3))
+    return max(1, -(-n // rows))
+
+
 def row_height(kind, c):
-    # A group of checkboxes is one row high laid out in a row, a row per box in a column.
+    # A group of checkboxes is one row high laid out in a row, a row per box in a column, a row per
+    # line of a grid.
+    if kind == "checks" and c.get("grid", -1) >= 0:
+        return ROW[kind] * -(-len(c["items"]) // grid_columns(c))
     if kind == "checks" and not c.get("row"):
         return ROW[kind] * len(c["items"])
     return ROW[kind]
 
 
+def cell_width(item):
+    return 24 + len(item["text"]) * CHAR
+
+
+def grid_widths(c):
+    n = grid_columns(c)
+    widths = [0] * n
+    for i, item in enumerate(c["items"]):
+        widths[i % n] = max(widths[i % n], cell_width(item))
+    return widths
+
+
 def checks_width(c):
+    if c.get("grid", -1) >= 0:
+        return sum(grid_widths(c)) + 16 * (grid_columns(c) - 1)
     # A box, its label and a gap, for each box in the row.
-    return sum(24 + len(item["text"]) * CHAR + 16 for item in c["items"]) - 16
+    return sum(cell_width(item) + 16 for item in c["items"]) - 16
 
 
-def check_box(x, mid, checked):
+def check_box(x, mid, checked, round_=False):
+    if round_:
+        out = [f'<circle cx="{x + 7}" cy="{mid}" r="7" fill="{LIGHT}" stroke="{DARK}" stroke-width="2"/>']
+        if checked:
+            out.append(f'<circle cx="{x + 7}" cy="{mid}" r="3.5" fill="{DARK}"/>')
+        return out
     fill = DARK if checked else LIGHT
     out = [f'<rect x="{x}" y="{mid - 7}" width="14" height="14" rx="3" ry="3" fill="{fill}" stroke="{DARK}" stroke-width="2"/>']
     if checked:
@@ -93,7 +126,31 @@ def left_rounded(x, y, w, h, r):
 
 
 def visible_controls(menu):
-    return [c for c in menu["controls"] if c.get("visible", True) and c["kind"] in ROW]
+    return [c for c in menu["controls"] if c.get("visible", True) and (c["kind"] in ROW or c["kind"] == "box")]
+
+
+def control_rows(controls, depth=0):
+    """The rows of some controls, each with how many frames it is in: a frame - a group box, or a
+    framed group of checkboxes - opens and closes with a thin pad row, and its controls stand in."""
+    rows = []
+    for c in controls:
+        if not c.get("visible", True):
+            continue
+        kind = c["kind"]
+        if kind == "box":
+            inner = control_rows(c["controls"], depth + 1)
+            if inner:
+                rows += [("pad", {"frame": "open"}, depth + 1)] + inner + [("pad", {"frame": "close"}, depth + 1)]
+            continue
+        if kind not in ROW:
+            continue
+        if kind == "slider" and c.get("name"):
+            rows.append(("text", {"kind": "text", "text": c["name"]}, depth))
+        if kind == "checks" and c.get("framed"):
+            rows += [("pad", {"frame": "open"}, depth + 1), (kind, c, depth + 1), ("pad", {"frame": "close"}, depth + 1)]
+        else:
+            rows.append((kind, c, depth))
+    return rows
 
 
 def slider_text(c):
@@ -104,29 +161,27 @@ def menu_rows(menu):
     """The rows an open menu shows, top to bottom: its grips, an input and an output to a row,
     then its controls."""
     ins, outs = menu["plugs"], menu.get("outputs") or []
-    rows = [("plug", (ins[i] if i < len(ins) else "", outs[i] if i < len(outs) else ""))
+    rows = [("plug", (ins[i] if i < len(ins) else "", outs[i] if i < len(outs) else ""), 0)
             for i in range(max(len(ins), len(outs)))]
-    for c in visible_controls(menu):
-        if c["kind"] == "slider" and c.get("name"):
-            rows.append(("text", {"kind": "text", "text": c["name"]}))
-        rows.append((c["kind"], c))
-    return rows
+    return rows + control_rows(visible_controls(menu))
 
 
 def menu_height(menu, open_):
     if not open_:
         return MENU_HEADER
     rows = menu_rows(menu)
-    return MENU_HEADER + (4 + 8 + sum(row_height(k, c) for k, c in rows) + 8 if rows else 0)
+    return MENU_HEADER + (4 + 8 + sum(row_height(k, c) for k, c, _ in rows) + 8 if rows else 0)
 
 
 def menu_width(menu):
     need = len(menu["name"]) * 9 + 60
-    for kind, c in menu_rows(menu):
+    for kind, c, depth in menu_rows(menu):
+        need -= depth * (INDENT + 12)
         if kind == "check":
             need = max(need, 30 + len(c["text"]) * CHAR)
         elif kind == "checks":
-            need = max(need, 6 + checks_width(c) if c.get("row") else 30 + max(len(i["text"]) for i in c["items"]) * CHAR)
+            wide = c.get("row") or c.get("grid", -1) >= 0
+            need = max(need, 6 + checks_width(c) if wide else 30 + max(len(i["text"]) for i in c["items"]) * CHAR)
         elif kind == "dropdown":
             item = c["items"][c["selected"]] if 0 <= c["selected"] < len(c["items"]) else ""
             need = max(need, 56 + len(item) * CHAR)
@@ -136,6 +191,7 @@ def menu_width(menu):
             need = max(need, 16 + len(c["text"]) * 7.4)
         elif kind == "plug":
             need = max(need, 40 + (len(c[0]) + len(c[1])) * CHAR + (24 if c[0] and c[1] else 0))
+        need += depth * (INDENT + 12)
     return need + 24
 
 
@@ -155,14 +211,22 @@ def draw_menu(menu, open_, x0, x1, y, left_x, right_x):
     if not rows:
         return out
     top = y + MENU_HEADER + 4
-    height = 8 + sum(row_height(k, c) for k, c in rows) + 8
+    height = 8 + sum(row_height(k, c) for k, c, _ in rows) + 8
     out.append(f'<rect x="{x0}" y="{top}" width="{x1 - x0}" height="{height}" rx="6" ry="6" fill="{PALE}"/>')
-    cy = top + 8
-    cx0, cx1 = x0 + 12, x1 - 12
+    left0, right0 = x0 + 12, x1 - 12
     mono = f'font-family="Overpass Mono, monospace" font-weight="600" font-size="{CONTROL_FONT}" fill="{DARK}"'
-    for kind, c in rows:
+
+    # The frames first, under their controls: each from its opening pad to its closing one.
+    out += frames(rows, top + 8, left0, right0)
+
+    cy = top + 8
+    for kind, c, depth in rows:
         h = row_height(kind, c)
         mid = cy + h / 2
+        cx0, cx1 = left0 + depth * (INDENT + 6), right0 - depth * 6
+        if kind == "pad":
+            cy += h
+            continue
         if kind == "plug":
             name_in, name_out = c
             if name_in:
@@ -174,11 +238,19 @@ def draw_menu(menu, open_, x0, x1, y, left_x, right_x):
         elif kind == "check":
             out += check_box(cx0, mid, c["checked"])
             out.append(f'<text x="{cx0 + 24}" y="{mid + CONTROL_FONT * 0.35}" {mono}>{html.escape(c["text"])}</text>')
+        elif kind == "checks" and c.get("grid", -1) >= 0:
+            # A grid: columns as wide as their widest box and label, so the boxes line up down the rows.
+            widths, n = grid_widths(c), grid_columns(c)
+            for i, item in enumerate(c["items"]):
+                x = cx0 + sum(widths[:i % n]) + 16 * (i % n)
+                row_mid = cy + ROW[kind] * (i // n) + ROW[kind] / 2
+                out += check_box(x, row_mid, item["checked"], c.get("round"))
+                out.append(f'<text x="{x + 24}" y="{row_mid + CONTROL_FONT * 0.35}" {mono}>{html.escape(item["text"])}</text>')
         elif kind == "checks":
             # In a row, each box and its label side by side; in a column, as checkboxes one under another.
             x, row_mid = cx0, mid if c.get("row") else cy + ROW[kind] / 2
             for item in c["items"]:
-                out += check_box(x, row_mid, item["checked"])
+                out += check_box(x, row_mid, item["checked"], c.get("round"))
                 out.append(f'<text x="{x + 24}" y="{row_mid + CONTROL_FONT * 0.35}" {mono}>{html.escape(item["text"])}</text>')
                 if c.get("row"):
                     x += 24 + len(item["text"]) * CHAR + 16
@@ -202,6 +274,22 @@ def draw_menu(menu, open_, x0, x1, y, left_x, right_x):
             out.append(f'<text x="{cx0}" y="{mid + 4}" font-family="Overpass Mono, monospace" font-weight="600" font-size="12" fill="{MUTED}">{html.escape(c["text"])}</text>')
         cy += h
     return out
+
+
+def frames(rows, top, left0, right0):
+    """The frames round the rows between each opening pad and its closing one, outer ones first."""
+    out, cy, opened = [], top, []
+    for kind, c, depth in rows:
+        h = row_height(kind, c)
+        if kind == "pad" and c["frame"] == "open":
+            opened.append(cy)
+        elif kind == "pad":
+            start = opened.pop()
+            fx = left0 + (depth - 1) * (INDENT + 6) + INDENT - 6
+            fr = right0 - (depth - 1) * 6
+            out.append((depth, f'<rect x="{fx}" y="{start}" width="{fr - fx}" height="{cy + h - start}" rx="5" ry="5" fill="{LIGHT}" stroke="{DARK}" stroke-width="1.5"/>'))
+        cy += h
+    return [svg for _, svg in sorted(out, key=lambda f: f[0])]
 
 
 def node_svg(component, icon_dir, names=False, open_all=False):
@@ -252,7 +340,7 @@ def node_svg(component, icon_dir, names=False, open_all=False):
     for m, o in zip(menus, opened):
         if o:
             py = yy + MENU_HEADER + 4 + 8
-            for kind, (name_in, name_out) in [r for r in menu_rows(m) if r[0] == "plug"]:
+            for kind, (name_in, name_out), _ in [r for r in menu_rows(m) if r[0] == "plug"]:
                 menu_grips += [(x, py + ROW["plug"] / 2 - oy) for x, name in ((ox, name_in), (ox + width, name_out)) if name]
                 py += ROW["plug"]
         yy += menu_height(m, o) + MENU_GAP

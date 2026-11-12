@@ -148,6 +148,14 @@ class Export
             return;
         }
         string visible = (bool)(Get(control, "Visible") ?? true) ? "true" : "false";
+        if (children != null && kind == "MenuGroupBox")
+        {
+            // A frame round what belongs to the control above it: its controls drawn in it, a little in.
+            var inner = new List<string>();
+            foreach (var child in children) Flatten(child, inner);
+            into.Add($"{{\"kind\":\"box\",\"controls\":[{string.Join(",", inner)}],\"visible\":{visible}}}");
+            return;
+        }
         switch (kind)
         {
             case "MenuCheckBox":
@@ -168,8 +176,13 @@ class Export
                 var labels = ((System.Collections.IEnumerable)Get(control, "Labels")).Cast<string>().ToList();
                 var ticked = new HashSet<int>(((System.Collections.IEnumerable)Get(control, "Ticked")).Cast<int>());
                 var boxes = labels.Select((label, i) => $"{{\"text\":{Q(label)},\"checked\":{(ticked.Contains(i) ? "true" : "false")}}}");
-                bool row = Get(control, "Direction").ToString() == "Horizontal";
-                into.Add($"{{\"kind\":\"checks\",\"items\":[{string.Join(",", boxes)}],\"row\":{(row ? "true" : "false")},\"visible\":{visible}}}");
+                string direction = Get(control, "Direction").ToString();
+                bool row = direction == "Horizontal";
+                // A grid: so many columns, or 0 for as many as there is room for.
+                int columns = direction == "Grid" ? Math.Max(0, (int)(Get(control, "Columns") ?? 0)) : -1;
+                Func<string, string> Flag = name => (bool)(Get(control, name) ?? false) ? "true" : "false";
+                into.Add($"{{\"kind\":\"checks\",\"items\":[{string.Join(",", boxes)}],\"row\":{(row ? "true" : "false")},\"grid\":{columns}," +
+                         $"\"round\":{Flag("Round")},\"framed\":{Flag("Framed")},\"visible\":{visible}}}");
                 break;
             default:
                 into.Add($"{{\"kind\":{Q(kind)},\"visible\":{visible}}}");
