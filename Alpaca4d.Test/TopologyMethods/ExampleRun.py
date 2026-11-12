@@ -1,5 +1,5 @@
 #! python3
-# Builds Tools/Examples/MultiMaterialBridge.py's and BesoBridge.py's definitions inside a running Rhino 8 with
+# Builds Tools/Examples/Topology/MultiMaterialBridge.py's and BesoBridge.py's definitions inside a running Rhino 8 with
 # this build of the plugin, runs each optimisation to its end, analyses the design as the definition does,
 # and checks what comes out. example.sh fills in the placeholders and starts this with rhinocode; it writes
 # what it found to result.txt. Loaded as ../TopologyOptimisation/ExampleRun.py loads the plugin.

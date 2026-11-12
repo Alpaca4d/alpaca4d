@@ -9,8 +9,8 @@
     ./run.sh bench grasshopper                 # what ../TopologyOptimisation/GrasshopperChecks.cs expects of the new components
     ./run.sh bench node truss 20               # a space-truss node in a 1 m cube of 20 bricks a side, by all three methods
     ./run.sh bench node joint 20               # a beam-column joint, the same way
-    ./example.sh                               # Tools/Examples/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
-    ./nodes.sh                                 # Tools/Examples/TopologyNodes.py's two definitions, against the node benches
+    ./example.sh                               # Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
+    ./nodes.sh                                 # Tools/Examples/Topology/TopologyNodes.py's two definitions, against the node benches
     ./speed.sh                                 # the speed test: every method timed on the bridge, the joint and the truss node
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or
@@ -79,7 +79,7 @@ load. It also draws material towards a kept deck in bending, and a filter much w
 starves a member far from it until it is cut through: at 3 elements, 1 m, the bridge broke apart, which is
 why the default is 2.
 
-**Nodes in space**, Tools/Examples/TopologyNodes.py's two definitions at 20 bricks per metre (`bench node`, and
+**Nodes in space**, Tools/Examples/Topology/TopologyNodes.py's two definitions at 20 bricks per metre (`bench node`, and
 `nodes.sh` in Rhino, 2026-11-05):
 
 | | Truss node, deck / Grasshopper | Beam-column joint, deck / Grasshopper |

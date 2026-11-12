@@ -7,7 +7,7 @@ description: Make the picture of a structure deforming - a looping GIF and MP4 o
 
 The pictures are made by a scene of `Tools/Marketing` (its README says how to run one), with the
 `Deforming` helper of `Shots.cs`. `Structures` and `TwoSpan` in `Shots.cs` are worked examples: `Structures` makes the six conventional
-structures' GIFs from `Tools/Examples/Structures.py`, whose `deformed` sets up the view. Follow the gh-canvas-capture skill for everything
+structures' GIFs from `Tools/Examples/Structures/Structures.py`, whose `deformed` sets up the view. Follow the gh-canvas-capture skill for everything
 about capturing; this skill is what makes these pictures read well.
 
 ## 1. The definition

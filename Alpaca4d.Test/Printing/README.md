@@ -7,7 +7,7 @@
 Checks the solids' and joint bands' stress stiffness in `Alpaca4d.Buckling` on 3D printed walls. The
 bricks, their ages, the fresh concrete and the joint band come from `Printing.cs` - `PrintedLayers`,
 `FreshConcrete`, `SurfaceConnection` - the C# the printed cylinder example's GhPython components were
-written from (`Tools/Examples/PrintedCylinderLayers.py`, `PrintingConcrete.py`,
+written from (`Tools/Examples/Printing/PrintedCylinderLayers.py`, `PrintingConcrete.py`,
 `PrintingJoint.py`); they are not part of the plugin. The decks are written as Assemble writes
 them, and need an OpenSees that prints its matrices sparse.
 
@@ -20,7 +20,7 @@ them, and need an OpenSees that prints its matrices sparse.
 | the wall with joint bands | bonded when as stiff as the concrete; a stack on slipping joints at Haringx's load, P = (√(S² + 4 P_E S) − S) / 2 |
 
 `python3 structure.py` checks the layers of the printed structure example
-(`Tools/Examples/PrintedStructureLayers.py`), without Rhino, on sections made in the test: an upright
+(`Tools/Examples/Printing/PrintedStructureLayers.py`), without Rhino, on sections made in the test: an upright
 cylinder (the cylinder's 80 bricks a layer), a leaning one, a cone, a flaring one, two rings merging, a
 lobed column twisting (the same bricks every layer: its nodes turn with it rather than bunch), a
 ring opening, a ring with a 10 mm slit (printed closed: the filament fills it), a narrow rectangle with

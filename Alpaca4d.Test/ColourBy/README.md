@@ -24,7 +24,7 @@ Model View's **Colour by** draws the elements in their element's, section's or m
 * **Old files open.** Grasshopper reads a component's inputs by position, and only as many as the
   component has: a file saved before an input was added has nothing for it, which Grasshopper
   reports as a corrupt archive. Section Library, Material Library and Model View are read from
-  `Tools/Examples/SteelCantilever.gh`, saved before the Colour input and Colour by, and must come
+  `Tools/Examples/Design/SteelCantilever.gh`, saved before the Colour input and Colour by, and must come
   back with their new input or dropdown and no message.
 * **Every section and material component has a Colour input, last**, in each material unit of
   Uniaxial and nD too.

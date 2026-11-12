@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tools/Examples/TopologyBenchmarks.py's definition, built by its own build(doc) in a running Rhino 8 with
+# Tools/Examples/Topology/TopologyBenchmarks.py's definition, built by its own build(doc) in a running Rhino 8 with
 # its script server started (StartScriptServer), with this build of the plugin; both benchmarks run for
 # ITERATIONS (30) and are checked against the test bench's histories at that iteration, when RESULTS holds
 # them (./run.sh bench cantilever and simply-supported write them).
@@ -24,7 +24,7 @@ at() { [ -f "$RESULTS/$1_history.csv" ] && awk -F, -v n="$ITERATIONS" '$1 == n {
 work=$(mktemp -d)
 cp "$GHDIR"/*.dll "$GHDIR"/*.gha "$work/"
 cp "$LICENSE" "$work/license.bin"
-sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
+sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples/Topology && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
     -e "s|__ITERATIONS__|$ITERATIONS|" -e "s|__CANTILEVER__|$(at cantilever)|" -e "s|__SIMPLE__|$(at simply-supported)|" \
     ExampleRun.py > "$work/ExampleRun.py"
 

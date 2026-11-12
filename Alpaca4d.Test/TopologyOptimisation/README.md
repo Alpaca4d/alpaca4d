@@ -4,9 +4,9 @@
     ./run.sh bench cantilever        # top3d's cantilever, against reference.py
     ./run.sh bench simply-supported  # a simply supported beam, the same way
     ./run.sh bench cantilever-20k    # 19 200 bricks, for the time it takes
-    ./run.sh bench bridge            # Tools/Examples/TopologyBridge.gh's model (bridge-<n>: n bricks per metre)
+    ./run.sh bench bridge            # Tools/Examples/Topology/TopologyBridge.gh's model (bridge-<n>: n bricks per metre)
     ./grasshopper.sh                 # in a running Rhino 8 with its script server started (StartScriptServer)
-    ./example.sh                     # Tools/Examples/TopologyBenchmarks.gh's definition, built and run there
+    ./example.sh                     # Tools/Examples/Topology/TopologyBenchmarks.gh's definition, built and run there
 
 Topology Optimisation finds where a solid needs its material: minimum compliance by SIMP, with the
 optimality criteria update and a density filter, as top3d (Liu and Tovar 2014, "An efficient 3D
@@ -136,7 +136,7 @@ alone, as the run does when it asks for a solution.
 
 ## What example.sh checks
 
-`Tools/Examples/TopologyBenchmarks.gh` is written by its script, which `make.sh` runs without Rhino.
+`Tools/Examples/Topology/TopologyBenchmarks.gh` is written by its script, which `make.sh` runs without Rhino.
 `ExampleRun.py` runs the same script's `build(doc)` inside Rhino 8, with its components made from this
 build of the plugin, solves the definition, switches both Run toggles on with Iterations at 30
 (`ITERATIONS`), and compares each problem's compliance at that iteration with the test bench's history

@@ -13,7 +13,7 @@ RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.d
 [ -f "$RHINO" ] || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp J2Plasticity.cs ../../Tools/Examples/PlasticityPlateHole.txt "$work/"
+cp J2Plasticity.cs ../../Tools/Examples/Plasticity/PlasticityPlateHole.txt "$work/"
 cp "$COREDIR"/*.dll "$work/" 2>/dev/null || true
 cp "$RHINO" "$work/"
 

@@ -1,4 +1,4 @@
-"""The printed structure example's layers (Tools/Examples/PrintedStructureLayers.py) on shapes made here:
+"""The printed structure example's layers (Tools/Examples/Printing/PrintedStructureLayers.py) on shapes made here:
 sections as polylines, as Printed Layers makes them from a Brep, without Rhino.
 
     python3 structure.py
@@ -13,7 +13,7 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "Tools", "Examples"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "Tools", "Examples", "Printing"))
 from PrintedStructureLayers import close_gaps, level_nodes, bricks_of, printed  # noqa: E402
 
 H, SEGMENT, WIDTH = 0.01, 0.04, 0.04

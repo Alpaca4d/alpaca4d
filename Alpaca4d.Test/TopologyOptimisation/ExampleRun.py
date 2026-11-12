@@ -1,5 +1,5 @@
 #! python3
-# Builds Tools/Examples/TopologyBenchmarks.py's definition inside a running Rhino 8 with this build of the
+# Builds Tools/Examples/Topology/TopologyBenchmarks.py's definition inside a running Rhino 8 with this build of the
 # plugin, runs both benchmarks for a few iterations and checks them against the test bench's histories.
 # example.sh fills in the placeholders and starts this with rhinocode; it writes what it found to
 # result.txt.

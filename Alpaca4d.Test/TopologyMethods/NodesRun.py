@@ -1,5 +1,5 @@
 #! python3
-# Builds Tools/Examples/TopologyNodes.py's two definitions inside a running Rhino 8 with this build of the plugin,
+# Builds Tools/Examples/Topology/TopologyNodes.py's two definitions inside a running Rhino 8 with this build of the plugin,
 # runs all three optimisations on each and checks them against ./run.sh bench node's summaries; then analyses
 # each design as group 8 does. nodes.sh fills in the placeholders and starts this with rhinocode; it writes what
 # it found to result.txt. Loaded as ExampleRun.py loads the plugin.

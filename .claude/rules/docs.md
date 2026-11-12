@@ -18,7 +18,7 @@ The docs follow Diátaxis: four kinds of page, each with one job, in its own sid
   goes under a topic - Supports and releases, Loading, Geometry, Analysis, Results, Design checks,
   Optimisation, Exchange, or a new one - whose `README.md` lists its guides; list it there, in
   `doc/how-to/README.md` and in `SUMMARY.md` under its topic. A guide starts with a picture of what it gets you, beside it in
-  its topic folder: a Model View capture from `Tools/Marketing` (`HowToPictures.py` and the `howto`
+  its topic folder: a Model View capture from `Tools/Marketing` (`Scenes/HowToPictures.py` and the `howto`
   scene hold the ones made for the guides), an example's picture, or one a reference page has.
 - **Reference** (`doc/basics/`): one page per component, as below. What it takes and gives, when to
   use it, what it writes for OpenSees.

@@ -30,7 +30,7 @@ cp "$GHDIR"/*.dll "$GHDIR"/*.gha "$work/"
 printf '{ "OpenSeesPath": "%s" }\n' "$OPENSEES" > "$work/settings.json"
 cp StressLinesCheck.cs SolidStressLinesCheck.cs "$work/"
 # A definition saved before Principal Stress Lines had its Solids unit, to open.
-cp ../../Tools/Examples/StressLinesBenchmarks.gh "$work/"
+cp ../../Tools/Examples/Benchmarks/StressLinesBenchmarks.gh "$work/"
 
 ( cd "$work"
   cp "$GH"/Grasshopper.dll "$GH"/GH_IO.dll "$RHINO" .

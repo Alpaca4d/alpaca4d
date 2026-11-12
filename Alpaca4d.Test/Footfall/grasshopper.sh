@@ -16,7 +16,7 @@ RHINOCODE=${RHINOCODE:-"/Applications/Rhino 8.app/Contents/Resources/bin/rhinoco
 # A folder of its own each run: Rhino keeps what it loaded mapped, and Natural Vibration writes beside
 # each definition.
 work=$(mktemp -d)
-cp ../../Tools/Examples/FootfallStair.gh ../../Tools/Examples/FootfallHelicalStair.gh ../../Tools/Examples/FootfallStraightStair.gh "$work/"
+cp ../../Tools/Examples/Structures/FootfallStair.gh ../../Tools/Examples/Structures/FootfallHelicalStair.gh ../../Tools/Examples/Structures/FootfallStraightStair.gh "$work/"
 cp GrasshopperChecks.cs "$work/"
 ( cd "$work"
   cp "$GH"/Grasshopper.dll "$GH"/GH_IO.dll "$RHINO" .

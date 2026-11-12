@@ -120,7 +120,7 @@ static class TopologyMethods
     }
 
     /// <summary>
-    /// Tools/Examples/TopologyBridge.gh's block, at n bricks per metre: steel 16 x 2 x 4 m, pinned along both ends of
+    /// Tools/Examples/Topology/TopologyBridge.gh's block, at n bricks per metre: steel 16 x 2 x 4 m, pinned along both ends of
     /// its bottom, its top layer a deck kept solid under 10 kN/m2. Units kN, m.
     /// </summary>
     static Problem Bridge(int n)
@@ -257,7 +257,7 @@ static class TopologyMethods
     }
 
     /// <summary>
-    /// A node of a space truss, Tools/Examples/TopologyTrussNode's: a 1 m cube of n bricks a side (n a multiple of 10)
+    /// A node of a space truss, Tools/Examples/Topology/TopologyTrussNode's: a 1 m cube of n bricks a side (n a multiple of 10)
     /// where nine members meet. The chords along x pull out with 450 and 250 kN, those along y push in with 300 and 150
     /// kN - unequal, as a space truss's chords are on either side of a node, the difference going down the diagonals -
     /// a post on top brings 600 kN down, and four diagonals leave from the bottom corners to the supports. Each member is
@@ -288,7 +288,7 @@ static class TopologyMethods
     }
 
     /// <summary>
-    /// An interior beam-column joint, Tools/Examples/TopologyBeamColumnJoint's: a 1 m cube of n bricks a side (n a
+    /// An interior beam-column joint, Tools/Examples/Topology/TopologyBeamColumnJoint's: a 1 m cube of n bricks a side (n a
     /// multiple of 10) between a column, 0.4 m square, held at its foot and loaded with 1500 kN at its head, and four
     /// beams, 0.2 m wide and 0.4 m deep, from 0.4 to 0.8 m up, each bringing its shear and a hogging moment - 150 kN and
     /// 150 kNm from +x, 150 kN and 80 kNm from -x, 100 kN and 100 kNm from +y and -y - so the joint takes an unbalanced
@@ -673,7 +673,7 @@ static class TopologyMethods
         }
         else if (name == "bridge")
         {
-            // Tools/Examples/TopologyBridge.gh's block, by SIMP, BESO and MMA with one material. BRIDGE_N sets the bricks per
+            // Tools/Examples/Topology/TopologyBridge.gh's block, by SIMP, BESO and MMA with one material. BRIDGE_N sets the bricks per
             // metre (3), BESO_ER and BESO_R BESO's evolutionary ratio and filter radius (0.02, and 0 for the default),
             // BESO_ONLY=1 runs BESO alone.
             var problem = Bridge(int.Parse(Environment.GetEnvironmentVariable("BRIDGE_N") ?? "3"));

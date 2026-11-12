@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Writes the example definitions to .gh files straight from their scripts, without Rhino.
 #
-#     ./make.sh                                   # FootbridgeStudy.gh, next to its script
-#     ./make.sh path/to/Script.py [out.gh]         # any script with a build(doc), next to it
+#     ./make.sh                                   # Optimisation/FootbridgeStudy.gh, next to its script
+#     ./make.sh Folder/Script.py [out.gh]          # any script with a build(doc), next to it
 #     ./make.sh ../../Alpaca4d.Test/Optimisation/NonLinearOptimisationCases.py
+#
+# An out.gh given as a bare name goes next to the script too; one with a folder in it is taken from
+# where make.sh was called.
 #
 # The script builds its definition from the real Grasshopper and Alpaca4d components, loaded in
 # mono with the IronPython that Rhino 7 ships; WriteGh.py saves it as Grasshopper saves a file.
@@ -12,12 +15,12 @@
 # NuGet cache, which the build has already restored.
 set -euo pipefail
 # The script and the output, from where make.sh was called.
-SCRIPT=${1:-$(dirname "$0")/FootbridgeStudy.py}
+SCRIPT=${1:-$(dirname "$0")/Optimisation/FootbridgeStudy.py}
 [ -f "$SCRIPT" ] || { echo "no script $SCRIPT"; exit 1; }
 script_dir=$(cd "$(dirname "$SCRIPT")" && pwd)
 module=$(basename "$SCRIPT" .py)
 OUT=${2:-$script_dir/$module.gh}
-case $OUT in /*) ;; *) OUT=$(pwd)/$OUT ;; esac
+case $OUT in /*) ;; */*) OUT=$(pwd)/$OUT ;; *) OUT=$script_dir/$OUT ;; esac
 cd "$(dirname "$0")"
 GHA=${GHA:-../../Alpaca4d.Gh/bin/Release/net48/Alpaca4d.Gh.gha}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}

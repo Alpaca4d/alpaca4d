@@ -6,7 +6,7 @@
 # Builds the real components in mono, as Tools/Examples/make.sh does to write the examples, so it
 # needs what that needs: a Release build of Alpaca4d.Gh, mono, Grasshopper and RhinoCommon 7.18 from
 # the NuGet cache and Rhino 7 for Mac for the Visual Basic runtime and the libraries Grasshopper
-# loads. The old file is Tools/Examples/SteelCantilever.gh.
+# loads. The old file is Tools/Examples/Design/SteelCantilever.gh.
 set -e
 cd "$(dirname "$0")"
 GHA=${GHA:-../../Alpaca4d.Gh/bin/Release/net48/Alpaca4d.Gh.gha}
@@ -14,11 +14,11 @@ GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | he
 RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.dll 2>/dev/null | head -1)}
 R7=${R7:-"/Applications/Rhino 7.app/Contents/Frameworks/RhCore.framework/Versions/A"}
 VB=${VB:-$(ls "$R7/Frameworks/Mono64Rhino.framework/Versions/"*/Resources/lib/mono/gac/Microsoft.VisualBasic/10.0.0.0__b03f5f7f11d50a3a/Microsoft.VisualBasic.dll 2>/dev/null | head -1)}
-EXAMPLE=${EXAMPLE:-$(cd ../../Tools/Examples && pwd)/SteelCantilever.gh}
+EXAMPLE=${EXAMPLE:-$(cd ../../Tools/Examples/Design && pwd)/SteelCantilever.gh}
 # Definitions saved before the Colour inputs, whose section and material components are opened as
 # well: the examples here, and the docs' own when the website repository sits next to this one.
 DOCS=${DOCS:-../../../alpaca4d.github.io/doc}
-OLD=("$EXAMPLE" "$(cd ../../Tools/Examples && pwd)/MixedModelSpeed.gh")
+OLD=("$EXAMPLE" "$(cd ../../Tools/Examples/Benchmarks && pwd)/MixedModelSpeed.gh")
 for gh in assets/beam.gh examples/earthquake/earthquake.gh examples/connection-design/connection-design.gh; do
   [ -f "$DOCS/$gh" ] && OLD+=("$(cd "$(dirname "$DOCS/$gh")" && pwd)/$(basename "$gh")")
 done

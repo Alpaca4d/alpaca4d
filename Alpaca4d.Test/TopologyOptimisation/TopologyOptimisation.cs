@@ -141,7 +141,7 @@ class TopologyOptimisationTest
     }
 
     /// <summary>
-    /// Tools/Examples/TopologyBridge.gh, at three bricks per metre as it opens, or as many as given: a steel
+    /// Tools/Examples/Topology/TopologyBridge.gh, at three bricks per metre as it opens, or as many as given: a steel
     /// block 16 x 2 x 4 m, pinned along both ends of its bottom, its top layer a deck kept solid under
     /// 10 kN/m2. Units kN, m.
     /// </summary>

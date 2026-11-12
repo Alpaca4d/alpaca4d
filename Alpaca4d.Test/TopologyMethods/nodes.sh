@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tools/Examples/TopologyNodes.py's two definitions - the space-truss node and the beam-column joint - each built
+# Tools/Examples/Topology/TopologyNodes.py's two definitions - the space-truss node and the beam-column joint - each built
 # by its build(doc) in a running Rhino 8 with its script server started (StartScriptServer), with this build of
 # the plugin. All three optimisations run on each, and their first compliance has to be what ./run.sh bench node
 # gives on its own deck - the proof that the definition models the members, the loads and the supports as meant.
@@ -28,7 +28,7 @@ work=$(mktemp -d)
 cp "$GHDIR"/*.dll "$GHDIR"/*.gha "$work/"
 cp "$LICENSE" "$work/license.bin"
 cp "$RESULTS"/node-truss-20_summary.csv "$RESULTS"/node-joint-20_summary.csv "$work/"
-sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
+sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples/Topology && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
     -e "s|__CASES__|$CASES|" NodesRun.py > "$work/NodesRun.py"
 
 if [ -n "$RHINO_PIPE" ]; then

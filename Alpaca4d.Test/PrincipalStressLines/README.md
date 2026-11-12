@@ -38,7 +38,7 @@ on itself.
 | the cantilever through OpenSees and the component | held against rigid-body motion only, the exact tractions at both ends |
 | the plate with one node lifted 5 cm | the four quads round it warped well past 0.01 |
 | a third of the plate's shells turned over, through the component | the Remark that says so |
-| Shells and Solids, one component | a new one opens on Shells; switching to Solids keeps SL1 and SL2 and adds SL3, and back; one saved on Solids reads back on Solids; and the example `Tools/Examples/StressLinesBenchmarks.gh`, saved before Solids, opens on Shells with its wires on SL1 and SL2 |
+| Shells and Solids, one component | a new one opens on Shells; switching to Solids keeps SL1 and SL2 and adds SL3, and back; one saved on Solids reads back on Solids; and the example `Tools/Examples/Benchmarks/StressLinesBenchmarks.gh`, saved before Solids, opens on Shells with its wires on SL1 and SL2 |
 
 What it caught on the way. The component was a port of LilyPad's code, and a benchmark against
 these solutions found the following in it:

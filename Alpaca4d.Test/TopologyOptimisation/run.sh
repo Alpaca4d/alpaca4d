@@ -7,7 +7,7 @@
 #     ./run.sh bench cantilever         top3d's cantilever, then reference.py on it when numpy is there
 #     ./run.sh bench simply-supported   the simply supported beam, the same way
 #     ./run.sh bench cantilever-20k     a cantilever of 19 200 bricks, for the time it takes
-#     ./run.sh bench bridge             Tools/Examples/TopologyBridge.gh as it opens (bridge-<n>: n bricks per metre)
+#     ./run.sh bench bridge             Tools/Examples/Topology/TopologyBridge.gh as it opens (bridge-<n>: n bricks per metre)
 #
 # A benchmark writes its history and densities to ./results (or RESULTS=...), which reference.py reads.
 set -e

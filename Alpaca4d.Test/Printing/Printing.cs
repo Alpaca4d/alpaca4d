@@ -1,5 +1,5 @@
 // The bricks, the fresh concrete and the joint band of a 3D print, for PrintingCheck.cs: the C# the
-// printed cylinder example's three GhPython components (Tools/Examples/PrintedCylinderLayers.py,
+// printed cylinder example's three GhPython components (Tools/Examples/Printing/PrintedCylinderLayers.py,
 // PrintingConcrete.py, PrintingJoint.py) were written from, kept here to drive the
 // buckling checks. They are not part of the plugin.
 using System;

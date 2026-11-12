@@ -34,5 +34,5 @@ Alpaca4d.Utils/data_*.bin
 
 # Python caches, and the deck and fibre output the Moment Curvature example writes next to itself
 __pycache__/
-Tools/Examples/FiberResults/
-Tools/Examples/MomentCurvature.tcl
+Tools/Examples/Design/FiberResults/
+Tools/Examples/Design/MomentCurvature.tcl

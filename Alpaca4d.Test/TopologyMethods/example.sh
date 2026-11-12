@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tools/Examples/MultiMaterialBridge.py and BesoBridge.py, each built by its own build(doc) in a running Rhino 8
+# Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, each built by its own build(doc) in a running Rhino 8
 # with its script server started (StartScriptServer), with this build of the plugin: each runs to its end, at
 # the bricks per metre it opens with, and its design is analysed as the definition does.
 # Needs a Release build of Alpaca4d.Gh, an OpenSees (OPENSEES, or the one on PATH) and a license (LICENSE,
@@ -17,7 +17,7 @@ LICENSE=${LICENSE:-"$HOME/Library/Application Support/Alpaca4d/license.bin"}
 work=$(mktemp -d)
 cp "$GHDIR"/*.dll "$GHDIR"/*.gha "$work/"
 cp "$LICENSE" "$work/license.bin"
-sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
+sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples/Topology && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
     ExampleRun.py > "$work/ExampleRun.py"
 
 if [ -n "$RHINO_PIPE" ]; then
