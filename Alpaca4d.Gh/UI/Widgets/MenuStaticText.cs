@@ -22,6 +22,9 @@ namespace Alpaca4d.UIWidgets
 			}
 		}
 
+		/// <summary>The text's colour: black unless set, a grey for a caption in a group box.</summary>
+		public Color Colour { get; set; } = Color.Black;
+
 		public MenuStaticText()
 			: base(0, "")
 		{
@@ -69,7 +72,7 @@ namespace Alpaca4d.UIWidgets
 					num = 0;
 				}
 				num = GH_Canvas.ZoomFadeLow;
-				SolidBrush brush = new SolidBrush(Color.FromArgb(num, 0, 0, 0));
+				SolidBrush brush = new SolidBrush(Color.FromArgb(num, Colour.R, Colour.G, Colour.B));
 				PointF point = new PointF(base.CanvasPivot.X, base.CanvasPivot.Y);
 				graphics.DrawString(_text, WidgetServer.Instance.TextFont, brush, point);
 			}

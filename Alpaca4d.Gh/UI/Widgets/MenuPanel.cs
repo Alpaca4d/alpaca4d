@@ -7,7 +7,7 @@ using System.Drawing;
 
 namespace Alpaca4d.UIWidgets
 {
-    public class MenuPanel : GH_Attr_Widget
+    public class MenuPanel : GH_Attr_Widget, IWidgetContainer
     {
         private List<GH_Attr_Widget> _controls;
 

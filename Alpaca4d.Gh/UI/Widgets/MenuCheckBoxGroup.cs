@@ -14,7 +14,16 @@ namespace Alpaca4d.UIWidgets
     /// is drawn as <see cref="MenuCheckBox"/> draws one, its label on the left and its box on the
     /// right; in a row, box and label side by side, the row shared out evenly between them, and
     /// carried on to a second row when the menu is too narrow for one. A row is what a short list of
-    /// short names wants: six beam forces in one line rather than six.
+    /// short names wants: six beam forces in one line rather than six. In a grid, as many columns as
+    /// the menu has room for, each as wide as the widest of its boxes and labels, so that the boxes
+    /// line up down the rows: what names of different lengths want, "X" beside "Load patterns".
+    ///
+    /// Square boxes, or round ones, with a dot when ticked; framed, if asked, in a rounded box of their
+    /// own, as a menu's panel is, so that they read as one group.
+    ///
+    /// Or one choice among them, as radio buttons are: <see cref="Single"/>. A click ticks the box
+    /// clicked and unticks the rest, and one is always ticked: what a drop-down would otherwise pick,
+    /// all the choices in sight.
     ///
     /// Saved as a chunk of its own, so its boxes cannot be confused with the plain checkboxes of the
     /// panel it is in. A file saved before a box was added keeps that box's default.
@@ -24,7 +33,8 @@ namespace Alpaca4d.UIWidgets
         public enum LayoutDirection
         {
             Vertical,
-            Horizontal
+            Horizontal,
+            Grid
         }
 
         private readonly List<string> _labels = new List<string>();
@@ -46,6 +56,46 @@ namespace Alpaca4d.UIWidgets
 
         /// <summary>The space between two boxes, along the row or down the column.</summary>
         public float Space { get; set; }
+
+        /// <summary>Round boxes, ticked with a dot, rather than square ones.</summary>
+        public bool Round { get; set; }
+
+        /// <summary>How far in from the menu's left edge the boxes start: to show they belong to the control above.</summary>
+        public float Indent { get; set; }
+
+        /// <summary>The boxes in a rounded frame of their own, as a menu's panel is.</summary>
+        public bool Framed { get; set; }
+
+        /// <summary>The room between the frame and the boxes in it, on each side.</summary>
+        private float Pad => Framed ? 4f : 0f;
+
+        /// <summary>
+        /// How many columns a grid has - 3 keeps X, Y, Z in a row - the menu made wide enough for them;
+        /// 0 for as many as the menu has room for, the rows then as even as they can be: four in two
+        /// rows of two rather than three and one.
+        /// </summary>
+        public int Columns { get; set; }
+
+        /// <summary>One box ticked, always: a click ticks the one clicked and unticks the rest.</summary>
+        public bool Single { get; set; }
+
+        /// <summary>The box ticked - the first, if more are - or 0 if none is. Setting it ticks that box alone, without raising <see cref="ValueChanged"/>.</summary>
+        public int Value
+        {
+            get
+            {
+                for (int i = 0; i < _active.Count; i++)
+                    if (_active[i]) return i;
+                return 0;
+            }
+            set
+            {
+                if (_active.Count > 0) TickOnly(Math.Max(0, Math.Min(_active.Count - 1, value)));
+            }
+        }
+
+        /// <summary>The label of the box ticked; empty when the group has none.</summary>
+        public string Picked => _labels.Count == 0 ? "" : _labels[Value];
 
         public event ValueChangeEventHandler ValueChanged;
 
@@ -102,32 +152,114 @@ namespace Alpaca4d.UIWidgets
             return new SizeF(width, height);
         }
 
+        /// <summary>Box <paramref name="i"/> and its label, side by side.</summary>
+        private float CellWidth(int i) => _checkSize.Width + _padding + LabelSize(_labels[i]).Width;
+
+        /// <summary>The room between two columns of a grid: more than a row's, whose cells have spare width.</summary>
+        private float GridGap => 2f * Space;
+
+        /// <summary>
+        /// A grid's columns, each as wide as the widest box and label in it: as many as fit in
+        /// <paramref name="width"/>, one at least.
+        /// </summary>
+        private float[] GridColumns(float width)
+        {
+            int count = _labels.Count;
+            for (int n = Columns > 0 ? Math.Min(Columns, count) : count; n >= 1; n--)
+            {
+                var columns = ColumnWidths(n);
+                if (n == 1 || columns.Sum() + (n - 1) * GridGap <= width + 0.5f)
+                {
+                    // As few rows as fit, and as many columns as those rows need: 2 x 2, not 3 + 1.
+                    if (Columns <= 0)
+                    {
+                        int rows = (count + n - 1) / n;
+                        columns = ColumnWidths((count + rows - 1) / rows);
+                    }
+                    return columns;
+                }
+            }
+            return new float[] { CellSize().Width };
+        }
+
+        /// <summary>The width of each of <paramref name="n"/> columns: the widest box and label in it.</summary>
+        private float[] ColumnWidths(int n)
+        {
+            var columns = new float[n];
+            for (int i = 0; i < _labels.Count; i++)
+                columns[i % n] = Math.Max(columns[i % n], CellWidth(i));
+            return columns;
+        }
+
         /// <summary>How many boxes go in one row, at the width the group has been given.</summary>
         private int PerRow(float width)
         {
-            if (Direction == LayoutDirection.Vertical || _labels.Count == 0) return 1;
+            if (Direction != LayoutDirection.Horizontal || _labels.Count == 0) return 1;
 
             float cell = CellSize().Width;
             int fit = (int)Math.Floor((width + Space) / (cell + Space));
             return Math.Max(1, Math.Min(_labels.Count, fit));
         }
 
+        /// <summary>Where each box and its label go, at the width the group has been given, from its top left corner.</summary>
+        private RectangleF[] Cells(float width)
+        {
+            int count = _labels.Count;
+            var cells = new RectangleF[count];
+            if (count == 0) return cells;
+
+            var cell = CellSize();
+            float left = Indent + Pad, top = Pad;
+            width = Math.Max(1f, width - Indent - 2f * Pad);
+
+            if (Direction == LayoutDirection.Grid)
+            {
+                var columns = GridColumns(width);
+                int n = columns.Length;
+                for (int i = 0; i < count; i++)
+                {
+                    int row = i / n, column = i % n;
+                    float x = left;
+                    for (int c = 0; c < column; c++) x += columns[c] + GridGap;
+                    cells[i] = new RectangleF(x, top + row * (cell.Height + Space), columns[column], cell.Height);
+                }
+                return cells;
+            }
+
+            int perRow = PerRow(width);
+            float cellWidth = Direction == LayoutDirection.Vertical ? width : (width - (perRow - 1) * Space) / perRow;
+            for (int i = 0; i < count; i++)
+            {
+                int row = i / perRow, column = i % perRow;
+                cells[i] = new RectangleF(left + column * (cellWidth + Space), top + row * (cell.Height + Space), cellWidth, cell.Height);
+            }
+            return cells;
+        }
+
         private float HeightAt(float width)
         {
-            if (_labels.Count == 0) return 0f;
-
-            int rows = (int)Math.Ceiling(_labels.Count / (double)PerRow(width));
-            return rows * CellSize().Height + (rows - 1) * Space;
+            var cells = Cells(width);
+            return cells.Length == 0 ? 0f : cells.Max(c => c.Bottom) + Pad;
         }
 
         public override SizeF ComputeMinSize()
         {
             var cell = CellSize();
+            float frame = 2f * Pad;
             if (Direction == LayoutDirection.Vertical)
-                return new SizeF(cell.Width, HeightAt(cell.Width));
+                return new SizeF(Indent + frame + cell.Width, HeightAt(Indent + frame + cell.Width));
+
+            // A grid of so many columns asks for the room they need.
+            if (Direction == LayoutDirection.Grid && Columns > 0 && _labels.Count > 0)
+            {
+                int n = Math.Min(Columns, _labels.Count);
+                var columns = ColumnWidths(n);
+                float width = Indent + frame + columns.Sum() + (n - 1) * GridGap;
+                return new SizeF(width, HeightAt(width));
+            }
 
             // As narrow as one box: a row too long for the menu goes on in the next one.
-            return new SizeF(cell.Width, cell.Height);
+            return new SizeF(Indent + frame + cell.Width, cell.Height + frame);
         }
 
         public override void PostUpdateBounds(out float outHeight)
@@ -137,17 +269,15 @@ namespace Alpaca4d.UIWidgets
 
         public override void Layout()
         {
-            int count = _labels.Count;
-            int perRow = PerRow(Width);
-            var cell = CellSize();
-            float cellWidth = Direction == LayoutDirection.Vertical ? Width : (Width - (perRow - 1) * Space) / perRow;
+            var cells = Cells(Width);
+            int count = cells.Length;
 
             _cells = new RectangleF[count];
             _boxes = new Rectangle[count];
             for (int i = 0; i < count; i++)
             {
-                int row = i / perRow, column = i % perRow;
-                var at = new RectangleF(CanvasPivot.X + column * (cellWidth + Space), CanvasPivot.Y + row * (cell.Height + Space), cellWidth, cell.Height);
+                var at = cells[i];
+                at.Offset(CanvasPivot.X, CanvasPivot.Y);
                 _cells[i] = at;
 
                 // In a column the box sits at the right, as a MenuCheckBox's does; in a row, before its label.
@@ -161,6 +291,8 @@ namespace Alpaca4d.UIWidgets
         {
             var graphics = args.Canvas.Graphics;
             int alpha = GH_Canvas.ZoomFadeLow;
+            if (Framed && _labels.Count > 0)
+                DrawFrame(graphics, alpha);
             using (var pen = new Pen(Color.FromArgb(alpha, 0, 0, 0), 1.5f))
             using (var paper = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
             using (var ink = new SolidBrush(Color.FromArgb(alpha, 0, 0, 0)))
@@ -173,6 +305,21 @@ namespace Alpaca4d.UIWidgets
                     float y = _cells[i].Y + (_cells[i].Height - size.Height) / 2f;
                     graphics.DrawString(_labels[i], WidgetServer.Instance.TextFont, ink, new PointF(x, y));
 
+                    if (Round)
+                    {
+                        var smoothing = graphics.SmoothingMode;
+                        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        graphics.FillEllipse(paper, box);
+                        graphics.DrawEllipse(pen, box);
+                        if (_active[i])
+                        {
+                            float inset = _padding / 2f + 0.5f;
+                            graphics.FillEllipse(ink, new RectangleF(box.X + inset, box.Y + inset, box.Width - 2 * inset, box.Height - 2 * inset));
+                        }
+                        graphics.SmoothingMode = smoothing;
+                        continue;
+                    }
+
                     graphics.FillRectangle(paper, box);
                     graphics.DrawRectangle(pen, box);
                     if (_active[i])
@@ -182,6 +329,16 @@ namespace Alpaca4d.UIWidgets
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// The rounded frame round the boxes: a little lighter than the panel or frame the group is in,
+        /// edged in the grey a menu's panel is edged in.
+        /// </summary>
+        private void DrawFrame(Graphics graphics, int alpha)
+        {
+            var frame = new RectangleF(CanvasPivot.X + Indent, CanvasPivot.Y, Width - Indent, Height);
+            WidgetFrame.Draw(graphics, frame, WidgetFrame.Fill(this, alpha), alpha);
         }
 
         /// <summary>The box whose stretch of the menu holds <paramref name="point"/>, label included; -1 for none.</summary>
@@ -201,9 +358,10 @@ namespace Alpaca4d.UIWidgets
         public override GH_ObjectResponse RespondToMouseUp(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             int i = At(e.CanvasLocation);
-            if (i >= 0 && i == _pressed)
+            if (i >= 0 && i == _pressed && !(Single && _active[i] && Ticked.Count() == 1))
             {
-                _active[i] = !_active[i];
+                if (Single) TickOnly(i);
+                else _active[i] = !_active[i];
                 ValueChanged?.Invoke(this, new EventArgs());
             }
 
@@ -233,6 +391,7 @@ namespace Alpaca4d.UIWidgets
             int count = Math.Min(_active.Count, chunk.GetInt32("Count"));
             for (int i = 0; i < count; i++)
                 _active[i] = chunk.GetBoolean("Active", i);
+            if (Single) Value = Value;   // one ticked, whatever the file says
             return true;
         }
 
