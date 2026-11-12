@@ -20,6 +20,7 @@ are here at the top.
 | `Plasticity/` | Steel that yields, J2Plasticity: the beam with holes and four more |
 | `Printing/` | 3D printing in fresh concrete: the cylinder and the shapes printed along their sections |
 | `Benchmarks/` | The speed tests of Assemble and the solver, and the principal stress lines against closed forms |
+| `Report/` | The Report test, and five example reports to share |
 
 Run `make.sh` from here, with the script's folder. An `out.gh` given as a bare name goes next to the
 script too:
@@ -125,6 +126,14 @@ script too:
     ./make.sh Benchmarks/MixedModelSpeed.py     # the speed test of Assemble Model
     # StressLinesBenchmarks.py runs in Rhino only (Custom Preview): run it there and save what it opens
 
+    # Report/
+    ./make.sh Report/ReportFrame.py             # a steel frame written up as a PDF by the Report component
+    CASE=beams ./make.sh Report/ReportCases.py ReportBeams.gh     # five example reports, one of each kind of
+    CASE=shells ./make.sh Report/ReportCases.py ReportShells.gh   # element: beams, shells, bricks, beams and
+    CASE=bricks ./make.sh Report/ReportCases.py ReportBricks.gh   # shells, and a stair of beams and shells
+    CASE=mixed ./make.sh Report/ReportCases.py ReportMixed.gh
+    CASE=stair ./make.sh Report/ReportCases.py ReportStair.gh
+
 ## What each one builds
 
 ### Playground/
@@ -208,6 +217,13 @@ script too:
 | `MixedModelSpeed.py` | A speed test of Assemble Model: a shell slab on steel beams and columns, cut at the slab's nodes, on a brick raft, with point, line, mesh and gravity loads in one pattern. One slider takes it from a hundred elements to forty thousand. |
 | `BrickSolverSpeed.py` | A speed test of the solver: an 8 x 8 x 6 m concrete block of SSP bricks, pinned along its bottom, with four column loads and its own weight. One slider takes it from 1 500 unknowns to 151 000, and a System list solves it with Mumps on several cores or with BandSPD or UmfPack on one (`Tools/OpenSees`). |
 | `StressLinesBenchmarks.py` | Principal Stress Lines against three closed-form solutions, each solved by OpenSees: Timoshenko and Goodier's cantilever loaded by its exact end tractions, Navier's simply supported slab (bending lines, with a toggle that turns a third of its shells over) and Kirsch's plate with a hole. Drawn side by side in Rhino's Top view: single lines through six seeds with the exact trajectories dashed over them, and fields of lines. Custom Preview cannot be made outside Rhino, so make.sh cannot write this one: run the script in Rhino and save what it opens. `Alpaca4d.Test/PrincipalStressLines` measures the same lines. |
+
+### Report/
+
+| Example | Builds |
+| --- | --- |
+| `ReportFrame.py` | The Report test: a two-storey steel frame, 6 x 4 m on plan and 3.5 m a storey, HEB200 columns and IPE300 and IPE240 beams in S355, every member in three pieces (48 elements); static, natural vibration (6 modes), linear buckling (4 modes) and footfall (people walking on the floors) analyses, their models wired into the Report; and the report components writing them up as a PDF - an A4 Report Page with a title block of its own, Report Texts whose headings the report numbers (1, 1.1, 1.1.1), Report Result Tables of the model, a Report Table of the loads, and Report Views by topic (Model, Static analysis, Natural vibration, Stability, Footfall), a picture for each component ticked, each with its largest and smallest value written on it and its table after it - through a Merge into the Report, with no Model View on the canvas. Set the toggle to True to write it beside the .gh, then click Open report. |
+| `ReportCases.py` | Five example reports to share, each a definition of its own, CASE one of: `beams` (`ReportBeams.gh`, Structures.py's truss roof hall: static, natural vibration and linear buckling), `shells` (`ReportShells.gh`, its barrel vault: the same three), `bricks` (`ReportBricks.gh`, MeshLoftBricks.py's vault of bricks: static and natural vibration), `mixed` (`ReportMixed.gh`, its footbridge, a deck of shells on a box girder of beams: static under its own weight and a crowd, and natural vibration) and `stair` (`ReportStair.gh`, FootfallStair.py's U stair, beams and shells: static, natural vibration and footfall). Each builds its structure with its own example's builder, adds the loads and analyses it lacks beside it, and the report in columns, a chapter each. The PDFs, their pages and the canvases are in the docs repository's `marketing/report/<case>/`. |
 
 ### Elsewhere
 

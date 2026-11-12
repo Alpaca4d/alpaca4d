@@ -36,3 +36,7 @@ Alpaca4d.Utils/data_*.bin
 __pycache__/
 Tools/Examples/Design/FiberResults/
 Tools/Examples/Design/MomentCurvature.tcl
+
+# What the Report writes beside the definition it runs from
+* report.pdf
+* report pictures/
