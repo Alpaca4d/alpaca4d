@@ -1,21 +1,21 @@
 #! python3
-# The Nervi flat slab: a flat slab on a regular grid of columns and its principal moment lines, which
-# Nervi built as ribs in the Gatti wool mill. For the marketing pictures (run.sh, next to it), not an
-# example of the docs.
+# The Nervi umbrella: a square concrete slab cantilevering all round from one column, after the
+# umbrellas of Nervi's Palazzo del Lavoro in Turin, and its principal moment lines, which run out
+# from the column and round it as his ribs do. For the marketing pictures (run.sh, next to it), not
+# an example of the docs.
 #
-# Tools/Examples/make.sh writes StressLinesNerviFlatSlab.gh straight from this script, without Rhino:
+# Tools/Examples/make.sh writes StressLinesNerviUmbrella.gh straight from this script, without Rhino:
 #
-#     ../Examples/make.sh StressLinesNerviFlatSlab.py
+#     ../../Examples/make.sh StressLinesNerviUmbrella.py
 #
 # It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
 # (open this file and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
-# A concrete slab 25 x 25 m, 200 mm thick, on 5 x 5 columns 5 m apart, pinned, reaching half a bay
-# past the outer ones, under a uniform load. Principal Stress Lines draws its bending lines from one
-# seed inside a bay - off its middle, where the two principal moments are the same - 0.8 m apart.
-# For the pictures, each family of lines is smoothed and extruded 300 mm down into ribs, and the
-# columns are pipes 4 m down to a floor: the slab seen from below, as in the photographs of Nervi's
-# floors.
+# One umbrella, 15 x 15 m and 200 mm thick, built into its column over a head 1 m square, under a
+# uniform load. Principal Stress Lines draws its bending lines from one seed off the diagonals. For
+# the pictures, the lines are smoothed and extruded 350 mm down into ribs, the column is a pipe 8 m
+# down to a floor, and nine umbrellas stand 1 m apart, three by three, as a hall: each is analysed
+# alone, as Nervi's stand apart.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -33,14 +33,15 @@ from System.Drawing import PointF, RectangleF, Color
 POINT = "FBAC3E32-F100-4292-8692-77240A42FD1A"              # Params > Geometry > Point
 RECTANGLE_3PT = "9BC98A1D-2ECC-407E-948A-09A09ED3E69D"      # Curve > Primitive > Rectangle 3Pt
 LINE_SDL = "4C619BC9-39FD-4717-82A6-1E07EA237BBE"           # Curve > Primitive > Line SDL
+FIT_CURVE = "A3F9F19E-3E6C-4AC7-97C3-946DE32C3E8E"          # Curve > Util > Fit Curve
 SERIES = "E64C5FB1-845C-4ab1-8911-5F338516BA67"             # Sets > Sequence > Series
 CONSTRUCT_POINT = "3581F42A-9592-4549-BD6B-1C0FC39D067B"    # Vector > Point > Construct Point
 UNIT_Z = "9103C240-A6A9-4223-9B42-DBD19BF38E2B"             # Vector > Vector > Unit Z
 EXPRESSION = "9DF5E896-552D-4c8c-B9CA-4FC147FFA022"         # Maths > Script > Expression
 MESH_PLANE = "8ADBF481-7589-4A40-B490-006531EA001D"         # Mesh > Primitive > Mesh Plane
 EXTRUDE = "962034E9-CC27-4394-AFC4-5C16E3447CF9"            # Surface > Freeform > Extrude
-FIT_CURVE = "A3F9F19E-3E6C-4AC7-97C3-946DE32C3E8E"          # Curve > Util > Fit Curve
 PIPE = "C277F778-6FDF-4890-8F78-347EFB23C406"               # Surface > Freeform > Pipe
+MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
 
 # Alpaca4d
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
@@ -60,10 +61,10 @@ PSL_MODEL, PSL_SEED, PSL_SINGLE, PSL_BENDING, PSL_SEPARATION, PSL_TEST = 0, 2, 4
 # Concrete, in kN and m.
 E, NU, DENSITY = 33000000.0, 0.2, 2500.0
 
-# The column grid: BAYS bays of SPAN each way, the slab reaching half a bay past the outer columns,
-# meshed CELLS to a bay. Columns land on nodes: CELLS is even.
-BAYS, SPAN, CELLS = 4, 5.0, 20
-HEIGHT = 4.0
+# The umbrella, meshed CELLS a side; the column's head, built in, HEAD a side; the hall's umbrellas
+# PITCH apart, COPIES a side.
+SIDE, CELLS, HEAD, HEIGHT = 15.0, 60, 1.0, 8.0
+PITCH, COPIES = 16.0, 3
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 ORANGE = Color.FromArgb(50, 235, 108, 63)
@@ -324,27 +325,27 @@ def open_menus(c):
 
 
 
-# ---------------------------------------------------------------- the slab
+# ---------------------------------------------------------------- the umbrella
 
 # Columns, in the order the data flows, and rows, one per part of the model. Each group keeps to rows
 # and columns of its own, so that no two overlap.
-DATA, SHAPE, MESHED, ELEMENT, PART, PATTERN, MODEL, LINES, RIBS, DRAWN = range(10)
+DATA, SHAPE, MESHED, ELEMENT, PART, PATTERN, MODEL, LINES, RIBS, DRAWN, HALL = range(11)
 SLAB, HELD, LOADED, SOLVED = range(4)
 
 
 def build(doc):
     g = Grid(doc)
-    edge, side = -SPAN / 2, (BAYS + 1) * SPAN
+    middle = SIDE / 2
 
-    # 1 - The slab, reaching half a bay past the outer columns.
-    outline = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "25 x 25 m", SHAPE, SLAB)
-    points_into(inp(outline, 0), [(edge, edge, 0)])
-    points_into(inp(outline, 1), [(edge + side, edge, 0)])
-    points_into(inp(outline, 2), [(edge + side, edge + side, 0)])
-    mesh = component(g, MESH_PLANE, "Mesh Plane", "100 x 100 quads", MESHED, SLAB)
+    # 1 - The umbrella's slab.
+    outline = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "15 x 15 m", SHAPE, SLAB)
+    points_into(inp(outline, 0), [(0, 0, 0)])
+    points_into(inp(outline, 1), [(SIDE, 0, 0)])
+    points_into(inp(outline, 2), [(SIDE, SIDE, 0)])
+    mesh = component(g, MESH_PLANE, "Mesh Plane", "60 x 60 quads", MESHED, SLAB)
     wire(inp(mesh, 0), out(outline))
-    integer(inp(mesh, 1), (BAYS + 1) * CELLS)
-    integer(inp(mesh, 2), (BAYS + 1) * CELLS)
+    integer(inp(mesh, 1), CELLS)
+    integer(inp(mesh, 2), CELLS)
     concrete = component(g, ND_MATERIAL, "nD", "Concrete", MESHED, SLAB, gap=30)
     inp(concrete, 0).PersistentData.Clear()
     inp(concrete, 0).PersistentData.Append(GH_String("Concrete"))
@@ -359,21 +360,23 @@ def build(doc):
     wire(inp(shell, 0), out(mesh))
     wire(inp(shell, 1), out(section))
 
-    # 2 - The columns, 5 m apart each way, each a pinned point under the slab.
-    lines_at = component(g, SERIES, "Series", "Column lines", SHAPE, HELD)
-    number(inp(lines_at, 0), 0.0)
-    number(inp(lines_at, 1), SPAN)
-    integer(inp(lines_at, 2), BAYS + 1)
-    columns = component(g, CONSTRUCT_POINT, "Construct Point", "Columns", MESHED, HELD)
-    wire(inp(columns, 0), out(lines_at))
-    wire(inp(columns, 1), out(lines_at)).DataMapping = GH_DataMapping.Graft
-    pinned = component(g, SUPPORT, "Support", "Pinned", ELEMENT, HELD)
-    flat(wire(inp(pinned, 0), out(columns)))
-    for i, held in enumerate((True, True, True, False, False, False)):
-        boolean(inp(pinned, i + 1), held)
+    # 2 - Built into the column over its head: the nodes within half a metre of the middle.
+    step = SIDE / CELLS
+    count = int(round(HEAD / step)) + 1
+    across = component(g, SERIES, "Series", "Across the head", SHAPE, HELD)
+    number(inp(across, 0), middle - HEAD / 2)
+    number(inp(across, 1), step)
+    integer(inp(across, 2), count)
+    head = component(g, CONSTRUCT_POINT, "Construct Point", "Column head", MESHED, HELD)
+    wire(inp(head, 0), out(across))
+    wire(inp(head, 1), out(across)).DataMapping = GH_DataMapping.Graft
+    built_in = component(g, SUPPORT, "Support", "Built in", ELEMENT, HELD)
+    flat(wire(inp(built_in, 0), out(head)))
+    for i in range(6):
+        boolean(inp(built_in, i + 1), True)
 
     # 3 - A uniform load, down.
-    size = slider(g, "UDL [kN/m2]", 0, 20, 10, 1, DATA, LOADED)
+    size = slider(g, "UDL [kN/m2]", 0, 20, 5, 1, DATA, LOADED)
     minus = emit(EXPRESSION, "The Expression component")
     minus.SetInitCode("f(x)=-x")
     minus.NickName = "Minus"
@@ -390,30 +393,29 @@ def build(doc):
     settings = component(g, ANALYSIS_SETTINGS, "Analysis Settings", None, PATTERN, SOLVED, gap=30)
     assemble = component(g, ASSEMBLE, "Assemble Model", None, MODEL, SOLVED)
     flat(wire(inp(assemble, 0), out(shell)))
-    flat(wire(inp(assemble, 1), out(pinned)))
+    flat(wire(inp(assemble, 1), out(built_in)))
     flat(wire(inp(assemble, 2), out(pattern)))
     run = component(g, RUN_ANALYSIS, "Run Analysis", None, MODEL, SOLVED, gap=30)
     wire(inp(run, 0), out(assemble))
     wire(inp(run, 1), out(settings))
 
-    # 5 - The bending lines, from a seed off the middle of a bay.
-    seed = points(g, "Seed", [(1.47 * SPAN, 1.37 * SPAN, 0.0)], LINES, SOLVED)
+    # 5 - The bending lines, from a seed off the diagonals, where the field is symmetric.
+    seed = points(g, "Seed", [(0.69 * SIDE, 0.61 * SIDE, 0.0)], LINES, SOLVED)
     lines = emit(STRESS_LINES, "Principal Stress Lines")
-    lines.NickName = "Nervi flat slab"
+    lines.NickName = "Nervi umbrella"
     open_menus(lines)
     g.put(lines, LINES, SOLVED, gap=30)
     faint(wire(inp(lines, PSL_MODEL), out(run)))
     wire(inp(lines, PSL_SEED), seed)
     boolean(inp(lines, PSL_SINGLE), False)
     boolean(inp(lines, PSL_BENDING), True)
-    number(inp(lines, PSL_SEPARATION), 0.8)
-    number(inp(lines, PSL_TEST), 0.32)
+    number(inp(lines, PSL_SEPARATION), 0.6)
+    number(inp(lines, PSL_TEST), 0.24)
 
-    # 6 - For the pictures: each family of lines, fitted with a smooth curve within 5 mm, extruded
-    # down into ribs - a polyline extruded would show an edge at every one of its many corners - and
-    # the columns as pipes down to a floor.
+    # 6 - For the pictures: the lines, smoothed, as ribs 350 mm deep; the column a pipe down to the
+    # floor; and nine umbrellas, three by three, 1 m apart.
     depth = component(g, UNIT_Z, "Unit Z", "Rib depth", RIBS, SOLVED)
-    number(inp(depth, 0), -0.3)
+    number(inp(depth, 0), -0.35)
     ribs = []
     for i, name in enumerate(("Ribs SL1", "Ribs SL2")):
         smooth = component(g, FIT_CURVE, "Fit Curve", "Smooth SL" + str(i + 1), RIBS, SOLVED, gap=30)
@@ -424,34 +426,48 @@ def build(doc):
         wire(inp(r, 0), out(smooth))
         wire(inp(r, 1), out(depth))
         ribs += [smooth, r]
-    down_ = component(g, UNIT_Z, "Unit Z", "Down the columns", RIBS, SOLVED, gap=30)
+    down_ = component(g, UNIT_Z, "Unit Z", "Down the column", RIBS, SOLVED, gap=30)
     number(inp(down_, 0), -1.0)
-    shafts = component(g, LINE_SDL, "Line SDL", "Column axes", RIBS, SOLVED, gap=30)
-    faint(flat(wire(inp(shafts, 0), out(columns))))
-    wire(inp(shafts, 1), out(down_))
-    number(inp(shafts, 2), HEIGHT)
-    pipes = component(g, PIPE, "Pipe", "Column shafts", DRAWN, SOLVED, gap=30)
-    wire(inp(pipes, 0), out(shafts))
-    number(inp(pipes, 1), 0.22)
-    if pipes.Params.Input.Count > 2:
-        integer(inp(pipes, 2), 1)
+    axis = component(g, LINE_SDL, "Line SDL", "Column axis", RIBS, SOLVED, gap=30)
+    points_into(inp(axis, 0), [(middle, middle, 0)])
+    wire(inp(axis, 1), out(down_))
+    number(inp(axis, 2), HEIGHT)
+    pipe = component(g, PIPE, "Pipe", "Column shaft", DRAWN, SOLVED, gap=30)
+    wire(inp(pipe, 0), out(axis))
+    number(inp(pipe, 1), 0.45)
+    if pipe.Params.Input.Count > 2:
+        integer(inp(pipe, 2), 1)
+    offsets = component(g, SERIES, "Series", "Hall offsets", RIBS, SOLVED, gap=30)
+    number(inp(offsets, 0), -PITCH)
+    number(inp(offsets, 1), PITCH)
+    integer(inp(offsets, 2), COPIES)
+    places = component(g, CONSTRUCT_POINT, "Construct Point", "Places", DRAWN, SOLVED, gap=30)
+    wire(inp(places, 0), out(offsets))
+    wire(inp(places, 1), out(offsets)).DataMapping = GH_DataMapping.Graft
+    hall = []
+    for name, source in (("Hall ribs SL1", out(ribs[1])), ("Hall ribs SL2", out(ribs[3])), ("Hall slabs", out(mesh)), ("Hall columns", out(pipe))):
+        m = component(g, MOVE, "Move", name, HALL, SOLVED, gap=30 if hall else 0)
+        flat(faint(wire(inp(m, 0), source)))
+        wire(inp(m, 1), out(places)).DataMapping = GH_DataMapping.Graft
+        hall.append(m)
     floor = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "Floor outline", RIBS, SOLVED, gap=30)
-    points_into(inp(floor, 0), [(edge - SPAN, edge - SPAN, -HEIGHT)])
-    points_into(inp(floor, 1), [(edge + side + SPAN, edge - SPAN, -HEIGHT)])
-    points_into(inp(floor, 2), [(edge + side + SPAN, edge + side + SPAN, -HEIGHT)])
+    reach = PITCH * (COPIES // 2) + SIDE
+    points_into(inp(floor, 0), [(-reach, -reach, -HEIGHT)])
+    points_into(inp(floor, 1), [(SIDE + reach, -reach, -HEIGHT)])
+    points_into(inp(floor, 2), [(SIDE + reach, SIDE + reach, -HEIGHT)])
     ground = component(g, MESH_PLANE, "Mesh Plane", "Floor", DRAWN, SOLVED, gap=30)
     wire(inp(ground, 0), out(floor))
     integer(inp(ground, 1), 1)
     integer(inp(ground, 2), 1)
 
     g.arrange(0, 0, stages=(ELEMENT, PATTERN, LINES, RIBS), row_gap=60.0, stack_gap=30.0)
-    group(doc, "1 - The Nervi flat slab: concrete, 25 x 25 m, 200 mm, in 100 x 100 quads", [outline, mesh, concrete, section, shell], ORANGE)
-    group(doc, "2 - On 5 x 5 columns, 5 m apart, pinned", [lines_at, columns, pinned], GREEN)
+    group(doc, "1 - The Nervi umbrella: concrete, 15 x 15 m, 200 mm, in 60 x 60 quads", [outline, mesh, concrete, section, shell], ORANGE)
+    group(doc, "2 - Built into one column over a head 1 m square", [across, head, built_in], GREEN)
     group(doc, "3 - A uniform load", [size, minus, pressure, uniform], RED)
     group(doc, "4 - Assembled and solved", [pattern, settings, assemble, run], BLUE)
     group(doc, "5 - Principal Stress Lines, in bending", [seed, lines], PURPLE)
-    group(doc, "6 - For the pictures: the lines as ribs 300 mm deep, the columns down to a floor",
-          [depth] + ribs + [down_, shafts, pipes, floor, ground], GREY)
+    group(doc, "6 - For the pictures: the lines as ribs 350 mm deep, the column, nine umbrellas as a hall",
+          [depth] + ribs + [down_, axis, pipe, offsets, places] + hall + [floor, ground], GREY)
     # Only the lines draw: the scenes add their own previews.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)

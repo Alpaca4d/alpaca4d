@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MARKETING = os.path.realpath(os.environ.get("MARKETING") or os.path.join(HERE, "../../../alpaca4d.github.io/marketing"))
+MARKETING = os.path.realpath(os.environ.get("MARKETING") or os.path.join(HERE, "../../../../alpaca4d.github.io/marketing"))
 PORT = int(os.environ.get("PORT", "47321"))
 
 PAGE = """<!doctype html><meta charset="utf-8"><title>{title}</title>

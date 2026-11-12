@@ -9,5 +9,5 @@ export PYTHONDONTWRITEBYTECODE=1
 mkdir -p Studies
 studies=${*:-$(python3 -c 'import StressLinesShapes as s; print(" ".join(s.STUDIES))')}
 for study in $studies; do
-  STUDY=$study ../Examples/make.sh StressLinesStudies.py "Studies/$study.gh" | grep -v "^$"
+  STUDY=$study ../../Examples/make.sh StressLinesStudies.py "Studies/$study.gh" | grep -v "^$"
 done

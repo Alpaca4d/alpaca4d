@@ -15,9 +15,9 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SITE = os.path.abspath(os.path.join(HERE, "..", "..", "..", "alpaca4d.github.io"))
+SITE = os.path.abspath(os.path.join(HERE, "..", "..", "..", "..", "alpaca4d.github.io"))
 OUT = os.path.join(SITE, "marketing", "explorer", "footbridge-study")
-WORK = os.path.join(HERE, "out", "explorer")
+WORK = os.path.normpath(os.path.join(HERE, "..", "out", "explorer"))
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 FF = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 VW, VH, DPR = 1600, 900, 1.2          # the page, in CSS pixels; screenshots 1920 x 1080

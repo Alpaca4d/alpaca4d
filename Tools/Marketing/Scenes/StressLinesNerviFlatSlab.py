@@ -1,22 +1,21 @@
 #! python3
-# The Musmeci bridge: a concrete membrane form-found with Kangaroo, after Sergio Musmeci's bridge over
-# the Basento at Potenza, analysed with Alpaca4d, and its principal stress lines. For the marketing
-# pictures (run.sh, next to it), not an example of the docs.
+# The Nervi flat slab: a flat slab on a regular grid of columns and its principal moment lines, which
+# Nervi built as ribs in the Gatti wool mill. For the marketing pictures (run.sh, next to it), not an
+# example of the docs.
 #
-# Tools/Examples/make.sh writes StressLinesMusmeciBridge.gh straight from this script, without Rhino:
+# Tools/Examples/make.sh writes StressLinesNerviFlatSlab.gh straight from this script, without Rhino:
 #
-#     ../Examples/make.sh StressLinesMusmeciBridge.py
+#     ../../Examples/make.sh StressLinesNerviFlatSlab.py
 #
-# It also runs in Rhino with Grasshopper, Kangaroo2 (which Rhino 7 and 8 ship) and Alpaca4d
-# installed - in Rhino 8 from the ScriptEditor (open this file and press Run) or with
-# _-RunPythonScript; in Rhino 7 with _RunPythonScript.
+# It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
+# (open this file and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
-# A flat net 80 x 12 m, held at a pair of footings on every pier line - four spans of 20 m - is pushed
-# up by a load on every node, as a cloth hung from them falls, but upwards: its edges are springs as
-# long as the flat net's. Kangaroo's Zombie Solver finds the form: four vaults rising about 11 m, their
-# free edges arching between the footings and saddles over the piers, as Musmeci's membrane does
-# under its deck. The form is a concrete shell 300 mm thick, pinned at the footings, under its own
-# weight. For the pictures, a deck rests on the vaults' crowns, and the ground runs under them.
+# A concrete slab 25 x 25 m, 200 mm thick, on 5 x 5 columns 5 m apart, pinned, reaching half a bay
+# past the outer ones, under a uniform load. Principal Stress Lines draws its bending lines from one
+# seed inside a bay - off its middle, where the two principal moments are the same - 0.8 m apart.
+# For the pictures, each family of lines is smoothed and extruded 300 mm down into ribs, and the
+# columns are pipes 4 m down to a floor: the slab seen from below, as in the photographs of Nervi's
+# floors.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -33,29 +32,22 @@ from System.Drawing import PointF, RectangleF, Color
 # Grasshopper
 POINT = "FBAC3E32-F100-4292-8692-77240A42FD1A"              # Params > Geometry > Point
 RECTANGLE_3PT = "9BC98A1D-2ECC-407E-948A-09A09ED3E69D"      # Curve > Primitive > Rectangle 3Pt
-LIST_ITEM = "59DAF374-BC21-4A5E-8282-5504FB7AE9AE"          # Sets > List > List Item
+LINE_SDL = "4C619BC9-39FD-4717-82A6-1E07EA237BBE"           # Curve > Primitive > Line SDL
+SERIES = "E64C5FB1-845C-4ab1-8911-5F338516BA67"             # Sets > Sequence > Series
+CONSTRUCT_POINT = "3581F42A-9592-4549-BD6B-1C0FC39D067B"    # Vector > Point > Construct Point
 UNIT_Z = "9103C240-A6A9-4223-9B42-DBD19BF38E2B"             # Vector > Vector > Unit Z
-DECONSTRUCT_POINT = "9ABAE6B7-FA1D-448C-9209-4A8155345841"  # Vector > Point > Deconstruct
-BOUNDS = "F44B92B0-3B5B-493A-86F4-FD7408C3DAF3"             # Maths > Domain > Bounds
-DECONSTRUCT_DOMAIN = "825EA536-AEBB-41E9-AF32-8BAEB2ECB590" # Maths > Domain > Deconstruct Domain
+EXPRESSION = "9DF5E896-552D-4c8c-B9CA-4FC147FFA022"         # Maths > Script > Expression
 MESH_PLANE = "8ADBF481-7589-4A40-B490-006531EA001D"         # Mesh > Primitive > Mesh Plane
-DECONSTRUCT_MESH = "BA2D8F57-0738-42B4-B5A5-FE4D853517EB"   # Mesh > Analysis > Deconstruct Mesh
 EXTRUDE = "962034E9-CC27-4394-AFC4-5C16E3447CF9"            # Surface > Freeform > Extrude
-MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
-
-# Kangaroo2
-SHOW = "0ED5E67D-539D-480E-88CB-D81FA795D66C"               # Kangaroo2 > Main > Show
-ZOMBIE = "4408343B-577E-4FD8-96FF-DF7549189186"             # Kangaroo2 > Main > Zombie Solver
-EDGE_LENGTHS = "24E2B0D2-D7B8-4478-8A83-1F04CBA701A1"       # Kangaroo2 > Goals-Mesh > EdgeLengths
-ANCHOR = "3C30B1A1-4473-4AD4-A700-EA9770726C03"             # Kangaroo2 > Goals-Pt > Anchor
-LOAD = "2019C995-53AF-4EB2-976D-95B1FDC823FA"               # Kangaroo2 > Goals-Pt > Load
+FIT_CURVE = "A3F9F19E-3E6C-4AC7-97C3-946DE32C3E8E"          # Curve > Util > Fit Curve
+PIPE = "C277F778-6FDF-4890-8F78-347EFB23C406"               # Surface > Freeform > Pipe
 
 # Alpaca4d
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
 PLATE_FIBER = "D54FADEF-3E36-492C-9241-4E9B8F48EE26"        # Plate Fiber Section
 SHELL = "EE45CFFD-CCDC-41D4-AA93-551FB576C2FC"              # ASD Shell
 SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
-GRAVITY = "4B6FA7FD-9388-4699-B374-B94F94583A53"            # Gravity Load
+MESH_LOAD = "C8514DEA-1B1B-45A6-ABC1-8004C1EFC617"          # Mesh Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
@@ -68,8 +60,10 @@ PSL_MODEL, PSL_SEED, PSL_SINGLE, PSL_BENDING, PSL_SEPARATION, PSL_TEST = 0, 2, 4
 # Concrete, in kN and m.
 E, NU, DENSITY = 33000000.0, 0.2, 2500.0
 
-# The net: SPANS spans of SPAN, WIDTH across, in quads CELL a side.
-SPANS, SPAN, WIDTH, CELL = 4, 20.0, 12.0, 1.0
+# The column grid: BAYS bays of SPAN each way, the slab reaching half a bay past the outer columns,
+# meshed CELLS to a bay. Columns land on nodes: CELLS is even.
+BAYS, SPAN, CELLS = 4, 5.0, 20
+HEIGHT = 4.0
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 ORANGE = Color.FromArgb(50, 235, 108, 63)
@@ -328,167 +322,136 @@ def open_menus(c):
             menu.Expand()
 
 
-# ---------------------------------------------------------------- the bridge
-
-# Columns, in the order the data flows, and rows, one per part of the model. Each group keeps to
-# columns of its own, so that no two overlap.
-SHAPE, MESHED, PUSH, GOALS, SOLVER, FORM, ELEMENT, PART, PATTERN, MODEL, LINES, DECK, DECKED = range(13)
-NET, PUSHED, HELD, WEIGHT = range(4)
 
 
-def footings():
-    """The nodes the net is held at: on every pier line, a footing at each edge - the edge node and
-    its neighbours along the edge and inward."""
-    nodes = []
-    length = SPANS * SPAN
-    for k in range(SPANS + 1):
-        x = k * SPAN
-        for y, inward in ((0.0, CELL), (WIDTH, -CELL)):
-            nodes += [(x, y, 0.0), (x, y + inward, 0.0)]
-            if x > 0:
-                nodes.append((x - CELL, y, 0.0))
-            if x < length:
-                nodes.append((x + CELL, y, 0.0))
-    return nodes
+# ---------------------------------------------------------------- the slab
+
+# Columns, in the order the data flows, and rows, one per part of the model. Each group keeps to rows
+# and columns of its own, so that no two overlap.
+DATA, SHAPE, MESHED, ELEMENT, PART, PATTERN, MODEL, LINES, RIBS, DRAWN = range(10)
+SLAB, HELD, LOADED, SOLVED = range(4)
 
 
 def build(doc):
     g = Grid(doc)
-    length = SPANS * SPAN
+    edge, side = -SPAN / 2, (BAYS + 1) * SPAN
 
-    # 1 - The flat net, and its nodes.
-    plan = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "80 x 12 m", SHAPE, NET)
-    points_into(inp(plan, 0), [(0, 0, 0)])
-    points_into(inp(plan, 1), [(length, 0, 0)])
-    points_into(inp(plan, 2), [(length, WIDTH, 0)])
-    net = component(g, MESH_PLANE, "Mesh Plane", "80 x 12 quads", MESHED, NET)
-    wire(inp(net, 0), out(plan))
-    integer(inp(net, 1), int(length / CELL))
-    integer(inp(net, 2), int(WIDTH / CELL))
-    nodes = component(g, DECONSTRUCT_MESH, "Deconstruct Mesh", "Nodes", MESHED, PUSHED)
-    wire(inp(nodes, 0), out(net))
-    held_at = points(g, "Footings", footings(), MESHED, HELD)
-
-    # 2 - Kangaroo's goals: the net shown, its edges as springs as long as they are, held at the
-    # footings, and every node pushed up.
-    show = component(g, SHOW, "Show", "Net", GOALS, NET)
-    wire(inp(show, 0), out(net))
-    edges = component(g, EDGE_LENGTHS, "EdgeLengths", "Edges", GOALS, NET, gap=30)
-    wire(inp(edges, 0), out(net))
-    number(inp(edges, 1), 1.0)
-    number(inp(edges, 2), 1.0)
-    # The vaults rise about 11 m, the edges arch to about 7 m and the saddles over the piers to 5 m.
-    lift = slider(g, "Lift", 0, 0.06, 0.03, 3, PUSH, PUSHED)
-    up = component(g, UNIT_Z, "Unit Z", "Up", PUSH, PUSHED, gap=30)
-    wire(inp(up, 0), lift)
-    push = component(g, LOAD, "Load", "Push up", GOALS, PUSHED)
-    wire(inp(push, 0), out(nodes, 0))
-    wire(inp(push, 1), out(up))
-    anchors = component(g, ANCHOR, "Anchor", "Held", GOALS, HELD)
-    wire(inp(anchors, 0), held_at)
-    number(inp(anchors, 2), 10000.0)
-
-    # 3 - The Zombie Solver, to the end or for Iterations; the net is the first goal, so the form
-    # is the first thing out.
-    iterations = slider(g, "Iterations", 1, 20000, 20000, 0, SOLVER, NET)
-    zombie = component(g, ZOMBIE, "Zombie Solver", "Zombie Solver", SOLVER, NET, gap=30)
-    flat(wire(inp(zombie, 0), out(show), out(edges), out(push), out(anchors)))
-    wire(inp(zombie, 3), iterations)
-    form = component(g, LIST_ITEM, "List Item", "Form", FORM, NET)
-    wire(inp(form, 0), out(zombie, 2))
-    integer(inp(form, 1), 0)
-    used = readout(g, "Iterations used", out(zombie, 0), FORM, NET, gap=30, width=80.0)
-
-    # 4 - A concrete shell on the form, 300 mm thick, pinned at the footings, under its own weight.
-    concrete = component(g, ND_MATERIAL, "nD", "Concrete", ELEMENT, PUSHED)
+    # 1 - The slab, reaching half a bay past the outer columns.
+    outline = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "25 x 25 m", SHAPE, SLAB)
+    points_into(inp(outline, 0), [(edge, edge, 0)])
+    points_into(inp(outline, 1), [(edge + side, edge, 0)])
+    points_into(inp(outline, 2), [(edge + side, edge + side, 0)])
+    mesh = component(g, MESH_PLANE, "Mesh Plane", "100 x 100 quads", MESHED, SLAB)
+    wire(inp(mesh, 0), out(outline))
+    integer(inp(mesh, 1), (BAYS + 1) * CELLS)
+    integer(inp(mesh, 2), (BAYS + 1) * CELLS)
+    concrete = component(g, ND_MATERIAL, "nD", "Concrete", MESHED, SLAB, gap=30)
     inp(concrete, 0).PersistentData.Clear()
     inp(concrete, 0).PersistentData.Append(GH_String("Concrete"))
     number(inp(concrete, 1), E)
     number(inp(concrete, 2), E / (2.0 * (1.0 + NU)))
     number(inp(concrete, 3), NU)
     number(inp(concrete, 4), DENSITY)
-    section = component(g, PLATE_FIBER, "Plate Fiber Section", "300 mm", PART, PUSHED)
-    number(inp(section, 1), 0.3)
+    section = component(g, PLATE_FIBER, "Plate Fiber Section", "200 mm", ELEMENT, SLAB)
+    number(inp(section, 1), 0.2)
     wire(inp(section, 2), out(concrete))
-    shell = component(g, SHELL, "ASD Shell", None, PATTERN, NET)
-    wire(inp(shell, 0), out(form))
+    shell = component(g, SHELL, "ASD Shell", None, PART, SLAB)
+    wire(inp(shell, 0), out(mesh))
     wire(inp(shell, 1), out(section))
+
+    # 2 - The columns, 5 m apart each way, each a pinned point under the slab.
+    lines_at = component(g, SERIES, "Series", "Column lines", SHAPE, HELD)
+    number(inp(lines_at, 0), 0.0)
+    number(inp(lines_at, 1), SPAN)
+    integer(inp(lines_at, 2), BAYS + 1)
+    columns = component(g, CONSTRUCT_POINT, "Construct Point", "Columns", MESHED, HELD)
+    wire(inp(columns, 0), out(lines_at))
+    wire(inp(columns, 1), out(lines_at)).DataMapping = GH_DataMapping.Graft
     pinned = component(g, SUPPORT, "Support", "Pinned", ELEMENT, HELD)
-    faint(flat(wire(inp(pinned, 0), held_at)))
+    flat(wire(inp(pinned, 0), out(columns)))
     for i, held in enumerate((True, True, True, False, False, False)):
         boolean(inp(pinned, i + 1), held)
-    weight = component(g, GRAVITY, "Gravity Load", "Own weight", ELEMENT, WEIGHT)
-    pattern = component(g, LOAD_PATTERN, "Load Pattern", None, PATTERN, WEIGHT)
-    wire(inp(pattern, 1), out(weight))
-    assemble = component(g, ASSEMBLE, "Assemble Model", None, MODEL, NET)
+
+    # 3 - A uniform load, down.
+    size = slider(g, "UDL [kN/m2]", 0, 20, 10, 1, DATA, LOADED)
+    minus = emit(EXPRESSION, "The Expression component")
+    minus.SetInitCode("f(x)=-x")
+    minus.NickName = "Minus"
+    g.put(minus, SHAPE, LOADED)
+    wire(inp(minus, 0), size)
+    pressure = component(g, UNIT_Z, "Unit Z", "Down", MESHED, LOADED)
+    wire(inp(pressure, 0), out(minus))
+    uniform = component(g, MESH_LOAD, "Mesh Load", "Uniform load", ELEMENT, LOADED)
+    wire(inp(uniform, 1), out(pressure))
+
+    # 4 - Assembled and solved.
+    pattern = component(g, LOAD_PATTERN, "Load Pattern", None, PATTERN, SOLVED)
+    wire(inp(pattern, 1), out(uniform))
+    settings = component(g, ANALYSIS_SETTINGS, "Analysis Settings", None, PATTERN, SOLVED, gap=30)
+    assemble = component(g, ASSEMBLE, "Assemble Model", None, MODEL, SOLVED)
     flat(wire(inp(assemble, 0), out(shell)))
     flat(wire(inp(assemble, 1), out(pinned)))
     flat(wire(inp(assemble, 2), out(pattern)))
-    settings = component(g, ANALYSIS_SETTINGS, "Analysis Settings", None, PATTERN, HELD)
-    run = component(g, RUN_ANALYSIS, "Run Analysis", None, MODEL, HELD)
+    run = component(g, RUN_ANALYSIS, "Run Analysis", None, MODEL, SOLVED, gap=30)
     wire(inp(run, 0), out(assemble))
     wire(inp(run, 1), out(settings))
 
-    # 5 - The stress lines in the membrane, from a seed above the second span, off its crown.
-    seed = points(g, "Seed", [(1.37 * SPAN, 0.35 * WIDTH, 30.0)], LINES, NET)
+    # 5 - The bending lines, from a seed off the middle of a bay.
+    seed = points(g, "Seed", [(1.47 * SPAN, 1.37 * SPAN, 0.0)], LINES, SOLVED)
     lines = emit(STRESS_LINES, "Principal Stress Lines")
-    lines.NickName = "Musmeci bridge"
+    lines.NickName = "Nervi flat slab"
     open_menus(lines)
-    g.put(lines, LINES, NET, gap=30)
-    wire(inp(lines, PSL_MODEL), out(run))
+    g.put(lines, LINES, SOLVED, gap=30)
+    faint(wire(inp(lines, PSL_MODEL), out(run)))
     wire(inp(lines, PSL_SEED), seed)
     boolean(inp(lines, PSL_SINGLE), False)
-    boolean(inp(lines, PSL_BENDING), False)
-    number(inp(lines, PSL_SEPARATION), 1.0)
-    number(inp(lines, PSL_TEST), 0.4)
+    boolean(inp(lines, PSL_BENDING), True)
+    number(inp(lines, PSL_SEPARATION), 0.8)
+    number(inp(lines, PSL_TEST), 0.32)
 
-    # 6 - For the pictures: a deck 10 m wide, 800 mm deep, resting on the vaults' crowns - lifted to
-    # the form's highest node - and the ground.
-    form_nodes = component(g, DECONSTRUCT_MESH, "Deconstruct Mesh", "Form nodes", DECK, NET)
-    wire(inp(form_nodes, 0), out(form))
-    heights = component(g, DECONSTRUCT_POINT, "Deconstruct", "Node heights", DECK, NET, gap=30)
-    wire(inp(heights, 0), out(form_nodes, 0))
-    span_ = component(g, BOUNDS, "Bounds", "Lowest to highest", DECK, NET, gap=30)
-    wire(inp(span_, 0), out(heights, 2))
-    top = component(g, DECONSTRUCT_DOMAIN, "Deconstruct Domain", "Highest", DECK, NET, gap=30)
-    wire(inp(top, 0), out(span_))
-    lifted = component(g, UNIT_Z, "Unit Z", "Up to the crowns", DECK, NET, gap=30)
-    wire(inp(lifted, 0), out(top, 1))
-    deck_outline = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "Deck outline", DECK, NET, gap=30)
-    points_into(inp(deck_outline, 0), [(-6, 1, 0)])
-    points_into(inp(deck_outline, 1), [(length + 6, 1, 0)])
-    points_into(inp(deck_outline, 2), [(length + 6, WIDTH - 1, 0)])
-    depth = component(g, UNIT_Z, "Unit Z", "Deck depth", DECK, NET, gap=30)
-    number(inp(depth, 0), 0.8)
-    sides = component(g, EXTRUDE, "Extrude", "Deck sides", DECKED, NET)
-    wire(inp(sides, 0), out(deck_outline))
-    wire(inp(sides, 1), out(depth))
-    deck_top = component(g, MESH_PLANE, "Mesh Plane", "Deck top", DECKED, NET, gap=30)
-    wire(inp(deck_top, 0), out(deck_outline))
-    integer(inp(deck_top, 1), 1)
-    integer(inp(deck_top, 2), 1)
-    deck = component(g, MOVE, "Move", "Deck", DECKED, NET, gap=30)
-    flat(wire(inp(deck, 0), out(sides), out(deck_top)))
-    wire(inp(deck, 1), out(lifted))
-    ground_outline = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "Ground outline", DECK, NET, gap=30)
-    points_into(inp(ground_outline, 0), [(-40, -40, 0)])
-    points_into(inp(ground_outline, 1), [(length + 40, -40, 0)])
-    points_into(inp(ground_outline, 2), [(length + 40, WIDTH + 40, 0)])
-    ground = component(g, MESH_PLANE, "Mesh Plane", "Ground", DECKED, NET, gap=30)
-    wire(inp(ground, 0), out(ground_outline))
+    # 6 - For the pictures: each family of lines, fitted with a smooth curve within 5 mm, extruded
+    # down into ribs - a polyline extruded would show an edge at every one of its many corners - and
+    # the columns as pipes down to a floor.
+    depth = component(g, UNIT_Z, "Unit Z", "Rib depth", RIBS, SOLVED)
+    number(inp(depth, 0), -0.3)
+    ribs = []
+    for i, name in enumerate(("Ribs SL1", "Ribs SL2")):
+        smooth = component(g, FIT_CURVE, "Fit Curve", "Smooth SL" + str(i + 1), RIBS, SOLVED, gap=30)
+        wire(inp(smooth, 0), out(lines, i))
+        integer(inp(smooth, 1), 3)
+        number(inp(smooth, 2), 0.005)
+        r = component(g, EXTRUDE, "Extrude", name, DRAWN, SOLVED, gap=30 if i else 0)
+        wire(inp(r, 0), out(smooth))
+        wire(inp(r, 1), out(depth))
+        ribs += [smooth, r]
+    down_ = component(g, UNIT_Z, "Unit Z", "Down the columns", RIBS, SOLVED, gap=30)
+    number(inp(down_, 0), -1.0)
+    shafts = component(g, LINE_SDL, "Line SDL", "Column axes", RIBS, SOLVED, gap=30)
+    faint(flat(wire(inp(shafts, 0), out(columns))))
+    wire(inp(shafts, 1), out(down_))
+    number(inp(shafts, 2), HEIGHT)
+    pipes = component(g, PIPE, "Pipe", "Column shafts", DRAWN, SOLVED, gap=30)
+    wire(inp(pipes, 0), out(shafts))
+    number(inp(pipes, 1), 0.22)
+    if pipes.Params.Input.Count > 2:
+        integer(inp(pipes, 2), 1)
+    floor = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "Floor outline", RIBS, SOLVED, gap=30)
+    points_into(inp(floor, 0), [(edge - SPAN, edge - SPAN, -HEIGHT)])
+    points_into(inp(floor, 1), [(edge + side + SPAN, edge - SPAN, -HEIGHT)])
+    points_into(inp(floor, 2), [(edge + side + SPAN, edge + side + SPAN, -HEIGHT)])
+    ground = component(g, MESH_PLANE, "Mesh Plane", "Floor", DRAWN, SOLVED, gap=30)
+    wire(inp(ground, 0), out(floor))
     integer(inp(ground, 1), 1)
     integer(inp(ground, 2), 1)
 
-    g.arrange(0, 0, stages=(PUSH, SOLVER, ELEMENT, LINES, DECK), row_gap=60.0, stack_gap=30.0)
-    group(doc, "1 - A flat net, 80 x 12 m in 80 x 12 quads, and its footings in pairs every 20 m", [plan, net, nodes, held_at], GREY)
-    group(doc, "2 - Kangaroo: edges that keep their length, held at the footings, every node pushed up",
-          [show, edges, lift, up, push, anchors], GREEN)
-    group(doc, "3 - Kangaroo's Zombie Solver finds the form", [iterations, zombie, form, used], RED)
-    group(doc, "4 - A concrete shell on the form, 300 mm, pinned at the footings, under its own weight",
-          [concrete, section, shell, pinned, weight, pattern, assemble, settings, run], BLUE)
-    group(doc, "5 - Principal Stress Lines, in the membrane", [seed, lines], PURPLE)
-    group(doc, "6 - For the pictures: a deck on the crowns, and the ground",
-          [form_nodes, heights, span_, top, lifted, deck_outline, depth, sides, deck_top, deck, ground_outline, ground], ORANGE)
+    g.arrange(0, 0, stages=(ELEMENT, PATTERN, LINES, RIBS), row_gap=60.0, stack_gap=30.0)
+    group(doc, "1 - The Nervi flat slab: concrete, 25 x 25 m, 200 mm, in 100 x 100 quads", [outline, mesh, concrete, section, shell], ORANGE)
+    group(doc, "2 - On 5 x 5 columns, 5 m apart, pinned", [lines_at, columns, pinned], GREEN)
+    group(doc, "3 - A uniform load", [size, minus, pressure, uniform], RED)
+    group(doc, "4 - Assembled and solved", [pattern, settings, assemble, run], BLUE)
+    group(doc, "5 - Principal Stress Lines, in bending", [seed, lines], PURPLE)
+    group(doc, "6 - For the pictures: the lines as ribs 300 mm deep, the columns down to a floor",
+          [depth] + ribs + [down_, shafts, pipes, floor, ground], GREY)
     # Only the lines draw: the scenes add their own previews.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)

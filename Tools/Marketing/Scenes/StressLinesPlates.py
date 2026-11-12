@@ -7,7 +7,7 @@
 #
 # Tools/Examples/make.sh writes StressLinesPlates.gh straight from this script, without Rhino:
 #
-#     ../Examples/make.sh StressLinesPlates.py
+#     ../../Examples/make.sh StressLinesPlates.py
 #
 # It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
 # (open this file and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.

@@ -427,7 +427,7 @@ printing() {
   $P pagegif "$OUT/printing/printed-cylinder-buckling-frames" "$e/printed-cylinder-buckling.gif"
 }
 
-# A shape of Tools/Examples/PrintedStructure.py printed along its own sections, as printing() does for
+# A shape of Tools/Examples/Printing/PrintedStructure.py printed along its own sections, as printing() does for
 # the cylinder: the whole print, a frame for every 2.5 s of printing or more; the ages at its end; the
 # settling and the buckling mode where the load factor reaches 1. printedshape scene prefix case example
 # stem: the pictures go to marketing/3d-printing/<case>, and to examples/3d-printed-structure/ as <stem>*.

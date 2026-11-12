@@ -22,11 +22,11 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
+REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 MARKETING = os.path.abspath(os.path.join(REPO, "..", "alpaca4d.github.io", "marketing"))
 OUT_DIR = os.path.join(MARKETING, "teaser", "capabilities")
-WORK = os.path.join(HERE, "out", "teaser")
-FONTS = os.path.join(HERE, "out", "fonts")
+WORK = os.path.normpath(os.path.join(HERE, "..", "out", "teaser"))
+FONTS = os.path.normpath(os.path.join(HERE, "..", "out", "fonts"))
 LOGO = os.path.join(REPO, "Assets", "Logo.png")
 FF = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 FP = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"

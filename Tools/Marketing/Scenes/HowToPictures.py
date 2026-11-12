@@ -13,8 +13,8 @@
 #     weight, point loads and a moment, line loads, a surface load, a mass - and, beside it, its own
 #     weight alone, for Model View's page.
 #
-# ../Examples/make.sh writes HowToPictures.gh from it, without Rhino:
-#     ../Examples/make.sh HowToPictures.py
+# ../../Examples/make.sh writes HowToPictures.gh from it, without Rhino:
+#     ../../Examples/make.sh HowToPictures.py
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 

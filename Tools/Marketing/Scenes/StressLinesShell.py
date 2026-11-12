@@ -1,21 +1,22 @@
 #! python3
-# The Nervi umbrella: a square concrete slab cantilevering all round from one column, after the
-# umbrellas of Nervi's Palazzo del Lavoro in Turin, and its principal moment lines, which run out
-# from the column and round it as his ribs do. For the marketing pictures (run.sh, next to it), not
-# an example of the docs.
+# A shell form-found with Kangaroo, analysed with Alpaca4d, and its principal stress lines: for the
+# marketing pictures (run.sh, next to it), not an example of the docs.
 #
-# Tools/Examples/make.sh writes StressLinesNerviUmbrella.gh straight from this script, without Rhino:
+# Tools/Examples/make.sh writes StressLinesShell.gh straight from this script, without Rhino:
 #
-#     ../Examples/make.sh StressLinesNerviUmbrella.py
+#     ../../Examples/make.sh StressLinesShell.py
 #
-# It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
-# (open this file and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
+# It also runs in Rhino with Grasshopper, Kangaroo2 (which Rhino 7 and 8 ship) and Alpaca4d
+# installed - in Rhino 8 from the ScriptEditor (open this file and press Run) or with
+# _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
-# One umbrella, 15 x 15 m and 200 mm thick, built into its column over a head 1 m square, under a
-# uniform load. Principal Stress Lines draws its bending lines from one seed off the diagonals. For
-# the pictures, the lines are smoothed and extruded 350 mm down into ribs, the column is a pipe 8 m
-# down to a floor, and nine umbrellas stand 1 m apart, three by three, as a hall: each is analysed
-# alone, as Nervi's stand apart.
+# A flat net 10 x 10 m, held at its four corners, is pushed up by a load on every node, as a cloth
+# hung from four points falls, but upwards: its edges are springs as long as the flat net's, which
+# stretch until they carry the load. Kangaroo's Zombie Solver finds the form in one go, and Lift sets
+# how high it rises. The form is a concrete shell 80 mm thick, pinned where the net was held, under
+# its own weight: it carries it in compression, and its stress lines run into the corners.
+# Iterations stops Kangaroo early, on a form on its way up: the pictures move it to show the form
+# being found.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -32,23 +33,24 @@ from System.Drawing import PointF, RectangleF, Color
 # Grasshopper
 POINT = "FBAC3E32-F100-4292-8692-77240A42FD1A"              # Params > Geometry > Point
 RECTANGLE_3PT = "9BC98A1D-2ECC-407E-948A-09A09ED3E69D"      # Curve > Primitive > Rectangle 3Pt
-LINE_SDL = "4C619BC9-39FD-4717-82A6-1E07EA237BBE"           # Curve > Primitive > Line SDL
-FIT_CURVE = "A3F9F19E-3E6C-4AC7-97C3-946DE32C3E8E"          # Curve > Util > Fit Curve
-SERIES = "E64C5FB1-845C-4ab1-8911-5F338516BA67"             # Sets > Sequence > Series
-CONSTRUCT_POINT = "3581F42A-9592-4549-BD6B-1C0FC39D067B"    # Vector > Point > Construct Point
+LIST_ITEM = "59DAF374-BC21-4A5E-8282-5504FB7AE9AE"          # Sets > List > List Item
 UNIT_Z = "9103C240-A6A9-4223-9B42-DBD19BF38E2B"             # Vector > Vector > Unit Z
-EXPRESSION = "9DF5E896-552D-4c8c-B9CA-4FC147FFA022"         # Maths > Script > Expression
 MESH_PLANE = "8ADBF481-7589-4A40-B490-006531EA001D"         # Mesh > Primitive > Mesh Plane
-EXTRUDE = "962034E9-CC27-4394-AFC4-5C16E3447CF9"            # Surface > Freeform > Extrude
-PIPE = "C277F778-6FDF-4890-8F78-347EFB23C406"               # Surface > Freeform > Pipe
-MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
+DECONSTRUCT_MESH = "BA2D8F57-0738-42B4-B5A5-FE4D853517EB"   # Mesh > Analysis > Deconstruct Mesh
+
+# Kangaroo2
+SHOW = "0ED5E67D-539D-480E-88CB-D81FA795D66C"               # Kangaroo2 > Main > Show
+ZOMBIE = "4408343B-577E-4FD8-96FF-DF7549189186"             # Kangaroo2 > Main > Zombie Solver
+EDGE_LENGTHS = "24E2B0D2-D7B8-4478-8A83-1F04CBA701A1"       # Kangaroo2 > Goals-Mesh > EdgeLengths
+ANCHOR = "3C30B1A1-4473-4AD4-A700-EA9770726C03"             # Kangaroo2 > Goals-Pt > Anchor
+LOAD = "2019C995-53AF-4EB2-976D-95B1FDC823FA"               # Kangaroo2 > Goals-Pt > Load
 
 # Alpaca4d
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
 PLATE_FIBER = "D54FADEF-3E36-492C-9241-4E9B8F48EE26"        # Plate Fiber Section
 SHELL = "EE45CFFD-CCDC-41D4-AA93-551FB576C2FC"              # ASD Shell
 SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
-MESH_LOAD = "C8514DEA-1B1B-45A6-ABC1-8004C1EFC617"          # Mesh Load
+GRAVITY = "4B6FA7FD-9388-4699-B374-B94F94583A53"            # Gravity Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
@@ -61,10 +63,7 @@ PSL_MODEL, PSL_SEED, PSL_SINGLE, PSL_BENDING, PSL_SEPARATION, PSL_TEST = 0, 2, 4
 # Concrete, in kN and m.
 E, NU, DENSITY = 33000000.0, 0.2, 2500.0
 
-# The umbrella, meshed CELLS a side; the column's head, built in, HEAD a side; the hall's umbrellas
-# PITCH apart, COPIES a side.
-SIDE, CELLS, HEAD, HEIGHT = 15.0, 60, 1.0, 8.0
-PITCH, COPIES = 16.0, 3
+SIDE, CELLS = 10.0, 24
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 ORANGE = Color.FromArgb(50, 235, 108, 63)
@@ -323,151 +322,121 @@ def open_menus(c):
             menu.Expand()
 
 
+# ---------------------------------------------------------------- the shell
+
+# Columns, in the order the data flows, and rows, one per part of the model. Each group keeps to
+# columns of its own, so that no two overlap.
+SHAPE, MESHED, PUSH, GOALS, SOLVER, FORM, ELEMENT, PART, PATTERN, MODEL, LINES = range(11)
+NET, PUSHED, HELD, WEIGHT = range(4)
 
 
-# ---------------------------------------------------------------- the umbrella
-
-# Columns, in the order the data flows, and rows, one per part of the model. Each group keeps to rows
-# and columns of its own, so that no two overlap.
-DATA, SHAPE, MESHED, ELEMENT, PART, PATTERN, MODEL, LINES, RIBS, DRAWN, HALL = range(11)
-SLAB, HELD, LOADED, SOLVED = range(4)
+def feet():
+    """The nodes the net is held at: each corner and its two neighbours along the edges."""
+    h = SIDE / CELLS
+    nodes = []
+    for x, y, dx, dy in ((0, 0, 1, 1), (SIDE, 0, -1, 1), (SIDE, SIDE, -1, -1), (0, SIDE, 1, -1)):
+        nodes += [(x, y, 0.0), (x + dx * h, y, 0.0), (x, y + dy * h, 0.0)]
+    return nodes
 
 
 def build(doc):
     g = Grid(doc)
-    middle = SIDE / 2
 
-    # 1 - The umbrella's slab.
-    outline = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "15 x 15 m", SHAPE, SLAB)
-    points_into(inp(outline, 0), [(0, 0, 0)])
-    points_into(inp(outline, 1), [(SIDE, 0, 0)])
-    points_into(inp(outline, 2), [(SIDE, SIDE, 0)])
-    mesh = component(g, MESH_PLANE, "Mesh Plane", "60 x 60 quads", MESHED, SLAB)
-    wire(inp(mesh, 0), out(outline))
-    integer(inp(mesh, 1), CELLS)
-    integer(inp(mesh, 2), CELLS)
-    concrete = component(g, ND_MATERIAL, "nD", "Concrete", MESHED, SLAB, gap=30)
+    # 1 - The flat net, 10 x 10 m in 24 x 24 quads, and its nodes.
+    plan = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "10 x 10 m", SHAPE, NET)
+    points_into(inp(plan, 0), [(0, 0, 0)])
+    points_into(inp(plan, 1), [(SIDE, 0, 0)])
+    points_into(inp(plan, 2), [(SIDE, SIDE, 0)])
+    net = component(g, MESH_PLANE, "Mesh Plane", "24 x 24 quads", MESHED, NET)
+    wire(inp(net, 0), out(plan))
+    integer(inp(net, 1), CELLS)
+    integer(inp(net, 2), CELLS)
+    nodes = component(g, DECONSTRUCT_MESH, "Deconstruct Mesh", "Nodes", MESHED, PUSHED)
+    wire(inp(nodes, 0), out(net))
+    held_at = points(g, "Corners", feet(), MESHED, HELD)
+
+    # 2 - Kangaroo's goals: the net shown, its edges as springs as long as they are, held at the
+    # corners, and every node pushed up.
+    show = component(g, SHOW, "Show", "Net", GOALS, NET)
+    wire(inp(show, 0), out(net))
+    edges = component(g, EDGE_LENGTHS, "EdgeLengths", "Edges", GOALS, NET, gap=30)
+    wire(inp(edges, 0), out(net))
+    number(inp(edges, 1), 1.0)
+    number(inp(edges, 2), 1.0)
+    # Next to nothing: the edges stretch only as far as they must, and the net rises about 3.6 m.
+    lift = slider(g, "Lift", 0, 0.002, 0.0004, 4, PUSH, PUSHED)
+    up = component(g, UNIT_Z, "Unit Z", "Up", PUSH, PUSHED, gap=30)
+    wire(inp(up, 0), lift)
+    push = component(g, LOAD, "Load", "Push up", GOALS, PUSHED)
+    wire(inp(push, 0), out(nodes, 0))
+    wire(inp(push, 1), out(up))
+    anchors = component(g, ANCHOR, "Anchor", "Held", GOALS, HELD)
+    wire(inp(anchors, 0), held_at)
+    number(inp(anchors, 2), 10000.0)
+
+    # 3 - The Zombie Solver, to the end or for Iterations; the net is the first goal, so the form
+    # is the first thing out.
+    iterations = slider(g, "Iterations", 1, 10000, 10000, 0, SOLVER, NET)
+    zombie = component(g, ZOMBIE, "Zombie Solver", "Zombie Solver", SOLVER, NET, gap=30)
+    flat(wire(inp(zombie, 0), out(show), out(edges), out(push), out(anchors)))
+    wire(inp(zombie, 3), iterations)
+    form = component(g, LIST_ITEM, "List Item", "Form", FORM, NET)
+    wire(inp(form, 0), out(zombie, 2))
+    integer(inp(form, 1), 0)
+    used = readout(g, "Iterations used", out(zombie, 0), FORM, NET, gap=30, width=80.0)
+
+    # 4 - A concrete shell on the form, 80 mm thick, pinned at the corners, under its own weight.
+    concrete = component(g, ND_MATERIAL, "nD", "Concrete", ELEMENT, PUSHED)
     inp(concrete, 0).PersistentData.Clear()
     inp(concrete, 0).PersistentData.Append(GH_String("Concrete"))
     number(inp(concrete, 1), E)
     number(inp(concrete, 2), E / (2.0 * (1.0 + NU)))
     number(inp(concrete, 3), NU)
     number(inp(concrete, 4), DENSITY)
-    section = component(g, PLATE_FIBER, "Plate Fiber Section", "200 mm", ELEMENT, SLAB)
-    number(inp(section, 1), 0.2)
+    section = component(g, PLATE_FIBER, "Plate Fiber Section", "80 mm", PART, PUSHED)
+    number(inp(section, 1), 0.08)
     wire(inp(section, 2), out(concrete))
-    shell = component(g, SHELL, "ASD Shell", None, PART, SLAB)
-    wire(inp(shell, 0), out(mesh))
+    shell = component(g, SHELL, "ASD Shell", None, PATTERN, NET)
+    wire(inp(shell, 0), out(form))
     wire(inp(shell, 1), out(section))
-
-    # 2 - Built into the column over its head: the nodes within half a metre of the middle.
-    step = SIDE / CELLS
-    count = int(round(HEAD / step)) + 1
-    across = component(g, SERIES, "Series", "Across the head", SHAPE, HELD)
-    number(inp(across, 0), middle - HEAD / 2)
-    number(inp(across, 1), step)
-    integer(inp(across, 2), count)
-    head = component(g, CONSTRUCT_POINT, "Construct Point", "Column head", MESHED, HELD)
-    wire(inp(head, 0), out(across))
-    wire(inp(head, 1), out(across)).DataMapping = GH_DataMapping.Graft
-    built_in = component(g, SUPPORT, "Support", "Built in", ELEMENT, HELD)
-    flat(wire(inp(built_in, 0), out(head)))
-    for i in range(6):
-        boolean(inp(built_in, i + 1), True)
-
-    # 3 - A uniform load, down.
-    size = slider(g, "UDL [kN/m2]", 0, 20, 5, 1, DATA, LOADED)
-    minus = emit(EXPRESSION, "The Expression component")
-    minus.SetInitCode("f(x)=-x")
-    minus.NickName = "Minus"
-    g.put(minus, SHAPE, LOADED)
-    wire(inp(minus, 0), size)
-    pressure = component(g, UNIT_Z, "Unit Z", "Down", MESHED, LOADED)
-    wire(inp(pressure, 0), out(minus))
-    uniform = component(g, MESH_LOAD, "Mesh Load", "Uniform load", ELEMENT, LOADED)
-    wire(inp(uniform, 1), out(pressure))
-
-    # 4 - Assembled and solved.
-    pattern = component(g, LOAD_PATTERN, "Load Pattern", None, PATTERN, SOLVED)
-    wire(inp(pattern, 1), out(uniform))
-    settings = component(g, ANALYSIS_SETTINGS, "Analysis Settings", None, PATTERN, SOLVED, gap=30)
-    assemble = component(g, ASSEMBLE, "Assemble Model", None, MODEL, SOLVED)
+    pinned = component(g, SUPPORT, "Support", "Pinned", ELEMENT, HELD)
+    faint(flat(wire(inp(pinned, 0), held_at)))
+    for i, held in enumerate((True, True, True, False, False, False)):
+        boolean(inp(pinned, i + 1), held)
+    weight = component(g, GRAVITY, "Gravity Load", "Own weight", ELEMENT, WEIGHT)
+    pattern = component(g, LOAD_PATTERN, "Load Pattern", None, PATTERN, WEIGHT)
+    wire(inp(pattern, 1), out(weight))
+    assemble = component(g, ASSEMBLE, "Assemble Model", None, MODEL, NET)
     flat(wire(inp(assemble, 0), out(shell)))
-    flat(wire(inp(assemble, 1), out(built_in)))
+    flat(wire(inp(assemble, 1), out(pinned)))
     flat(wire(inp(assemble, 2), out(pattern)))
-    run = component(g, RUN_ANALYSIS, "Run Analysis", None, MODEL, SOLVED, gap=30)
+    settings = component(g, ANALYSIS_SETTINGS, "Analysis Settings", None, PATTERN, HELD)
+    run = component(g, RUN_ANALYSIS, "Run Analysis", None, MODEL, HELD)
     wire(inp(run, 0), out(assemble))
     wire(inp(run, 1), out(settings))
 
-    # 5 - The bending lines, from a seed off the diagonals, where the field is symmetric.
-    seed = points(g, "Seed", [(0.69 * SIDE, 0.61 * SIDE, 0.0)], LINES, SOLVED)
+    # 5 - The stress lines in the shell's own surface: a field grown from a seed above it, off the
+    # crown, where the two principal stresses are the same and there is no direction to follow.
+    seed = points(g, "Seed", [(0.3 * SIDE, 0.4 * SIDE, SIDE)], LINES, NET)
     lines = emit(STRESS_LINES, "Principal Stress Lines")
-    lines.NickName = "Nervi umbrella"
+    lines.NickName = "Shell"
     open_menus(lines)
-    g.put(lines, LINES, SOLVED, gap=30)
-    faint(wire(inp(lines, PSL_MODEL), out(run)))
+    g.put(lines, LINES, NET, gap=30)
+    wire(inp(lines, PSL_MODEL), out(run))
     wire(inp(lines, PSL_SEED), seed)
     boolean(inp(lines, PSL_SINGLE), False)
-    boolean(inp(lines, PSL_BENDING), True)
-    number(inp(lines, PSL_SEPARATION), 0.6)
-    number(inp(lines, PSL_TEST), 0.24)
+    boolean(inp(lines, PSL_BENDING), False)
+    number(inp(lines, PSL_SEPARATION), 0.35)
+    number(inp(lines, PSL_TEST), 0.175)
 
-    # 6 - For the pictures: the lines, smoothed, as ribs 350 mm deep; the column a pipe down to the
-    # floor; and nine umbrellas, three by three, 1 m apart.
-    depth = component(g, UNIT_Z, "Unit Z", "Rib depth", RIBS, SOLVED)
-    number(inp(depth, 0), -0.35)
-    ribs = []
-    for i, name in enumerate(("Ribs SL1", "Ribs SL2")):
-        smooth = component(g, FIT_CURVE, "Fit Curve", "Smooth SL" + str(i + 1), RIBS, SOLVED, gap=30)
-        wire(inp(smooth, 0), out(lines, i))
-        integer(inp(smooth, 1), 3)
-        number(inp(smooth, 2), 0.005)
-        r = component(g, EXTRUDE, "Extrude", name, DRAWN, SOLVED, gap=30 if i else 0)
-        wire(inp(r, 0), out(smooth))
-        wire(inp(r, 1), out(depth))
-        ribs += [smooth, r]
-    down_ = component(g, UNIT_Z, "Unit Z", "Down the column", RIBS, SOLVED, gap=30)
-    number(inp(down_, 0), -1.0)
-    axis = component(g, LINE_SDL, "Line SDL", "Column axis", RIBS, SOLVED, gap=30)
-    points_into(inp(axis, 0), [(middle, middle, 0)])
-    wire(inp(axis, 1), out(down_))
-    number(inp(axis, 2), HEIGHT)
-    pipe = component(g, PIPE, "Pipe", "Column shaft", DRAWN, SOLVED, gap=30)
-    wire(inp(pipe, 0), out(axis))
-    number(inp(pipe, 1), 0.45)
-    if pipe.Params.Input.Count > 2:
-        integer(inp(pipe, 2), 1)
-    offsets = component(g, SERIES, "Series", "Hall offsets", RIBS, SOLVED, gap=30)
-    number(inp(offsets, 0), -PITCH)
-    number(inp(offsets, 1), PITCH)
-    integer(inp(offsets, 2), COPIES)
-    places = component(g, CONSTRUCT_POINT, "Construct Point", "Places", DRAWN, SOLVED, gap=30)
-    wire(inp(places, 0), out(offsets))
-    wire(inp(places, 1), out(offsets)).DataMapping = GH_DataMapping.Graft
-    hall = []
-    for name, source in (("Hall ribs SL1", out(ribs[1])), ("Hall ribs SL2", out(ribs[3])), ("Hall slabs", out(mesh)), ("Hall columns", out(pipe))):
-        m = component(g, MOVE, "Move", name, HALL, SOLVED, gap=30 if hall else 0)
-        flat(faint(wire(inp(m, 0), source)))
-        wire(inp(m, 1), out(places)).DataMapping = GH_DataMapping.Graft
-        hall.append(m)
-    floor = component(g, RECTANGLE_3PT, "Rectangle 3Pt", "Floor outline", RIBS, SOLVED, gap=30)
-    reach = PITCH * (COPIES // 2) + SIDE
-    points_into(inp(floor, 0), [(-reach, -reach, -HEIGHT)])
-    points_into(inp(floor, 1), [(SIDE + reach, -reach, -HEIGHT)])
-    points_into(inp(floor, 2), [(SIDE + reach, SIDE + reach, -HEIGHT)])
-    ground = component(g, MESH_PLANE, "Mesh Plane", "Floor", DRAWN, SOLVED, gap=30)
-    wire(inp(ground, 0), out(floor))
-    integer(inp(ground, 1), 1)
-    integer(inp(ground, 2), 1)
-
-    g.arrange(0, 0, stages=(ELEMENT, PATTERN, LINES, RIBS), row_gap=60.0, stack_gap=30.0)
-    group(doc, "1 - The Nervi umbrella: concrete, 15 x 15 m, 200 mm, in 60 x 60 quads", [outline, mesh, concrete, section, shell], ORANGE)
-    group(doc, "2 - Built into one column over a head 1 m square", [across, head, built_in], GREEN)
-    group(doc, "3 - A uniform load", [size, minus, pressure, uniform], RED)
-    group(doc, "4 - Assembled and solved", [pattern, settings, assemble, run], BLUE)
-    group(doc, "5 - Principal Stress Lines, in bending", [seed, lines], PURPLE)
-    group(doc, "6 - For the pictures: the lines as ribs 350 mm deep, the column, nine umbrellas as a hall",
-          [depth] + ribs + [down_, axis, pipe, offsets, places] + hall + [floor, ground], GREY)
+    g.arrange(0, 0, stages=(PUSH, SOLVER, ELEMENT, LINES), row_gap=60.0, stack_gap=30.0)
+    group(doc, "1 - A flat net, 10 x 10 m in 24 x 24 quads", [plan, net, nodes, held_at], GREY)
+    group(doc, "2 - Kangaroo: edges that keep their length, held at the corners, every node pushed up",
+          [show, edges, lift, up, push, anchors], GREEN)
+    group(doc, "3 - Kangaroo's Zombie Solver finds the form", [iterations, zombie, form, used], RED)
+    group(doc, "4 - A concrete shell on the form, 80 mm, pinned at the corners, under its own weight",
+          [concrete, section, shell, pinned, weight, pattern, assemble, settings, run], BLUE)
+    group(doc, "5 - Principal Stress Lines, in the shell's surface", [seed, lines], PURPLE)
     # Only the lines draw: the scenes add their own previews.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)

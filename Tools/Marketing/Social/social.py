@@ -11,8 +11,8 @@ MP4 - made with sips and ffmpeg, and made again only when the original is newer.
 import html, json, os, re, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MARKETING = os.environ.get("MARKETING") or os.path.normpath(os.path.join(HERE, "../../../alpaca4d.github.io/marketing"))
-OUT = os.path.join(HERE, "out", "social")
+MARKETING = os.environ.get("MARKETING") or os.path.normpath(os.path.join(HERE, "../../../../alpaca4d.github.io/marketing"))
+OUT = os.path.normpath(os.path.join(HERE, "..", "out", "social"))
 MEDIA = os.path.join(OUT, "media")
 FFMPEG = "/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg") else "ffmpeg"
 

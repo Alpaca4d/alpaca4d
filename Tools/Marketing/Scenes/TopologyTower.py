@@ -5,7 +5,7 @@
 #
 # Tools/Examples/make.sh writes TopologyTower.gh straight from this script, without Rhino:
 #
-#     ../Examples/make.sh TopologyTower.py
+#     ../../Examples/make.sh TopologyTower.py
 #
 # It also runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor
 # (open this file and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.

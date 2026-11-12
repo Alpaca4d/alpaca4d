@@ -67,7 +67,7 @@ POSTERS = [
 MOSAIC = [(1, 0, 0.5), (2, 3, 0.1), (9, 0, 0.5), (8, 0, 0.5), (4, 0, 0.5), (5, 0, 0.4), (0, 1, 0.5),
           (3, 0, 0.5), (6, 0, 0.5)]
 # the Explorer's last frame, as explorer.py recorded it, and its two panels in it (pixels)
-EXPLORER_FRAMES = os.path.join(T.HERE, "out", "explorer", "frames")
+EXPLORER_FRAMES = os.path.join(T.HERE, "..", "out", "explorer", "frames")
 AXES_PANEL, GALLERY_PANEL, DESIGN_PANEL = (17, 86, 1382, 602), (17, 622, 1382, 1063), (1399, 86, 1903, 1063)
 
 

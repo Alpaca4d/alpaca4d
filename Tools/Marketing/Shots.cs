@@ -43,7 +43,7 @@ public static class Shots
     static readonly Color Background = Color.FromArgb(251, 251, 251);
 
     // Set by Run, from what run.sh passes.
-    static string examples, here, licence;
+    static string examples, scenes, licence;
     static bool quitWhenDone;
 
     static string outDir, logPath, donePath;
@@ -74,7 +74,7 @@ public static class Shots
         Directory.CreateDirectory(output);
         File.WriteAllText(logPath, "");
         examples = Path.Combine(repo, "Tools", "Examples") + Path.DirectorySeparatorChar;
-        here = Path.Combine(repo, "Tools", "Marketing") + Path.DirectorySeparatorChar;
+        Shots.scenes = Path.Combine(repo, "Tools", "Marketing", "Scenes") + Path.DirectorySeparatorChar;
         licence = licenceFile;
         quitWhenDone = quit == "1";
         failed.Clear();
@@ -334,9 +334,17 @@ public static class Shots
         if (mode != null) DropMode(mode);
     }
 
+    /// <summary>An example's file by its name, in whichever folder of Tools/Examples holds it.</summary>
+    static string Example(string file)
+    {
+        var hits = Directory.GetFiles(examples, file, SearchOption.AllDirectories);
+        if (hits.Length == 0) throw new FileNotFoundException("no " + file + " in " + examples);
+        return hits[0];
+    }
+
     static void Open(string file)
     {
-        string path = Path.IsPathRooted(file) ? file : examples + file;
+        string path = Path.IsPathRooted(file) ? file : Example(file);
         shownBefore = Instances.ActiveCanvas.Document;
         var io = new GH_DocumentIO();
         if (!io.Open(path)) throw new Exception("could not open " + path);
@@ -841,7 +849,7 @@ public static class Shots
     {
         var run = Components(RunAnalysisId).First();
         var results = ResultViews().First();
-        var (nodes, tets) = ReadTets(examples + "Femur.txt");
+        var (nodes, tets) = ReadTets(Example("Femur.txt"));
         var skin = Skin(nodes, tets);
         var box = new BoundingBox(nodes);
         double yMid = 0.5 * (box.Min.Y + box.Max.Y);
@@ -946,7 +954,7 @@ public static class Shots
     // ------------------------------------------------------------------ a footbridge's modes
 
     /// <summary>
-    /// FootbridgeModes.gh, from Tools/Examples/Structures.py: its canvas, and its first three modes, each
+    /// FootbridgeModes.gh, from Tools/Examples/Structures/Structures.py: its canvas, and its first three modes, each
     /// a still with its Legend over the bridge at rest and a loop of it swinging through its rest.
     /// </summary>
     static List<(string, Func<bool>)> Footbridge()
@@ -982,7 +990,7 @@ public static class Shots
     // ------------------------------------------------------------------ footfall on stairs
 
     /// <summary>
-    /// A footfall stair from Tools/Examples/FootfallStair.py - FootfallStair.gh, FootfallHelicalStair.gh or
+    /// A footfall stair from Tools/Examples/Structures/FootfallStair.py - FootfallStair.gh, FootfallHelicalStair.gh or
     /// FootfallStraightStair.gh: its canvas; when <paramref name="sweep"/> names a slider, the fundamental
     /// frequency and the largest response factor at each of <paramref name="values"/>, for the example's
     /// page; the response factor where people walk, with its Legend, the largest R and its marker, from a
@@ -1266,7 +1274,7 @@ public static class Shots
     // ------------------------------------------------------------------ the tank's hundred modes
 
     /// <summary>
-    /// TankModes.gh, from Tools/Examples/Structures.py: its canvas; the hundred modes on their grid, a
+    /// TankModes.gh, from Tools/Examples/Structures/Structures.py: its canvas; the hundred modes on their grid, a
     /// close look at some of them, as the cover (and again with Grasshopper's mesh edges drawing the
     /// shells' edges, dark), the whole grid receding, and the grid from above with each mode's number
     /// and frequency; and the close look swinging, every mode at once.
@@ -1355,7 +1363,7 @@ public static class Shots
     // ------------------------------------------------------------------ the response spectrum sticks
 
     /// <summary>
-    /// ResponseSpectrumSticks.gh, from Tools/Examples/Structures.py: its canvas; the sticks at the step
+    /// ResponseSpectrumSticks.gh, from Tools/Examples/Structures/Structures.py: its canvas; the sticks at the step
     /// they move the most, all together, with the spectrum they draw standing behind them; and a frame
     /// every 0.1 s through the record, the spectrum growing behind the sticks as each reaches further,
     /// each with its charts: the ground's acceleration, and the spectrum so far over the whole one.
@@ -2051,7 +2059,7 @@ public static class Shots
         {
             Do("open", () =>
             {
-                Open(here + "TopologyTower.gh");
+                Open(scenes + "TopologyTower.gh");
                 topology = Components(TopologyId).First();
                 ((IGH_PreviewObject)topology).Hidden = true;
                 surfacePreview = Preview(Welded(Out(topology, "Surface"), Beside(topology, 120, 160)), LightBlue, Beside(topology, 300, 160));
@@ -2661,7 +2669,7 @@ public static class Shots
         {
             Do("open", () =>
             {
-                Open(Path.Combine(here, "HowToPictures.gh"));
+                Open(Path.Combine(scenes, "HowToPictures.gh"));
                 // Every warning and error, to know the models are what the pictures say.
                 foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
                     Messages(c);
@@ -2730,7 +2738,7 @@ public static class Shots
     // ------------------------------------------------------------------ conventional structures
 
     /// <summary>
-    /// The six conventional structures of Tools/Examples/Structures.py, one after another: each one's
+    /// The six conventional structures of Tools/Examples/Structures/Structures.py, one after another: each one's
     /// canvas, its loads, its deformed shape over the structure at rest and the GIF of it deforming -
     /// and the tower's first mode as well.
     /// </summary>
@@ -2801,7 +2809,7 @@ public static class Shots
     // ------------------------------------------------------------------ earthquakes
 
     /// <summary>
-    /// The five structures of Tools/Examples/Structures.py shaken by El Centro: each one's canvas, the
+    /// The five structures of Tools/Examples/Structures/Structures.py shaken by El Centro: each one's canvas, the
     /// still at the step it moves the most, with its charts on their own, and its frames through the
     /// record, a frame every five steps - 0.1 s, so that ten frames a second play it as it happened -
     /// each with its charts beside it in a folder of their own: the ground's acceleration, and how the
@@ -3227,7 +3235,7 @@ public static class Shots
     // ------------------------------------------------------------------ a building pushed over
 
     /// <summary>
-    /// The irregular concrete building of Tools/Examples/Structures.py pushed over, PushoverBuilding.gh:
+    /// The irregular concrete building of Tools/Examples/Structures/Structures.py pushed over, PushoverBuilding.gh:
     /// its canvas; the building at the end of the push with its plastic hinges, from a corner, and the
     /// chart of its capacity curve on its own; the building beside Grasshopper's own drawing of the curve,
     /// as the example opens; and a frame every second point of the curve, the building pushed a little
@@ -3328,7 +3336,7 @@ public static class Shots
     }
 
     /// <summary>
-    /// The reciprocal plywood vault of Tools/Examples/ReciprocalVault.py pressed down until it gives way,
+    /// The reciprocal plywood vault of Tools/Examples/Structures/ReciprocalVault.py pressed down until it gives way,
     /// ReciprocalVault.gh: its canvas; the vault at the peak of its curve, and at the end of the push, with
     /// their charts; a frame every second point of the curve, the vault pressed a little further each time,
     /// its colours over the whole push's range, with the chart of the curve so far in a folder of its own,
@@ -3558,7 +3566,7 @@ public static class Shots
     // ------------------------------------------------------------------ a steel beam pushed past yield
 
     /// <summary>
-    /// The steel beam with holes of Tools/Examples/PerforatedBeam.py, J2Plasticity in ten node
+    /// The steel beam with holes of Tools/Examples/Plasticity/PerforatedBeam.py, J2Plasticity in ten node
     /// tetrahedra, pushed past first yield: its canvas; the beam at the last step in its Von Mises
     /// bands, the yielding steel orange, and the chart of its load-deflection curve; the beam beside the
     /// curve Grasshopper draws, as the example opens; and a frame for every step, the beam pushed a
@@ -3620,7 +3628,7 @@ public static class Shots
     };
 
     /// <summary>
-    /// One of Tools/Examples/Plasticity.py's definitions - steel that yields, pushed past first yield:
+    /// One of Tools/Examples/Plasticity/Plasticity.py's definitions - steel that yields, pushed past first yield:
     /// its canvas; the model at the last step in its Von Mises bands, the yielding steel orange, from
     /// along eye (from above when top), and the chart of its load-displacement curve; the model beside
     /// the curve Grasshopper draws; and a frame for every step with the chart of the curve so far. The
@@ -4086,7 +4094,7 @@ public static class Shots
         {
             Do("open", () =>
             {
-                Open(here + "StressLinesPlates.gh");
+                Open(scenes + "StressLinesPlates.gh");
                 foreach (var c in Components(RunAnalysisId)) Messages(c);
                 foreach (var c in Components(StressLinesId)) { Messages(c); LinesLog(c); }
             }),
@@ -4285,7 +4293,7 @@ public static class Shots
         {
             Do("open", () =>
             {
-                Open(here + "StressLinesNerviFlatSlab.gh");
+                Open(scenes + "StressLinesNerviFlatSlab.gh");
                 foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
                 LinesLog(Components(StressLinesId).First());
             }),
@@ -4366,7 +4374,7 @@ public static class Shots
         {
             Do("open", () =>
             {
-                Open(here + "StressLinesNerviUmbrella.gh");
+                Open(scenes + "StressLinesNerviUmbrella.gh");
                 foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
                 LinesLog(Components(StressLinesId).First());
             }),
@@ -4430,7 +4438,7 @@ public static class Shots
         int used = 0;
         return new List<(string, Func<bool>)>
         {
-            Do("open", () => Open(here + "StressLinesMusmeciBridge.gh")),
+            Do("open", () => Open(scenes + "StressLinesMusmeciBridge.gh")),
             Do("bridge", () =>
             {
                 var zombie = Find<IGH_Component>("Zombie Solver");
@@ -4562,7 +4570,7 @@ public static class Shots
         {
             Do("open", () =>
             {
-                Open(here + "Studies" + Path.DirectorySeparatorChar + n + ".gh");
+                Open(scenes + "Studies" + Path.DirectorySeparatorChar + n + ".gh");
                 foreach (var c in doc.Objects.OfType<IGH_ActiveObject>()) Messages(c);
                 LinesLog(Components(StressLinesId).First());
                 var zombie = Optional("Zombie Solver");
@@ -4693,7 +4701,7 @@ public static class Shots
         int used = 0;
         return new List<(string, Func<bool>)>
         {
-            Do("open", () => Open(here + "StressLinesShell.gh")),
+            Do("open", () => Open(scenes + "StressLinesShell.gh")),
             Do("shell", () =>
             {
                 var zombie = Find<IGH_Component>("Zombie Solver");
