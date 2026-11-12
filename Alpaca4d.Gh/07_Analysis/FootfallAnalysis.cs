@@ -80,7 +80,7 @@ namespace Alpaca4d.Gh
 
         // The outputs: the body's, then the Steady state and transient menu's.
         private const string FactorOutput = "Response Factor", PointOutput = "Point", CriticalOutput = "Critical Frequency",
-            WalkerOutput = "Walker Point", ReportOutput = "Report";
+            WalkerOutput = "Walker Point", ReportOutput = "Report", ModelOutput = "AlpacaModel";
         private const string SteadyFactorOutput = "Steady-State Factor", TransientFactorOutput = "Transient Factor",
             SteadyAccelerationOutput = "Steady-State Acceleration", TransientAccelerationOutput = "Transient Acceleration";
 
@@ -234,6 +234,11 @@ namespace Alpaca4d.Gh
             for (int i = firstMenuOutput; i < unit.Outputs.Count; i++)
                 responses.RegisterOutputPlug(unit.Outputs[i]);
             unit.AddMenu(responses);
+
+            // Last, so that the outputs of files saved before it keep their places.
+            unit.RegisterOutputParam(new Param_GenericObject(), ModelOutput, ModelOutput,
+                "The model it was given, with what was found at each node on it - R, its steady-state and transient parts and their accelerations, " +
+                "the critical frequency: for the AlpacaModel input of the Report, whose Footfall topic draws the model coloured by any of them and lists the worst.");
         }
 
         protected override void BeforeSolveInstance()
@@ -424,6 +429,23 @@ namespace Alpaca4d.Gh
             DA.SetDataList(SteadyAccelerationOutput, slots.Select(i => result.SteadyStateAcceleration[i]));
             DA.SetDataList(TransientAccelerationOutput, slots.Select(i => result.TransientAcceleration[i]));
             DA.SetData(ReportOutput, Report(result, frequencies, model, settings, where.ToString(), clock.Elapsed.TotalSeconds));
+
+            // The model, with what was found on it, for the Report.
+            var mapped = model.ShallowCopy();
+            mapped.Footfall = new Alpaca4d.FootfallResponse
+            {
+                Nodes = read.Select(node => model.Nodes[node].Id ?? node).ToArray(),
+                Factors = slots.Select(i => result.ResponseFactor[i]).ToArray(),
+                CriticalFrequencies = slots.Select(i => result.CriticalFrequency[i]).ToArray(),
+                SteadyStateFactors = slots.Select(i => result.SteadyStateFactor[i]).ToArray(),
+                TransientFactors = slots.Select(i => result.TransientFactor[i]).ToArray(),
+                SteadyStateAccelerations = slots.Select(i => result.SteadyStateAcceleration[i]).ToArray(),
+                TransientAccelerations = slots.Select(i => result.TransientAcceleration[i]).ToArray(),
+                TransientChecked = result.TransientChecked,
+                Activity = settings.Activity.ToString(),
+                Damping = settings.Damping
+            };
+            DA.SetData(ModelOutput, mapped);
         }
 
         /// <summary>

@@ -242,6 +242,7 @@ namespace Alpaca4d.Gh
             pushed.IsTransient = false;
             pushed.IsModal = false;
             pushed.IsBuckling = false;
+            pushed.IsPushover = true;
 
             pushed.Tcl = new List<string> { Pushover.LogTcl(logPath) };
             pushed.Tcl.AddRange(pDelta ? Pushover.WithPDelta(model.Tcl, out _) : model.Tcl);
