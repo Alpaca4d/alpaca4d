@@ -190,6 +190,19 @@ namespace Alpaca4d
         /// </summary>
         public bool IsBuckling { get; set; }
 
+        /// <summary>
+        /// Set by Pushover Analysis on the model it hands on: a static analysis whose steps push it
+        /// further, step by step, its plastic hinges forming as they go. The Report finds a pushover's
+        /// model by it.
+        /// </summary>
+        public bool IsPushover { get; set; }
+
+        /// <summary>
+        /// Set by Footfall Analysis on the model it hands on - the natural vibration model it was given -
+        /// to the response factors it found. The Report finds a footfall's model by it. Null otherwise.
+        /// </summary>
+        public FootfallResponse Footfall { get; set; }
+
         /// <summary>The load factors of the buckling modes, lowest first, when <see cref="IsBuckling"/>.</summary>
         public List<double> BucklingFactors { get; set; } = new List<double>();
 
