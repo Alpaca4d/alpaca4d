@@ -12,7 +12,8 @@
 #                   at its two ends: steel plate stringers, plate treads and landings (FootfallStraightStair.gh)
 #
 # In each, Natural Vibration finds the modes, the mass the steel's own and the finishes with a tenth of the
-# imposed load, as P354 has it; Footfall Analysis, with P354's Fourier coefficients for stairs (Table 3.2),
+# imposed load, as P354 has it: Mesh Loads of both on the plates people walk on, in Load Patterns named
+# "Finishes" and "Imposed", which two Mass from Loads name - "Finishes" in full, "Imposed" at Imposed as mass, 0.1; Footfall Analysis, with P354's Fourier coefficients for stairs (Table 3.2),
 # finds the response factor at every node; a GhPython component colours where people walk by it, green to
 # orange up to the Limit and red past it, and marks the worst node; a Model View draws a mode in blues, its
 # frequency in its legend.
@@ -43,6 +44,7 @@ from Grasshopper.Kernel.Parameters.Hints import GH_MeshHint
 from System.Drawing import Bitmap, Color
 
 import Structures as S
+PATTERNS_ = S.PATTERNS
 from Structures import (component, inp, out, wire, flat, number, integer, words, colours, booleans, slider, text,
                         panel, menu_setting, show_result, result_unit, python_component, Structure,
                         SLIDERS, GEOMETRY_, SECTIONS, MEMBERS, WIDTHS, LOADS, MODEL, ANALYSIS, VIEWS, LEGENDS,
@@ -56,6 +58,7 @@ GEOMETRY_FILE = System.IO.Path.Combine(HERE, "FootfallStairGeometry.py")
 ICONS = System.IO.Path.Combine(HERE, "..", "..", "..", "Assets", "icon-candidates")
 
 FOOTFALL = "7E4C1A92-3D58-4B6F-A0E7-2C9F5B81D364"            # Footfall Analysis
+MASS_FROM_LOADS = "D47E2A90-6B15-4F83-A2C6-91E8B04F5D27"     # Mass from Loads
 MESH_PARAM = S.MESH_PARAM
 TEXT_TAG = S.TEXT_TAG
 LIST_ITEM = S.LIST_ITEM
@@ -140,19 +143,69 @@ def shells(s, name, meshes, section):
     return shell
 
 
-def analyse(s, modes_count, solver, limit_default):
-    """The masses, Assemble, Natural Vibration and Footfall Analysis with P354's stair coefficients:
-    paces 1.2 to 4.5 Hz, the 12 Hz cut-off for stairs, 0.5% damping for welded steel, footsteps all the way
-    up. Returns Natural Vibration, Footfall Analysis and the Limit slider."""
-    masses = component(s.grid, S.MASS_POINT, "Mass Point", "Finishes and 10% imposed", LOADS, LOADED, gap=30)
-    wire(inp(masses, 0), s.g("MassPoints"))
-    wire(inp(masses, 1), s.g("Masses"))
-    s.parts["4"].append(masses)
+def mesh_load(s, name, shells, pressure):
+    """A Mesh Load on the shells, pressure the slider's kN/m2, straight down."""
+    amount = S.expression(s.grid, "f(q)=-q", [s.sliders[pressure]], name + " [kN/m2]", S.WIDTHS, LOADED, gap=30)
+    direction = component(s.grid, S.UNIT_Z, "Unit vector", name, S.VECTORS, LOADED, gap=30)
+    wire(inp(direction, 0), out(amount))
+    load = component(s.grid, S.MESH_LOAD, "Mesh Load", name, LOADS, LOADED, gap=30)
+    wire(flat(inp(load, 0)), *[out(x) for x in shells])
+    wire(inp(load, 1), out(direction))
+    s.parts["4"] += [amount, direction, load]
+    return load
+
+
+# Load Pattern's Name input, after TimeSeries, Loads and Factor.
+P_NAME = 3
+
+
+def named_pattern(s, name, load):
+    """A Load Pattern of one load, its Name typed in a panel beside it."""
+    label = text(s.grid, name, name, S.VECTORS, LOADED, gap=30)
+    p = component(s.grid, S.LOAD_PATTERN, "Load Pattern", name, PATTERNS_, LOADED, gap=30)
+    wire(flat(inp(p, 1)), out(load))
+    wire(inp(p, P_NAME), label)
+    s.parts["4"] += [label, p]
+    return p
+
+
+def mass_from(s, nickname, name, factor=None):
+    """Mass from Loads naming the Load Pattern name, in a panel beside it, at factor: a slider, or 1."""
+    label = text(s.grid, name, name, S.VECTORS, LOADED, gap=30)
+    m = component(s.grid, MASS_FROM_LOADS, "Mass from Loads", nickname, PATTERNS_, LOADED, gap=30)
+    wire(inp(m, 0), label)
+    if factor is not None:
+        wire(inp(m, 1), factor)
+    s.parts["4"] += [label, m]
+    return m
+
+
+def mass_in_use(s, shells):
+    """The mass a stair has in use, as SCI P354 takes it, on top of the steel's own: the finishes in full
+    and a tenth of the imposed load. Each is a Mesh Load on the shells people walk on, in a Load Pattern
+    named for it, "Finishes" and "Imposed"; Mass from Loads names each pattern and makes its loads' weight
+    mass - "Finishes" at Factor 1, "Imposed" at Imposed as mass, 0.1 - as a mass source does. Natural
+    Vibration does not apply the patterns: they are there to be named. Returns the patterns and the two
+    Mass from Loads, for Assemble."""
+    finishes = named_pattern(s, "Finishes", mesh_load(s, "Finishes", shells, "Finishes"))
+    imposed = named_pattern(s, "Imposed", mesh_load(s, "Imposed", shells, "Imposed"))
+    share = slider(s.grid, "Imposed as mass", 0, 1, 0.1, 2, SLIDERS, LOADED, gap=30)
+    s.parts["4"].append(share)
+    permanent = mass_from(s, "Finishes, in full", "Finishes")
+    variable = mass_from(s, "Imposed, a tenth (P354)", "Imposed", share)
+    return [finishes, imposed, permanent, variable]
+
+
+def analyse(s, modes_count, solver, limit_default, walked):
+    """The mass in use on the shells walked on, Assemble, Natural Vibration and Footfall Analysis with
+    P354's stair coefficients: paces 1.2 to 4.5 Hz, the 12 Hz cut-off for stairs, 0.5% damping for welded
+    steel, footsteps all the way up. Returns Natural Vibration, Footfall Analysis and the Limit slider."""
+    masses = mass_in_use(s, walked)
 
     a = component(s.grid, S.ASSEMBLE, "Assemble Model", s.title, MODEL, MAIN)
     wire(flat(inp(a, 0)), *[out(m) for m in s.members])
     wire(flat(inp(a, 1)), *[out(x) for x in s.supports])
-    wire(flat(inp(a, 2)), out(masses))
+    wire(flat(inp(a, 2)), *[out(m) for m in masses])
     if s.constraints:
         wire(flat(inp(a, 3)), *[out(c) for c in s.constraints])
     s.assembled = a
@@ -271,10 +324,7 @@ def u_stair(doc):
         ("Finishes", "Finishes [kN/m2]", 0, 2, 0.3, 2),
         ("Imposed", "Imposed [kN/m2]", 0, 5, 4.0, 1),
     ])
-    s.inputs.append(("Finishes", s.as_float))
-    s.inputs.append(("Imposed", s.as_float))
-    s.geometry(["Stringers", "Treads", "Landings", "LandingBeams", "Posts", "Feet", "Tops", "MassPoints",
-                "Masses", "Steps", "Height"])
+    s.geometry(["Stringers", "Treads", "Landings", "LandingBeams", "Posts", "Feet", "Tops", "Steps", "Height"])
     icon(s.geo, "footfall-stair-geometry.png")
 
     # The steel: the members dark, the plates light, so that the stair reads as it would be built.
@@ -297,8 +347,8 @@ def u_stair(doc):
     s.elements("Landing beams", "LandingBeams", library(s, "200x100x8", steel))
     s.elements("Posts", "Posts", library(s, "139.7x8", steel))
     section, thickness = plate(s, plate_steel(s), "Tread plate", "Plate [mm]", 6, 40, 20)
-    shells(s, "Treads", ["Treads"], section)
-    shells(s, "Landings", ["Landings"], section)
+    treads = shells(s, "Treads", ["Treads"], section)
+    landings = shells(s, "Landings", ["Landings"], section)
 
     # Pinned at the foot of the stringers and the posts, and where the top flight meets the floor.
     s.support("Pinned feet", "Feet", (True, True, True, False, False, False))
@@ -306,7 +356,7 @@ def u_stair(doc):
 
     # Twelve modes, by ARPACK on Mumps: past 2 Hz over the 12 Hz cut-off and twice the fundamental, and short
     # of the treads' own modes, two dozen near 64 Hz, which ARPACK stalls on.
-    modes, footfall, limit = analyse(s, 12, "-genBandArpack", 32)
+    modes, footfall, limit = analyse(s, 12, "-genBandArpack", 32, [treads, landings])
     # The map a little above the plates, so that it covers them.
     lift = S.expression(s.grid, "f(t)=t/2000+0.002", [thickness], "Above the plate [m]", VIEWS, MAIN, gap=30)
     s.parts["6"].append(lift)
@@ -315,7 +365,7 @@ def u_stair(doc):
     s.finish({"1": "Geometry: three flights and two quarter landings between floors 4.2 m apart",
               "2": "Members: hollow section stringers of Stringer depth, RHS edge beams and CHS posts in S355, steel plate treads and landings as ASD Shells",
               "3": "Supports: pinned at the feet of the stringers and posts, and where the top flight meets the floor",
-              "4": "Mass: the finishes and a tenth of the imposed load, at the nodes of the plates",
+              "4": "Mass in use (P354): Load Patterns \"Finishes\" and \"Imposed\", Mesh Loads on the treads and landings; Mass from Loads names them - \"Finishes\" at 1, \"Imposed\" at Imposed as mass, 0.1",
               "5": "Analysis: the first 12 modes, then Footfall Analysis with P354's stair coefficients",
               "6": "Results: the response factor on the treads and landings against Limit R, the stair, and the mode Mode picks"},
              "Footfall stair - how much a steel stair shakes when people walk up and down it, after SCI P354.\n\n"
@@ -324,6 +374,8 @@ def u_stair(doc):
              "hollow sections 100 mm wide, their depth a slider; its open treads, steel plates, are fixed to them "
              "at the middle of their ends. A landing is a plate on four 200 x 100 x 8 edge beams, a 139.7 x 8 post "
              "under its free corner.\n\n"
+             "Its mass is what it has in use (P354): the steel's own, and the Load Patterns \"Finishes\" and "
+             "\"Imposed\" that two Mass from Loads name, \"Finishes\" at 1 and \"Imposed\" at Imposed as mass, 0.1.\n\n"
              "Natural Vibration finds its first 12 modes. Footfall Analysis then walks a 76 kg person up and down "
              "it at 1.2 to 4.5 steps a second, with P354's Fourier coefficients for stairs (Table 3.2), 0.5% "
              "damping for welded steel and the 12 Hz cut-off for stairs, the walker at each node in turn (self "
@@ -331,7 +383,7 @@ def u_stair(doc):
              "are coloured by the response factor R, green to orange up to Limit R and red past it: P354 accepts "
              "32 on a stair in light use, 24 in heavy use.\n\n"
              "Try: Stringer depth down until the flights turn red; Plate thicker, or Width narrower; Finishes up, "
-             "which adds mass; and Mode through the modes, their frequency in the legend.")
+             "or Imposed as mass, which add mass; and Mode through the modes, their frequency in the legend.")
 
 
 # ---------------------------------------------------------------- a helical stair, all shells
@@ -348,28 +400,25 @@ def helical_stair(doc):
         ("Finishes", "Steps and finishes [kN/m2]", 0, 3, 1.0, 2),
         ("Imposed", "Imposed [kN/m2]", 0, 5, 4.0, 1),
     ])
-    s.inputs.append(("Finishes", s.as_float))
-    s.inputs.append(("Imposed", s.as_float))
-    s.geometry(["Ribbon", "InnerParapet", "OuterParapet", "StepMeshes", "Supports", "MassPoints", "Masses",
-                "Steps", "Top"])
+    s.geometry(["Ribbon", "InnerParapet", "OuterParapet", "StepMeshes", "Supports", "Steps", "Top"])
     icon(s.geo, "footfall-stair-geometry.png")
 
     steel = plate_steel(s)
     ribbon, ribbon_t = plate(s, steel, "Ribbon plate", "Ribbon [mm]", 8, 40, 15)
     parapet, parapet_t = plate(s, steel, "Parapet plate", "Parapet [mm]", 6, 30, 12)
-    shells(s, "Ribbon", ["Ribbon"], ribbon)
+    ribbon_shells = shells(s, "Ribbon", ["Ribbon"], ribbon)
     shells(s, "Parapets", ["InnerParapet", "OuterParapet"], parapet)
     s.support("Built in at both ends", "Supports", (True, True, True, True, True, True))
 
     # Twelve modes, by ARPACK on Mumps: to past twice the fundamental, which the steady state of a stair above
     # the cut-off takes.
-    modes, footfall, limit = analyse(s, 12, "-genBandArpack", 32)
+    modes, footfall, limit = analyse(s, 12, "-genBandArpack", 32, [ribbon_shells])
     results(s, modes, footfall, limit, ["Ribbon"], "StepMeshes", 0.0, 12, 0)
 
     s.finish({"1": "Geometry: a ribbon climbing round an open well between two curved parapets, and its steps",
               "2": "Members: S355 plates as ASD Shells, the ribbon Ribbon thick and the parapets Parapet thick",
               "3": "Supports: built in at both ends, the ribbon and both parapets",
-              "4": "Mass: the steps, the finishes and a tenth of the imposed load, at the nodes of the ribbon",
+              "4": "Mass in use (P354): Load Patterns \"Finishes\" (the steps and their finishes) and \"Imposed\", Mesh Loads on the ribbon; Mass from Loads names them - \"Finishes\" at 1, \"Imposed\" at Imposed as mass, 0.1",
               "5": "Analysis: the first 12 modes, then Footfall Analysis with P354's stair coefficients",
               "6": "Results: the response factor on the steps against Limit R, the stair, and the mode Mode picks"},
              "Helical stair - a stair of shells round an open well, and how much it shakes when people walk on it, "
@@ -378,8 +427,9 @@ def helical_stair(doc):
              "parapets: continuous curved steel walls Parapet height tall that rise with it, round the well and "
              "round the outside, and carry it like deep stringers. No column in the middle, no stringers: the "
              "plates are the structure. It is built in at both ends, on the floor and into the floor it reaches. "
-             "The steps sit on the ribbon: drawn, and their weight, with the finishes and a tenth of the imposed "
-             "load, at its nodes.\n\n"
+             "The steps sit on the ribbon, drawn. Their weight with the finishes, and the imposed load, are Mesh "
+             "Loads on the ribbon in Load Patterns named \"Finishes\" and \"Imposed\", and Mass from Loads names "
+             "them to make them mass as P354 takes it: \"Finishes\" in full, \"Imposed\" at Imposed as mass, 0.1.\n\n"
              "Footfall Analysis walks a person up and down it with P354's coefficients for stairs, and the steps "
              "are coloured by the response factor, green to orange up to Limit R and red past it.\n\n"
              "Try: Parapet height down, and watch the stair come alive; Turn up; Ribbon thicker; and Mode through "
@@ -401,18 +451,15 @@ def straight_stair(doc):
         ("Finishes", "Finishes [kN/m2]", 0, 2, 0.3, 2),
         ("Imposed", "Imposed [kN/m2]", 0, 5, 4.0, 1),
     ])
-    s.inputs.append(("Finishes", s.as_float))
-    s.inputs.append(("Imposed", s.as_float))
-    s.geometry(["Stringers", "Treads", "Landings", "Supports", "LinkRetained", "LinkConstrained", "MassPoints",
-                "Masses", "Steps", "Height"])
+    s.geometry(["Stringers", "Treads", "Landings", "Supports", "LinkRetained", "LinkConstrained", "Steps", "Height"])
     icon(s.geo, "footfall-stair-geometry.png")
 
     steel = plate_steel(s)
     stringer, stringer_t = plate(s, steel, "Stringer plate", "Stringer plate [mm]", 8, 40, 15)
     tread, tread_t = plate(s, steel, "Tread plate", "Tread plate [mm]", 6, 40, 20)
     shells(s, "Stringers", ["Stringers"], stringer)
-    shells(s, "Treads", ["Treads"], tread)
-    shells(s, "Landings", ["Landings"], tread)
+    treads = shells(s, "Treads", ["Treads"], tread)
+    landings = shells(s, "Landings", ["Landings"], tread)
     s.support("Held at both ends", "Supports", (True, True, True, False, False, False))
     # The treads welded along their ends: their corners follow the stringers as rigid bodies.
     links = component(s.grid, S.RIGID_LINK, "Rigid Link", "Treads welded to stringers", MEMBERS, LOADED, gap=30)
@@ -421,7 +468,7 @@ def straight_stair(doc):
     s.constraints.append(links)
     s.parts["3"].append(links)
 
-    modes, footfall, limit = analyse(s, 15, "-genBandArpack", 32)
+    modes, footfall, limit = analyse(s, 15, "-genBandArpack", 32, [treads, landings])
     lift = S.expression(s.grid, "f(t)=t/2000+0.002", [tread_t], "Above the plate [m]", VIEWS, MAIN, gap=30)
     s.parts["6"].append(lift)
     results(s, modes, footfall, limit, ["Treads", "Landings"], None, out(lift), 15, 1)
@@ -429,7 +476,7 @@ def straight_stair(doc):
     s.finish({"1": "Geometry: 36 steps in three flights and two landings, in a line, held only at its ends",
               "2": "Members: S355 plates as ASD Shells, two stringers Stringer depth deep, open treads and landings",
               "3": "Supports: the stringers' end edges, on the floor and at the floor above, and nowhere between; the treads' corners tied to the stringers by rigid links",
-              "4": "Mass: the finishes and a tenth of the imposed load, at the nodes of the treads and landings",
+              "4": "Mass in use (P354): Load Patterns \"Finishes\" and \"Imposed\", Mesh Loads on the treads and landings; Mass from Loads names them - \"Finishes\" at 1, \"Imposed\" at Imposed as mass, 0.1",
               "5": "Analysis: the first 15 modes, then Footfall Analysis with P354's stair coefficients",
               "6": "Results: the response factor on the treads and landings against Limit R, the stair, and the mode Mode picks"},
              "Straight stair - 36 steps in one line, held only at its two ends, and how much it shakes when people "

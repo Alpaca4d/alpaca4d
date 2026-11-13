@@ -46,10 +46,10 @@ def _segments(points):
     return [rg.Line(points[i], points[i + 1]) for i in range(len(points) - 1)]
 
 
-def stair(Width, LongRisers, MiddleRisers, Rise, Going, Finishes, Imposed):
+def stair(Width, LongRisers, MiddleRisers, Rise, Going):
     """A U-shaped steel stair between two floors: a long flight up along X, a quarter landing, a short
     flight across along Y, a second quarter landing and a long flight back along -X to the floor
-    above. Width in m; Rise and Going in mm; Finishes and Imposed in kN/m2.
+    above. Width in m; Rise and Going in mm.
 
     Each flight hangs between two stringers, straight lines through the middle of every tread's ends,
     so that each tread is fixed to them at the middle of its two ends. A short upright piece, half a
@@ -63,21 +63,6 @@ def stair(Width, LongRisers, MiddleRisers, Rise, Going, Finishes, Imposed):
 
     stringers, treads, landings, landing_beams, posts = [], [], [], [], []
     feet, tops = [], []
-    mass_area = {}
-
-    def area(mesh):
-        """Spreads each face's area over its four corners, for the mass of the finishes."""
-        for f in range(mesh.Faces.Count):
-            face = mesh.Faces[f]
-            corners = [mesh.Vertices[face.A], mesh.Vertices[face.B], mesh.Vertices[face.C], mesh.Vertices[face.D]]
-            p = [rg.Point3d(c) for c in corners]
-            a = 0.5 * (rg.Vector3d.CrossProduct(p[1] - p[0], p[3] - p[0]).Length +
-                       rg.Vector3d.CrossProduct(p[1] - p[2], p[3] - p[2]).Length)
-            for c in p:
-                k = _key(c)
-                if k not in mass_area:
-                    mass_area[k] = [c, 0.0]
-                mass_area[k][1] += a / 4.0
 
     def flight(origin, d, s, z0, n, first=False, last=False):
         """n risers up from z0, going along d from origin, across s. Returns nothing; adds its
@@ -106,14 +91,12 @@ def stair(Width, LongRisers, MiddleRisers, Rise, Going, Finishes, Imposed):
             corner = origin + d * ((k - 1) * g) + rg.Vector3d(0, 0, z0 + k * r)
             mesh = _grid(corner, d * g, s * w, 2, across)
             treads.append(mesh)
-            area(mesh)
 
     def landing(corner, size_u, size_v, z):
         """A square landing from corner, along size_u and size_v, at z: its plate and its edge beams."""
         origin = corner + rg.Vector3d(0, 0, z)
         mesh = _grid(origin, size_u, size_v, across, across)
         landings.append(mesh)
-        area(mesh)
         for a, b in ((origin, size_u), (origin, size_v), (origin + size_u, size_v), (origin + size_v, size_u)):
             landing_beams.extend(_segments([a + b * (i / float(across)) for i in range(across + 1)]))
 
@@ -137,31 +120,21 @@ def stair(Width, LongRisers, MiddleRisers, Rise, Going, Finishes, Imposed):
         posts.append(rg.Line(corner, corner + z * top))
         feet.append(corner)
 
-    # The finishes and a tenth of the imposed load, SCI P354's mass in use, at the nodes of the plates.
-    per_area = (float(Finishes) + 0.1 * float(Imposed)) / 9.81 * 1000.0   # kg/m2
-    mass_points, masses = [], []
-    for k in sorted(mass_area):
-        p, a = mass_area[k]
-        m = per_area * a
-        if m > 0.0:
-            mass_points.append(p)
-            masses.append(rg.Vector3d(m, m, m))
-
     steps = 2 * n_long + n_mid
     height = z3
-    return stringers, treads, landings, landing_beams, posts, feet, tops, mass_points, masses, steps, height
+    return stringers, treads, landings, landing_beams, posts, feet, tops, steps, height
 
 
 # ---------------------------------------------------------------- a helical stair, all shells
 
-def helical(Height, Risers, Turn, InnerRadius, Width, Parapet, Finishes, Imposed):
+def helical(Height, Risers, Turn, InnerRadius, Width, Parapet):
     """A helical stair of shells round an open well: a ribbon, the helicoid it climbs on, between two
     parapets, continuous curved walls Parapet tall that rise with it and carry it, the inner one round
     InnerRadius and the outer one Width further out. It turns Turn degrees as it climbs Height in Risers
     steps, and is built in at both ends: on the floor at its foot and into the floor it arrives at.
 
-    The steps sit on the ribbon: drawn, for the map of the response factor, and their weight, with the
-    finishes and a tenth of the imposed load, at the ribbon's nodes. Finishes and Imposed in kN/m2."""
+    The steps sit on the ribbon, drawn for the map of the response factor; their weight is a load on the
+    ribbon, in the definition."""
     h = float(Height)
     n = int(Risers)
     turn = math.radians(float(Turn))
@@ -221,13 +194,12 @@ def helical(Height, Risers, Turn, InnerRadius, Width, Parapet, Finishes, Imposed
             for i in range(1, nv + 1):
                 supports.append(at(r, a, pitch * a + hp * i / float(nv)))
 
-    mass_points, masses = _masses([ribbon], Finishes, Imposed)
-    return ribbon, inner, outer, steps, supports, mass_points, masses, n, h
+    return ribbon, inner, outer, steps, supports, n, h
 
 
 # ---------------------------------------------------------------- a straight stair, three flights
 
-def straight(Width, Risers, Flights, Rise, Going, Landing, Depth, Finishes, Imposed):
+def straight(Width, Risers, Flights, Rise, Going, Landing, Depth):
     """A straight stair of Flights flights of Risers risers each, in one line, with a landing Landing long
     between each two, held only at its two ends. Two steel plate stringers, Depth deep below the line
     through the middle of the treads and 100 mm above it, run its whole length; the treads, open, and the
@@ -235,7 +207,7 @@ def straight(Width, Risers, Flights, Rise, Going, Landing, Depth, Finishes, Impo
     at the middle of each end with them, and its four corners follow the stringer nodes half a rise below
     or above them, LinkRetained to LinkConstrained, through rigid links. Without them each tread would hang
     from one node a side, and the stringers, tall thin plates, would flap sideways.
-    Width in m, Rise, Going and Depth in mm; Finishes and Imposed in kN/m2."""
+    Width in m, Rise, Going and Depth in mm."""
     w = float(Width)
     n, flights = int(Risers), int(Flights)
     r, g = float(Rise) / 1000.0, float(Going) / 1000.0
@@ -305,33 +277,7 @@ def straight(Width, Risers, Flights, Rise, Going, Landing, Depth, Finishes, Impo
             for o in offsets:
                 supports.append(rg.Point3d(xs, y, zs + o))
 
-    mass_points, masses = _masses(treads + landings, Finishes, Imposed)
-    return stringers, treads, landings, supports, retained, constrained, mass_points, masses, flights * n, z
-
-
-def _masses(meshes, Finishes, Imposed):
-    """The finishes and a tenth of the imposed load as masses at the meshes' nodes, each node its share of
-    the faces round it: SCI P354's mass in use. In kg, one per node."""
-    per_area = (float(Finishes) + 0.1 * float(Imposed)) / 9.81 * 1000.0
-    share = {}
-    for mesh in meshes:
-        for f in range(mesh.Faces.Count):
-            face = mesh.Faces[f]
-            p = [rg.Point3d(mesh.Vertices[k]) for k in (face.A, face.B, face.C, face.D)]
-            a = 0.5 * (rg.Vector3d.CrossProduct(p[1] - p[0], p[3] - p[0]).Length +
-                       rg.Vector3d.CrossProduct(p[1] - p[2], p[3] - p[2]).Length)
-            for c in p:
-                k = _key(c)
-                if k not in share:
-                    share[k] = [c, 0.0]
-                share[k][1] += a / 4.0
-    points, masses = [], []
-    for k in sorted(share):
-        m = per_area * share[k][1]
-        if m > 0.0:
-            points.append(share[k][0])
-            masses.append(rg.Vector3d(m, m, m))
-    return points, masses
+    return stringers, treads, landings, supports, retained, constrained, flights * n, z
 
 
 # ---------------------------------------------------------------- the response map
