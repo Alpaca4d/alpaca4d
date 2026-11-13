@@ -3,7 +3,7 @@
 # started (StartScriptServer). GrasshopperChecks.cs builds definitions out of the real components,
 # solves them, and checks the run against the hand-written deck of TopologyOptimisation.cs.
 # Needs a Release build of Alpaca4d.Gh (any GrasshopperLibrariesPath), a C# compiler, an OpenSees (the
-# one on PATH, or OPENSEES=...), a license (LICENSE, the user's by default; copied, never written) and,
+# one on PATH, or OPENSEES=...), a license (LICENSE, Alpaca4d.Utils/data_august_28.bin by default; copied, never written) and,
 # for the tetrahedra, an OpenSees that knows TenNodeTetrahedronStd (OPENSEES_TET10; empty skips them).
 # RHINO_PIPE=rhinocode_remotepipe_<pid> picks one Rhino when several are running.
 set -e
@@ -14,7 +14,7 @@ RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.d
 RHINOCODE=${RHINOCODE:-"/Applications/Rhino 8.app/Contents/Resources/bin/rhinocode"}
 OPENSEES=${OPENSEES:-$(command -v OpenSees || true)}
 TET10=${OPENSEES_TET10-/Applications/OpenSeesLatest-Mumps/bin/OpenSees}
-LICENSE=${LICENSE:-"$HOME/Library/Application Support/Alpaca4d/license.bin"}
+LICENSE=${LICENSE:-$(cd ../../Alpaca4d.Utils && pwd)/data_august_28.bin}
 [ -f "$GHDIR/Alpaca4d.Gh.gha" ] || { echo "build Alpaca4d.Gh in Release first, or set GHDIR=..."; exit 1; }
 [ -d "$GH" ] || { echo "set GH=/path/to/Grasshopper 7 lib/net48"; exit 1; }
 [ -f "$RHINO" ] || { echo "set RHINO=/path/to/net48/RhinoCommon.dll"; exit 1; }

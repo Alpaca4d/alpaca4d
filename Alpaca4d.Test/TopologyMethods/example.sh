@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 GHDIR=${GHDIR:-../../Alpaca4d.Gh/bin/Release/net48}
 RHINOCODE=${RHINOCODE:-"/Applications/Rhino 8.app/Contents/Resources/bin/rhinocode"}
 OPENSEES=${OPENSEES:-$(command -v OpenSees || true)}
-LICENSE=${LICENSE:-"$HOME/Library/Application Support/Alpaca4d/license.bin"}
+LICENSE=${LICENSE:-$(cd ../../Alpaca4d.Utils && pwd)/data_august_28.bin}
 [ -f "$GHDIR/Alpaca4d.Gh.gha" ] || { echo "build Alpaca4d.Gh in Release first, or set GHDIR=..."; exit 1; }
 [ -x "$OPENSEES" ] || { echo "put OpenSees on PATH, or set OPENSEES=/path/to/OpenSees"; exit 1; }
 [ -f "$LICENSE" ] || { echo "the examples have more than 500 bricks and need a license: set LICENSE=/path/to/license.bin"; exit 1; }
