@@ -377,6 +377,56 @@ structures() {
   done
 }
 
+# The six old website examples rebuilt on 2026-11-12, into marketing/<topic>/<slug>/ and the example's
+# folder. The four that draw a structure: its result, loads, GIF (and the tower's axial forces, the
+# building's first mode) and its canvas. Custom Script and Deconstruct Anything: the canvas is the picture.
+rebuilt_one() {
+  # A third argument, keep, leaves the example's own picture as it is: Deconstruct Anything keeps its
+  # simple picture of three Deconstructs rather than the whole definition (user, 2026-11-12).
+  local slug=$1 topic=$2 keep=${3:-} scene=$1 d e
+  # Captured alone, by its slug, or with the others, by rebuilt.
+  [ -f "$OUT/$scene/$slug-canvas.png" ] || scene=rebuilt
+  [ -f "$OUT/$scene/$slug-canvas.png" ] || return 0
+  d=$M/$topic/$slug
+  e=$M/../examples/$slug
+  mkdir -p "$d" "$e"
+  canvas $scene/$slug-canvas "$d/grasshopper-definition.png"
+  if [ ! -f "$OUT/$scene/$slug-deformed.png" ]; then
+    [ "$keep" = keep ] || cp "$d/grasshopper-definition.png" "$e/$slug.png"
+    return 0
+  fi
+  trim $scene/$slug-deformed "$d/$slug-deformed.png" 0 12
+  [ -f "$OUT/$scene/$slug-loads.png" ] && trim $scene/$slug-loads "$d/$slug-loads.png" 0 12
+  [ -f "$OUT/$scene/$slug-axial-forces.png" ] && trim $scene/$slug-axial-forces "$d/$slug-axial-forces.png" 0 12
+  $P anim "$OUT/$scene/$slug-deforming-frames" "$d/$slug-deforming" 40 900 15 0
+  if [ -d "$OUT/$scene/$slug-mode-frames" ]; then
+    trim $scene/$slug-mode "$d/$slug-mode.png" 0 12
+    $P anim "$OUT/$scene/$slug-mode-frames" "$d/$slug-mode" 40 900 15 0
+  fi
+  # The example's page: the result first, the loads second, the tower's forces third, and the GIFs; the
+  # definition it draws itself.
+  cp "$d/$slug-deformed.png" "$e/$slug.png"
+  [ -f "$d/$slug-loads.png" ] && cp "$d/$slug-loads.png" "$e/$slug-2.png"
+  cp "$d/$slug-deforming.gif" "$e/$slug-deforming.gif"
+  [ -f "$d/$slug-axial-forces.png" ] && cp "$d/$slug-axial-forces.png" "$e/$slug-3.png"
+  [ -f "$d/$slug-mode.gif" ] && cp "$d/$slug-mode.gif" "$e/$slug-mode.gif"
+  return 0
+}
+rebuilt() {
+  rebuilt_one high-tension-tower structures
+  rebuilt_one multi-storey-building structures
+  rebuilt_one meshloft-meshbrick solids
+  rebuilt_one connection-design structures
+  rebuilt_one custom-script examples
+  rebuilt_one deconstruct-anything examples keep
+}
+high-tension-tower() { rebuilt_one high-tension-tower structures; }
+multi-storey-building() { rebuilt_one multi-storey-building structures; }
+meshloft-meshbrick() { rebuilt_one meshloft-meshbrick solids; }
+connection-design() { rebuilt_one connection-design structures; }
+custom-script() { rebuilt_one custom-script examples; }
+deconstruct-anything() { rebuilt_one deconstruct-anything examples keep; }
+
 # The five earthquakes: each one's still at its worst, the MP4 of it shaking in real time - ten frames a
 # second, a frame every 0.1 s - and a lighter GIF, its canvas, and the example's pictures.
 earthquakes() {
@@ -734,7 +784,7 @@ plasticity() {
   done
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done

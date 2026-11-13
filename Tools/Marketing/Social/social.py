@@ -33,6 +33,12 @@ HOLD = {
     "plasticity/": "Not out yet: J2Plasticity is only in 0.12.0_Dev, in no Yak beta, and the example page is not pushed. Release a beta and push the website first.",
     "teaser/": "Shows Pushover, J2 Plasticity and Footfall, which are in no Yak beta yet: post once they are, or cut those chapters out of teaser.py (posters 04 and 05 out of the carousel) first.",
     "report/": "Not out yet: the Report component is only on the report-module branch, in no Yak beta, and has no example page on the website. Merge it, release a beta and publish an example first.",
+    "structures/high-tension-tower": "Push the website first: the example was rebuilt on 2026-11-12, and its page, pictures and .gh are only in the working tree.",
+    "structures/multi-storey-building": "Push the website first: the example was rebuilt on 2026-11-12, and its page, pictures and .gh are only in the working tree.",
+    "structures/connection-design": "Push the website first: the example was rebuilt on 2026-11-12, and its page, pictures and .gh are only in the working tree.",
+    "solids/meshloft-meshbrick": "Push the website first: the example was rebuilt on 2026-11-12, and its page, pictures and .gh are only in the working tree.",
+    "examples/custom-script": "Push the website first: the example was rebuilt on 2026-11-12, and its page, pictures and .gh are only in the working tree.",
+    "examples/deconstruct-anything": "Push the website first: the example was rebuilt on 2026-11-12, and its page, pictures and .gh are only in the working tree.",
     "inigo-the-dragon": "Its example is gone: the Rebellious Slave took its place on the Ten Node Tetrahedron page (2026-11-06), so the post's link leads nowhere.",
 }
 # Posts left off the page, matched exactly against a case's id, and why; their folders and READMEs stay.

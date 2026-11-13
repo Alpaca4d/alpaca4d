@@ -12,7 +12,9 @@
 # footbridge spectrum shell momentcurvature tank (the examples remade on 2026-11-06; tankstills is
 # tank without its frames), quakebuildings and quaketowers (buildings that are not straight, and towers
 # of a hundred storeys and more, in an earthquake; each also alone: twisting leaning curving crescent,
-# bundled braced buttressed outrigger diagrid).
+# bundled braced buttressed outrigger diagrid), rebuilt (the six old website examples rebuilt on 2026-11-12;
+# each also alone by its slug: high-tension-tower multi-storey-building meshloft-meshbrick connection-design
+# custom-script deconstruct-anything).
 # See README.md.
 #
 # Starts Rhino 8 and quits it at the end. With a Rhino already open, it runs in that one instead, if
@@ -24,7 +26,7 @@ cd "$(dirname "$0")"
 here=$(pwd)
 repo=$(cd ../.. && pwd)
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything"
 SCENES=${*:-$ALL}
 OUT=${OUT:-$here/out}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}

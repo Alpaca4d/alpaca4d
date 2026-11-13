@@ -151,6 +151,10 @@ public static class Shots
                                                "Pressure", "MPa", "Bore widens [mm]", "Bore"))
                             .ToList();
                         break;
+                    case "rebuilt": list = Rebuilt(); break;
+                    case "high-tension-tower": case "multi-storey-building": case "meshloft-meshbrick":
+                    case "connection-design": case "custom-script": case "deconstruct-anything":
+                        list = Rebuilt(scene); break;
                     case "earthquakes": list = Earthquakes("earthquakes"); break;
                     // The buildings that are not straight, and the towers of a hundred storeys and more.
                     case "quakebuildings": list = Earthquakes("buildings"); break;
@@ -2801,6 +2805,89 @@ public static class Shots
                     Deforming(mode, eye, slug + "-mode-frames", 40, turn);
                 }
                 Close();
+            }));
+        }
+        return list;
+    }
+
+    // ------------------------------------------------------------------ the rebuilt old examples
+
+    /// <summary>
+    /// The six old website examples rebuilt as scripts in Tools/Examples (2026-11-12): each one's canvas,
+    /// and for the four that draw a structure, its loads, its result over it with the Legend and the GIF
+    /// of it deforming - with the tower's axial forces and the building's first mode as well. Meshed
+    /// models draw their element edges light grey. Custom Script and Deconstruct Anything draw nothing
+    /// in Rhino: their canvas is the picture.
+    /// </summary>
+    static List<(string, Func<bool>)> Rebuilt(string only = null)
+    {
+        // view: the Model View of the result, with "<view> legend"; extra: a second still, with its
+        // legend; mode: a Model View of a mode, swung as well; meshed: shells or bricks, edges drawn.
+        (string file, string slug, string title, string view, string extra, string mode, Vector3d eye, double turn, bool meshed)[] all =
+        {
+            ("HighTensionTower.gh", "high-tension-tower", "High-tension tower", "Tower deformed", "Axial forces", null, new Vector3d(1.0, -1.2, 0.35), 20, false),
+            ("MultiStoreyBuilding.gh", "multi-storey-building", "Multi-storey building", "Building deformed", null, "First mode", new Vector3d(0.9, -1.3, 0.6), 15, true),
+            ("MeshLoftBricks.gh", "meshloft-meshbrick", "Vault of bricks", "Von Mises", null, null, new Vector3d(-1.0, -1.3, 0.9), 20, true),
+            ("ConnectionDesign.gh", "connection-design", "Tree column node", "Von Mises", null, null, new Vector3d(0.55, -0.95, 0.45), 30, true),
+            ("CustomScript.gh", "custom-script", null, null, null, null, Vector3d.Zero, 0, false),
+            ("DeconstructAnything.gh", "deconstruct-anything", null, null, null, null, Vector3d.Zero, 0, false),
+        };
+        var list = new List<(string, Func<bool>)>();
+        foreach (var (file, slug, title, name, extra, mode, eye, turn, meshed) in all.Where(a => only == null || a.slug == only))
+        {
+            list.Add(Do(slug, () =>
+            {
+                if (meshed) SoftEdges(SlaveEdges);
+                Open(file);
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                    Messages(c);
+                Canvas(slug + "-canvas");
+                foreach (var panel in doc.Objects.OfType<Grasshopper.Kernel.Special.GH_Panel>())
+                    Log("  panel " + panel.NickName + ": " + string.Join(" / ", panel.VolatileData.AllData(true).Select(v => v.ToString())).Replace("\n", " / "));
+                if (name == null) { Close(); return; }
+
+                var view = Find<IGH_Component>(name);
+                var legend = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == name + " legend")
+                             ?? doc.Objects.OfType<IGH_Component>().First(c => c.Name.StartsWith("Legend") && c.Params.Input.Any(p => p.Sources.Any(s => s.Attributes.GetTopLevel.DocObject == view)));
+                var rest = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == title + " at rest");
+                var loads = doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == title + " loads");
+                Log("  " + Info(view));
+
+                if (loads != null)
+                {
+                    ShowOnly(loads);
+                    doc.NewSolution(false);
+                    Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-loads", 2);
+                }
+
+                if (extra != null)
+                {
+                    // A beam force is drawn as diagrams, with no Legend: the view alone, then.
+                    var second = Find<IGH_Component>(extra);
+                    ShowOnly(new IGH_DocumentObject[] { second, doc.Objects.OfType<IGH_Component>().FirstOrDefault(c => c.NickName == extra + " legend") }.Where(o => o != null).ToArray());
+                    doc.NewSolution(false);
+                    Log("  " + Info(second));
+                    Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-" + extra.ToLowerInvariant().Replace(' ', '-'), WithLegend);
+                }
+
+                var shown = new IGH_DocumentObject[] { view, legend, rest }.Where(o => o != null).ToArray();
+                ShowOnly(shown);
+                doc.NewSolution(false);
+                Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-deformed", WithLegend);
+                Deforming(view, eye, slug + "-deforming-frames", 40, turn);
+
+                if (mode != null)
+                {
+                    var modal = Find<IGH_Component>(mode);
+                    var modes = doc.Objects.OfType<IGH_Component>().First(c => c.Name.StartsWith("Natural Vibration"));
+                    Log("  frequencies " + string.Join(", ", Values<GH_Number>(Out(modes, "Frequencies")).Select(n => n.Value.ToString("G4", Inv))) + " Hz");
+                    ShowOnly(new IGH_DocumentObject[] { modal, Find<IGH_Component>(mode + " legend"), rest }.Where(o => o != null).ToArray());
+                    doc.NewSolution(false);
+                    Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), slug + "-mode", WithLegend);
+                    Deforming(modal, eye, slug + "-mode-frames", 40, turn);
+                }
+                Close();
+                if (meshed) HardEdges();
             }));
         }
         return list;
