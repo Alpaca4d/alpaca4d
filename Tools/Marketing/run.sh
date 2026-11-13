@@ -26,7 +26,7 @@ cd "$(dirname "$0")"
 here=$(pwd)
 repo=$(cd ../.. && pwd)
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature fibrelaws heasection compositesections tank tankstills quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything"
 SCENES=${*:-$ALL}
 OUT=${OUT:-$here/out}
 GH=${GH:-$(ls -d ~/.nuget/packages/grasshopper/7.18.*/lib/net48 2>/dev/null | head -1)}

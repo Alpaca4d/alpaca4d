@@ -135,6 +135,9 @@ public static class Shots
                     case "tankstills": list = Tank().Where(x => x.Item1 != "swinging").ToList(); break;
                     case "spectrum": list = Spectrum(); break;
                     case "momentcurvature": list = MomentCurvatureScene(); break;
+                    case "fibrelaws": list = FibreLawsScene(); break;
+                    case "heasection": list = HeaSectionScene(); break;
+                    case "compositesections": list = CompositeSectionsScene(); break;
                     case "pushover": list = PushoverScene(); break;
                     case "reciprocalvault": list = VaultScene(); break;
                     case "perforatedbeam": list = PerforatedBeamScene(); break;
@@ -702,7 +705,7 @@ public static class Shots
         return new RectangleF((float)((w - cw) / 2), (float)((h - ch) / 2), (float)cw, (float)ch);
     }
 
-    static void Shoot(RhinoView view, string name, double scale = 1)
+    static void Shoot(RhinoView view, string name, double scale = 1, bool screenItems = true)
     {
         var mode = WhiteMode();
         view.ActiveViewport.DisplayMode = mode;
@@ -723,7 +726,7 @@ public static class Shots
         }
         var capture = new ViewCapture
         {
-            Width = (int)Math.Ceiling(w * up), Height = (int)Math.Ceiling(h * up), ScaleScreenItems = true,
+            Width = (int)Math.Ceiling(w * up), Height = (int)Math.Ceiling(h * up), ScaleScreenItems = screenItems,
             DrawAxes = false, DrawGrid = false, DrawGridAxes = false, TransparentBackground = false,
         };
         // The first capture of a viewport can come before the mode takes hold: grey, not white.
@@ -1719,6 +1722,130 @@ public static class Shots
         }),
         Do("close", Close),
     };
+
+
+    // ------------------------------------------------------------------ fibre sections: FibreSections.py's three definitions
+
+    static readonly Guid ConstructPointId = new Guid("3581F42A-9592-4549-BD6B-1C0FC39D067B");
+
+    /// <summary>
+    /// One of FibreSections.py's definitions: its canvas, what each Moment Curvature gave, and a picture of its
+    /// sections beside the diagrams - each patch a mesh in its material's colour (concrete grey, steel blue, the
+    /// laminate orange), each bar a disc of its own area - from straight above. A section is drawn at an offset of
+    /// its own, <paramref name="offsets"/> along x, so that sections that share their coordinates stand side
+    /// by side; the diagrams are moved clear of them first. <paramref name="sectionOf"/> says which section a
+    /// patch or a bar row belongs to, from its nickname.
+    /// </summary>
+    static List<(string, Func<bool>)> FibreSectionsScene(string file, string slug, Func<string, int> sectionOf, double[] offsets,
+                                                         (string text, int section, double dx, double dy, double size)[] labels,
+                                                         double diagramAt, double domainAt, double domainStep = 0.0, double magnify = 1.0, bool domains = true)
+    {
+        return new List<(string, Func<bool>)>
+        {
+            Do("open", () => Open(file)),
+            Do("pictures", () =>
+            {
+                foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                    Messages(c);
+                foreach (var mc in Components(MomentCurvatureId))
+                    Log($"  {mc.NickName}: " + string.Join("; ", new[] { "YieldMoment", "UltimateMoment", "UltimateCurvature", "Ductility", "Failure" }
+                        .Select(name => name + " " + string.Join(", ", Out(mc, name).VolatileData.AllData(true).Select(v => v.ToString())))));
+                Canvas(slug + "-canvas");
+
+                // The diagrams clear of the sections: Diagram at and N-M at hold the x of their planes.
+                void MoveTo(string nick, double x, double step)
+                {
+                    int k = 0;
+                    foreach (var at in Components(ConstructPointId).Where(c => c.NickName == nick).ToList())
+                    {
+                        var p = (GH_PersistentParam<GH_Number>)at.Params.Input[0];
+                        p.PersistentData.Clear();
+                        p.PersistentData.Append(new GH_Number(x + k++ * step));
+                        at.ExpireSolution(false);
+                    }
+                }
+                Log("  construct points: " + string.Join(", ", Components(ConstructPointId).Select(c => c.NickName)));
+                MoveTo("Diagram at", diagramAt, 0);
+                MoveTo("N-M at", domainAt, domainStep);
+                doc.NewSolution(false);
+                foreach (var d in Components(DiagramId))
+                    Log("  diagram plane origin " + string.Join(", ", Values<GH_Plane>(In(d, "Plane")).Select(x => x.Value.Origin.ToString())));
+
+                Color ColourOf(string nick) => nick.Contains("laminate") ? Orange : nick.Contains("HEA") ? Color.FromArgb(78, 108, 158) : Color.FromArgb(200, 208, 220);
+                var shown = new List<IGH_DocumentObject>();
+                int row = 0;
+                BoundingBox? box = null;
+                foreach (var mesh in Components(MeshPlaneId).Where(c => c.NickName.EndsWith("fibres")).ToList())
+                {
+                    int sec = sectionOf(mesh.NickName);
+                    var param = Place(new Param_Mesh(), Beside(mesh, 400, 0));
+                    foreach (var m in Values<GH_Mesh>(Out(mesh, "Mesh")))
+                    {
+                        var copy = m.Value.DuplicateMesh();
+                        copy.Transform(Transform.Translation(offsets[sec], 0, mesh.NickName.Contains("HEA") || mesh.NickName.Contains("laminate") ? 0.0008 : 0));
+                        param.PersistentData.Append(new GH_Mesh(copy));
+                        box = box.HasValue ? BoundingBox.Union(box.Value, copy.GetBoundingBox(true)) : copy.GetBoundingBox(true);
+                    }
+                    shown.Add(Preview(param, ColourOf(mesh.NickName), Beside(mesh, 400, 40)));
+                    // A fibre grid, faint, over the patch.
+                    var grid = Place(new Param_Line(), Beside(mesh, 400, 80));
+                    foreach (var m in Values<GH_Mesh>(Out(mesh, "Mesh")))
+                        for (int e = 0; e < m.Value.TopologyEdges.Count; e++)
+                        {
+                            var line = m.Value.TopologyEdges.EdgeLine(e);
+                            line.Transform(Transform.Translation(offsets[sec], 0, 0.0005));
+                            grid.PersistentData.Append(new GH_Line(line));
+                        }
+                    shown.Add(Preview(grid, Color.FromArgb(232, 236, 240), Beside(mesh, 400, 120)));
+                    row++;
+                }
+                var bars = Place(new Param_Mesh(), Beside(Components(MomentCurvatureId).First(), 160, 400));
+                foreach (var fibres in Components(FiberPointId).ToList())
+                {
+                    int sec = sectionOf(fibres.NickName);
+                    var points = ((GH_PersistentParam<GH_Point>)In(fibres, "Point")).PersistentData.AllData(true).OfType<GH_Point>().ToList();
+                    var areas = ((GH_PersistentParam<GH_Number>)In(fibres, "AreaFiber")).PersistentData.AllData(true).OfType<GH_Number>().ToList();
+                    for (int i = 0; i < points.Count; i++)
+                    {
+                        double r = Math.Sqrt(areas[Math.Min(i, areas.Count - 1)].Value / Math.PI);
+                        var centre = points[i].Value + new Vector3d(offsets[sec], 0, 0.0015);
+                        var disc = Mesh.CreateFromPlanarBoundary(new Circle(new Plane(centre, Vector3d.ZAxis), r).ToNurbsCurve(), MeshingParameters.Default, 0.0001);
+                        bars.PersistentData.Append(new GH_Mesh(disc));
+                    }
+                }
+                shown.Add(Preview(bars, DarkTech, Beside(Components(MomentCurvatureId).First(), 160, 440)));
+
+                foreach (var l in labels)
+                {
+                    var b = box.Value;
+                    shown.Add(Tag(l.text, new Point3d(offsets[l.section] + l.dx, b.Min.Y + l.dy, 0), l.size, DarkTech, Beside(Components(MomentCurvatureId).First(), 160, 500 + 40 * shown.Count)));
+                }
+                shown.AddRange(Components(DiagramId));
+                if (domains)
+                    shown.AddRange(doc.Objects.OfType<IGH_Component>().Where(c => c.Name.StartsWith("N-M Diagram")));
+                ShowOnly(shown.ToArray());
+                doc.NewSolution(false);
+                Shoot(Aim(Grown(Drawn(), 0.15), new Vector3d(0, 0, 1), Vector3d.YAxis, 200, magnify), slug, 2.0, false);
+            }),
+            Do("close", Close),
+        };
+    }
+
+    static List<(string, Func<bool>)> FibreLawsScene() => FibreSectionsScene("FibreLaws.gh", "fibre-laws", n => 0, new[] { 0.0 },
+        new[] { ("300 x 500 mm, 3 \u03c620 + 2 \u03c616, N = \u22121000 kN", 0, -0.15, -0.09, 0.022) }, 0.4, 2.0, 0.0, 1.5);
+
+    static List<(string, Func<bool>)> HeaSectionScene() => FibreSectionsScene("HeaSection.gh", "hea-section", n => 0, new[] { 0.0 },
+        new[] { ("HEA 300, S355", 0, -0.15, -0.07, 0.03) }, 0.35, 1.2, 0.0, 1.4);
+
+    static int CompositeSectionOf(string nick) =>
+        nick.StartsWith("HEA 240") || nick.StartsWith("slab") || nick.StartsWith("Composite beam") ? 0 :
+        nick.StartsWith("HEA 200") || nick.StartsWith("encasing") || nick.StartsWith("Encased") ? 1 :
+        nick.StartsWith("RC beam with CFRP") || nick.StartsWith("laminate") ? 2 : 3;
+
+    static List<(string, Func<bool>)> CompositeSectionsScene() => FibreSectionsScene("CompositeSections.gh", "composite-sections", CompositeSectionOf,
+        new[] { 0.0, -1.9, -1.45, -1.0 },
+        new[] { ("composite beam", 0, -0.3, -0.07, 0.03), ("encased column", 1, -0.2, -0.07, 0.03), ("RC beam + CFRP", 2, -0.25, -0.07, 0.03), ("RC beam", 3, -0.1, -0.07, 0.03) },
+        1.0, 2.4, 1.3, 0.85, false);
 
     /// <summary>
     /// One of Model View's results ticked alone, at a component, as clicks in its Results menu tick
