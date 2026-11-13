@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Alpaca4d.Generic;
 using Alpaca4d.Core.Utils;
 
@@ -79,6 +79,9 @@ namespace Alpaca4d.Material
             var steel = material as Steel01;
             if (steel != null && steel.MinMax != null)
                 return steel.MinMax.Id;
+
+            if (material is IFibreMaterial fibre && fibre.MinMax != null)
+                return fibre.MinMax.Id;
 
             return material.Id;
         }

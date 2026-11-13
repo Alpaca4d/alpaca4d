@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -398,6 +398,12 @@ namespace Alpaca4d.Result
                         concrete = true;
                         if (c.EpsilonCu != 0.0) compression = Math.Abs(c.EpsilonCu);
                         wrapper = c.MinMax;
+                        break;
+                    case IFibreMaterial fibre:
+                        concrete = fibre.IsConcrete;
+                        if (!double.IsNaN(fibre.YieldStrain)) yieldStrain = fibre.YieldStrain;
+                        if (fibre.CrushingStrain > 0.0) compression = fibre.CrushingStrain;
+                        wrapper = fibre.MinMax;
                         break;
                 }
                 if (wrapper != null)

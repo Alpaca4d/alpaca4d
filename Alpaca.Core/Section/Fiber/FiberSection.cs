@@ -225,6 +225,8 @@ namespace Alpaca4d.Section
                     return bar.Es;
                 case Alpaca4d.Material.Concrete01 concrete:
                     return concrete.EpsilonCo != 0.0 ? Math.Abs(2.0 * concrete.FpCo / concrete.EpsilonCo) : 0.0;
+                case Alpaca4d.Material.IFibreMaterial fibre:
+                    return fibre.InitialModulus;
                 case IUniaxialMaterial elastic:
                     return elastic.E;
                 case Alpaca4d.Material.UniaxialMaterialENT ent:
@@ -258,6 +260,8 @@ namespace Alpaca4d.Section
                 case Alpaca4d.Material.Steel01 _:
                 case Alpaca4d.Material.ReinforcingSteel _:
                     return SteelDensity;
+                case Alpaca4d.Material.IFibreMaterial fibre:
+                    return fibre.DefaultDensity;
                 default:
                     return 0.0;
             }
@@ -307,7 +311,7 @@ namespace Alpaca4d.Section
                     mass += fibre.Area * Density(fibre.Material);
                 }
 
-                double nu = main is Alpaca4d.Material.Concrete01 ? 0.2 : 0.3;
+                double nu = main is Alpaca4d.Material.Concrete01 || (main as Alpaca4d.Material.IFibreMaterial)?.IsConcrete == true ? 0.2 : 0.3;
                 double e = reference > 0.0 ? reference : 1.0;
                 result.G = e / (2.0 * (1.0 + nu));
 

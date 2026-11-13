@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -222,7 +222,28 @@ namespace Alpaca4d.Section
         {
             var result = new DomainMaterial { Material = material, Tag = tag };
 
-            if (material is Concrete01 concrete)
+            if (material is IFibreMaterial fibreConcrete && fibreConcrete.IsConcrete)
+            {
+                result.IsConcrete = true;
+                result.TensionLimit = double.PositiveInfinity;
+                result.CompressionLimit = settings.ConcreteUltimateStrain ?? fibreConcrete.CrushingStrain;
+
+                var box = fibreConcrete.MinMax;
+                if (box != null && box.MinStrain < 0.0 && -box.MinStrain <= result.CompressionLimit)
+                {
+                    result.CompressionLimit = -box.MinStrain;
+                    result.CompressionFromMinMax = true;
+                }
+
+                if (!(result.CompressionLimit > 0.0))
+                    throw new InvalidOperationException(
+                        $"{result.Name} has no crushing strain to be held to; give it one or set εcu.");
+
+                double top = fibreConcrete.PeakStrain;
+                if (top > 0.0 && top < result.CompressionLimit)
+                    result.PivotStrain = top;
+            }
+            else if (material is Concrete01 concrete)
             {
                 result.IsConcrete = true;
                 result.TensionLimit = double.PositiveInfinity;
@@ -255,6 +276,8 @@ namespace Alpaca4d.Section
                     result.YieldStrain = Math.Abs(steel.Fy) / steel.E0;
                 else if (material is ReinforcingSteel bar && bar.Es > 0.0)
                     result.YieldStrain = Math.Abs(bar.Fy) / bar.Es;
+                else if (material is IFibreMaterial yielding && !double.IsNaN(yielding.YieldStrain))
+                    result.YieldStrain = yielding.YieldStrain;
 
                 var wrapper = MinMaxOf(material);
                 if (wrapper != null)
@@ -281,6 +304,7 @@ namespace Alpaca4d.Section
             {
                 case Steel01 steel: return steel.MinMax;
                 case ReinforcingSteel bar: return bar.MinMax;
+                case IFibreMaterial fibre: return fibre.MinMax;
                 default: return null;
             }
         }
