@@ -1,5 +1,6 @@
 using Grasshopper.Kernel;
 using System;
+using System.Linq;
 
 namespace Alpaca4d.Gh
 {
@@ -23,10 +24,28 @@ namespace Alpaca4d.Gh
 
         public IGH_DocumentObject Upgrade(IGH_DocumentObject target, GH_Document document)
         {
-            if (!(target is IGH_Component component))
+            if (!(target is IGH_Component old))
                 return null;
 
-            return UpgradeByName.Swap(component, UpgradeTo);
+            // Made here rather than emitted by GUID: it is in this assembly, and the component server
+            // would hand back whichever Alpaca4d Grasshopper loaded first.
+            var upgraded = new NaturalVibration();
+
+            // A switcher's inputs belong to its evaluation unit, which GH_UpgradeUtil's migration
+            // cannot move parameters into: each input's wires and values are copied over instead.
+            // Wired before the swap: the swap takes the old component out of the document, and with
+            // it whatever is still connected to it.
+            for (int i = 0; i < old.Params.Input.Count && i < upgraded.Params.Input.Count; i++)
+                UpgradeByName.CarryOver(old.Params.Input[i], upgraded.Params.Input[i]);
+
+            foreach (var output in old.Params.Output)
+            {
+                var match = upgraded.Params.Output.FirstOrDefault(param => param.Name == output.Name);
+                if (match != null)
+                    GH_UpgradeUtil.MigrateRecipients(output, match);
+            }
+
+            return GH_UpgradeUtil.SwapComponents(old, upgraded, false) ? upgraded : null;
         }
     }
 }
