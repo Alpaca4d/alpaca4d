@@ -2,7 +2,7 @@
 
     python3 post.py trim in.png out.png [margin] [max_width] [grow] # cut to what is drawn
     python3 post.py anim frames_dir out_base [margin] [width] [fps] [hold]
-                                                                    # out_base.gif + out_base.mp4
+                                                                    # out_base.gif (+ out_base.mp4 with MP4=1)
     python3 post.py pagegif frames_dir out.gif [margin] [width] [fps]
                                                                     # a lighter GIF, for a page
     python3 post.py animcharts frames_dir charts_dir out_base [margin] [width] [fps] [hold]
@@ -18,6 +18,12 @@
 import glob, os, re, shutil, subprocess, sys, tempfile
 
 FF = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+# GIFs only (user, 2026-11-13). MP4=1 makes the animations write an MP4 beside each GIF again.
+MP4 = os.environ.get("MP4") == "1"
+
+
+def made(base):
+    return base + ".gif" + (", " + base + ".mp4" if MP4 else "")
 # The pictures' background: a light grey, 251, which Shots.cs fills the viewport with. Rhino captures it
 # a shade off in one channel or another; anything that light is made exactly that grey, and for finding
 # what is drawn, white.
@@ -91,11 +97,12 @@ def anim(frames, base, margin=40, width=900, fps=12, hold=2):
              "-loop", "0", base + ".gif"])
     if r.returncode:
         raise SystemExit(r.stderr[-800:])
-    r = run(["-framerate", str(fps), "-i", pattern, "-vf", chain.replace("scale=%d:-2" % width, "scale=%d:-2" % max(width * 2, 1600)),
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart", base + ".mp4"])
-    if r.returncode:
-        raise SystemExit(r.stderr[-800:])
-    print("%d frames -> %s.gif, %s.mp4" % (len(files), base, base))
+    if MP4:
+        r = run(["-framerate", str(fps), "-i", pattern, "-vf", chain.replace("scale=%d:-2" % width, "scale=%d:-2" % max(width * 2, 1600)),
+                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart", base + ".mp4"])
+        if r.returncode:
+            raise SystemExit(r.stderr[-800:])
+    print("%d frames -> %s" % (len(files), made(base)))
 
 
 def pagegif(frames, dst, margin=40, width=600, fps=15, budget=4500):
@@ -146,7 +153,7 @@ def animcharts(frames, charts, base, margin=40, width=900, fps=10, hold=2, grow=
              (w, cut, ft, pad, w, h - cut, cut, fb, pad))
     else:
         f, cw, ch = crop_filter(box(pattern, grow), w, h, margin)
-    for kind, wide in (("gif", width), ("mp4", max(width * 2, 1600))):
+    for kind, wide in (("gif", width), ("mp4", max(width * 2, 1600)))[:2 if MP4 else 1]:
         graph = ("[0]" + BACKGROUND + "," + f + ",scale=%d:-2:flags=lanczos[a];" % wide +
                  "[1]format=rgb24,scale=%d:-2:flags=lanczos[b];[a][b]vstack" % wide)
         if hold:
@@ -160,7 +167,7 @@ def animcharts(frames, charts, base, margin=40, width=900, fps=10, hold=2, grow=
                               "-movflags", "+faststart", base + ".mp4"])
         if r.returncode:
             raise SystemExit(r.stderr[-800:])
-    print("%d frames with their charts -> %s.gif, %s.mp4" % (len(files), base, base))
+    print("%d frames with their charts -> %s" % (len(files), made(base)))
 
 
 def besidecharts(frames, charts, base, margin=40, height=900, fps=10, hold=2):
@@ -170,7 +177,7 @@ def besidecharts(frames, charts, base, margin=40, height=900, fps=10, hold=2):
     w, h = size(files[0])
     pattern, beside = os.path.join(frames, "%03d.png"), os.path.join(charts, "%03d.png")
     f, cw, ch = crop_filter(box(pattern), w, h, margin)
-    for kind, tall in (("gif", int(height * 0.8)), ("mp4", max(int(height * 1.4), 1100))):
+    for kind, tall in (("gif", int(height * 0.8)), ("mp4", max(int(height * 1.4), 1100)))[:2 if MP4 else 1]:
         graph = ("[0]" + BACKGROUND + "," + f + ",scale=-2:%d:flags=lanczos[a];" % tall +
                  "[1]format=rgb24,scale=-2:%d:flags=lanczos[b];[a][b]hstack" % tall)
         if hold:
@@ -185,7 +192,7 @@ def besidecharts(frames, charts, base, margin=40, height=900, fps=10, hold=2):
                               "-movflags", "+faststart", base + ".mp4"])
         if r.returncode:
             raise SystemExit(r.stderr[-800:])
-    print("%d frames with their charts beside them -> %s.gif, %s.mp4" % (len(files), base, base))
+    print("%d frames with their charts beside them -> %s" % (len(files), made(base)))
 
 
 def sidebyside(a, b, base, width=1200, fps=12, hold=2):
@@ -215,7 +222,7 @@ def sidebyside(a, b, base, width=1200, fps=12, hold=2):
         x0, y0, x1, y1 = box(os.path.join(tmp, "all", "a", "%03d.png"))
         u0, v0, u1, v1 = box(os.path.join(tmp, "all", "b", "%03d.png"))
         f, cw, ch = crop_filter((min(x0, u0), min(y0, v0), max(x1, u1), max(y1, v1)), w, h, 40)
-        for kind, name, wide, rate in (("gif", "third", width, max(1, fps // 2)), ("mp4", "all", max(width * 2, 1600), fps)):
+        for kind, name, wide, rate in (("gif", "third", width, max(1, fps // 2)), ("mp4", "all", max(width * 2, 1600), fps))[:2 if MP4 else 1]:
             half = wide // 2
             half -= half % 2
             inputs = []
@@ -243,7 +250,7 @@ def sidebyside(a, b, base, width=1200, fps=12, hold=2):
                 raise SystemExit(r.stderr[-800:])
     finally:
         shutil.rmtree(tmp)
-    print("%d frames side by side -> %s.gif, %s.mp4" % (len(A), base, base))
+    print("%d frames side by side -> %s" % (len(A), made(base)))
 
 
 def stack(dst, top, bottom, gap=40):

@@ -17,8 +17,10 @@ Each scene opens an example on the canvas of a live Rhino 8, solves it or runs i
 * the frames of an animation: a topology optimisation run, a mode shape swinging.
 
 `publish.sh` then trims the captures to what is drawn, puts each canvas beside its result as a
-working screen would show them (`*-in-grasshopper.png`), and makes the frames into a GIF and an
-MP4.
+working screen would show them (`*-in-grasshopper.png`), and makes the frames into a GIF. Since
+2026-11-13 there is no MP4 unless `MP4=1` is set. The older scenes in `publish.sh` that copy an
+`.mp4` (the earthquakes, pushover, 3D printing, tank and spectrum) stop at that copy without it: run
+them as `MP4=1 ./publish.sh <scene>`, or change them to the GIF.
 
 | Where | What |
 | --- | --- |
