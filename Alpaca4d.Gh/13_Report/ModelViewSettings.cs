@@ -107,8 +107,11 @@ namespace Alpaca4d.Gh
             if (Get(f, "range") is JArray range && range.Count == 2)
                 Persist((Param_Interval)inputs[4], new GH_Interval(new Interval((double)range[0], (double)range[1])));
 
-            if (Int(f, "loadPattern") is int pattern)
-                Persist((Param_Integer)inputs[5], new GH_Integer(pattern));
+            // A load pattern by its Name, or by its Id given as a number.
+            if (Get(f, "loadPattern") is JValue pattern && pattern.Type != JTokenType.Null)
+                Persist((Param_GenericObject)inputs[5], pattern.Type == JTokenType.Integer || pattern.Type == JTokenType.Float
+                    ? (IGH_Goo)new GH_Integer(Int(f, "loadPattern").Value)
+                    : new GH_String(Text(f, "loadPattern")));
 
             return null;
         }

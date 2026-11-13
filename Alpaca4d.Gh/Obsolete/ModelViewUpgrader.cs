@@ -61,6 +61,7 @@ namespace Alpaca4d.Gh
             // it whatever is still connected to it.
             UpgradeByName.CarryOver(old.Params.Input[0], upgraded.Params.Input[0]);
             UpgradeByName.CarryOver(old.Params.Input[1], upgraded.Params.Input[5]);
+            IdsAsGoo(old.Params.Input[1], upgraded.Params.Input[5]);
             UpgradeByName.CarryOver(old.Params.Input[2], upgraded.Params.Input[2]);
             TagsAsText(old.Params.Input[2], upgraded.Params.Input[2]);
 
@@ -82,6 +83,20 @@ namespace Alpaca4d.Gh
             text.PersistentData.Clear();
             foreach (var path in tags.PersistentData.Paths)
                 text.PersistentData.AppendRange(tags.PersistentData[path].Where(x => x != null).Select(x => new GH_String(x.Value.ToString())), path);
+        }
+
+        /// <summary>
+        /// The pattern Id typed into the old integer LP, for the new LoadPattern, which is generic so
+        /// that it takes a name as well, and so is passed over by CarryOver's copy of like for like.
+        /// </summary>
+        private static void IdsAsGoo(IGH_Param from, IGH_Param to)
+        {
+            if (!(from is GH_PersistentParam<GH_Integer> ids) || !(to is GH_PersistentParam<IGH_Goo> goo))
+                return;
+
+            goo.PersistentData.Clear();
+            foreach (var path in ids.PersistentData.Paths)
+                goo.PersistentData.AppendRange(ids.PersistentData[path].Where(x => x != null).Select(x => (IGH_Goo)new GH_Integer(x.Value)), path);
         }
 
         /// <summary>Each output's wires moved to the output of the same name.</summary>

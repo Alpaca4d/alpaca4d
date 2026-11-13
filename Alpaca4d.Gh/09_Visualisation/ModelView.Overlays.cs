@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 
 using Grasshopper.Kernel;
@@ -20,7 +21,8 @@ namespace Alpaca4d.Gh
     // viewport crawled when it was turned.
     public partial class ModelView
     {
-        private int? _loadPatternId;
+        /// <summary>The load patterns whose loads are drawn, or null for all of them.</summary>
+        private List<Alpaca4d.Loads.LoadPattern> _loadPatterns;
 
         /// <summary>The radius of a release circle at Release size 1; see ReleaseSymbols.Size.</summary>
         private double _releaseSize;
@@ -316,8 +318,61 @@ namespace Alpaca4d.Gh
         {
             double scale = _slLoadScale?.Value ?? 1.0;
             if (_loads == null || _loads.Scale != scale)
-                _loads = new LoadPicture(_model, _loadPatternId, scale, _drawnDisplacement);
+                _loads = new LoadPicture(_model, _loadPatterns, scale, _drawnDisplacement);
             return _loads;
+        }
+
+        /// <summary>
+        /// The load patterns the LoadPattern input picks: by name, whatever its case and the spaces
+        /// round it, as Mass from Loads looks them up, then by Id. A number wired in is read as the
+        /// same text typed, and a Load Pattern wired in by its Id. Null when nothing is given, which
+        /// draws them all; empty, with a warning saying what there is, when nothing matches.
+        /// </summary>
+        private List<Alpaca4d.Loads.LoadPattern> LoadPatterns(IGH_DataAccess DA)
+        {
+            Grasshopper.Kernel.Types.IGH_Goo goo = null;
+            if (!DA.GetData(LoadPatternInput, ref goo) || goo == null)
+                return null;
+
+            var patterns = _model.LoadPatterns ?? new List<Alpaca4d.Loads.LoadPattern>();
+            var value = goo.ScriptVariable();
+            if (value is Alpaca4d.Loads.LoadPattern wired)
+            {
+                var same = patterns.Where(x => x.Id == wired.Id).ToList();
+                if (same.Count == 0)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        $"The Load Pattern wired into LoadPattern (Id {wired.Id}) is not in this model, so none of its loads are drawn. Wire it into Assemble, or give its Name instead.");
+                return same;
+            }
+
+            string text;
+            switch (value)
+            {
+                case string s: text = s; break;
+                case int i: text = i.ToString(CultureInfo.InvariantCulture); break;
+                case long l: text = l.ToString(CultureInfo.InvariantCulture); break;
+                case double d: text = d.ToString(CultureInfo.InvariantCulture); break;
+                default:
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                        $"LoadPattern takes a load pattern's Name or Id, or the Load Pattern itself. Given: {value?.GetType().Name ?? goo.TypeName}.");
+                    return new List<Alpaca4d.Loads.LoadPattern>();
+            }
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            text = text.Trim();
+            var found = patterns.Where(x => Alpaca4d.Loads.MassFromLoads.Names(x.Name, text)).ToList();
+            if (found.Count == 0 && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id))
+                found = patterns.Where(x => x.Id == id).ToList();
+
+            if (found.Count == 0)
+            {
+                var known = patterns.Select(x => string.IsNullOrWhiteSpace(x.Name) ? $"Id {x.Id}" : $"\"{x.Name.Trim()}\" (Id {x.Id})").ToList();
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"No load pattern is named or numbered \"{text}\", so no loads are drawn. " +
+                    (known.Count > 0 ? $"The model's are {string.Join(", ", known)}." : "The model has no load patterns."));
+            }
+            return found;
         }
 
         /// <summary>The supports, made for the Support scale in force, or again when it has changed.</summary>
@@ -394,15 +449,14 @@ namespace Alpaca4d.Gh
             private readonly Dictionary<int, Vector3d> _displacement;
             private readonly Alpaca4d.Model _model;
 
-            public LoadPicture(Alpaca4d.Model model, int? pattern, double scale, Dictionary<int, Vector3d> displacement = null)
+            /// <param name="patterns">The patterns whose loads are drawn, or null for all of the model's.</param>
+            public LoadPicture(Alpaca4d.Model model, IEnumerable<Alpaca4d.Loads.LoadPattern> patterns, double scale, Dictionary<int, Vector3d> displacement = null)
             {
                 Scale = scale;
                 _model = model;
                 _displacement = displacement != null && displacement.Count > 0 ? displacement : null;
 
-                var patterns = pattern.HasValue
-                    ? model.LoadPatterns.Where(x => x.Id == pattern.Value)
-                    : (IEnumerable<Alpaca4d.Loads.LoadPattern>)model.LoadPatterns;
+                patterns = patterns ?? model.LoadPatterns;
                 // A ground motion's pattern has no loads of its own.
                 var loads = patterns.Where(x => x.Load != null).SelectMany(x => x.Load).ToList();
 

@@ -257,9 +257,17 @@ namespace Alpaca4d.Gh
             pManager.AddIntervalParameter("Range", "Range", "Range each gradient is stretched over, in the unit picked for its result: one per result ticked, in the order of the Results menu, " +
                 "beam forces left out as they have no gradient. A result given none fits what is drawn, which is what makes two steps impossible to compare - set it to compare them.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddIntegerParameter("LoadPattern", "LP", "Optional LoadPattern Id to filter load visualisation. If not provided all load patterns are shown.", GH_ParamAccess.item);
+            pManager.AddGenericParameter("LoadPattern", "LP", LoadPatternDescription, GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
+
+        /// <summary>
+        /// What LoadPattern takes. It took an Id alone, as an integer; it is generic now, so that a
+        /// name can be typed too, and a generic input reads back the integer an older file saved in it.
+        /// </summary>
+        private const string LoadPatternDescription =
+            "The load pattern whose loads are drawn: its Name, its Id, or the Load Pattern itself. Left empty, the loads of every pattern are drawn.\n" +
+            "A name is matched whatever its case, and before an Id, so a pattern named \"2\" is found by its name. Patterns that share a name are drawn together.";
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
@@ -934,8 +942,7 @@ namespace Alpaca4d.Gh
 
             _filter = ElementFilterInput.Read(DA, 2, this);
 
-            int loadPattern = -1;
-            _loadPatternId = DA.GetData(LoadPatternInput, ref loadPattern) ? loadPattern : (int?)null;
+            _loadPatterns = LoadPatterns(DA);
 
             _releaseSize = Alpaca4d.Visualisation.ReleaseSymbols.Size(_model);
 
@@ -1556,10 +1563,14 @@ namespace Alpaca4d.Gh
         /// <summary>
         /// A file from before <see cref="FittedLoads"/> holds a Load scale in metres per kN, 0.02 to
         /// keep 50 kN a metre long, which would now shrink the fitted arrows by fifty: it opens at 1.
+        /// Grasshopper restores an input's description from the file too, so LoadPattern would go on
+        /// saying it takes an Id only.
         /// </summary>
         public override bool Read(GH_IO.Serialization.GH_IReader reader)
         {
             bool read = base.Read(reader);
+            if (Params.Input.Count > LoadPatternInput)
+                Params.Input[LoadPatternInput].Description = LoadPatternDescription;
             if (!reader.ItemExists(FittedLoads) && _slLoadScale != null)
             {
                 _slLoadScale.MinValue = 0.1;
