@@ -399,7 +399,7 @@ namespace Alpaca4d.Gh
         private static string Show(Point3d point) =>
             $"({point.X:0.###}, {point.Y:0.###}, {point.Z:0.###})";
 
-        public override GH_Exposure Exposure => GH_Exposure.primary;
+        public override GH_Exposure Exposure => GH_Exposure.secondary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Pushover_Analysis__Alpaca4d_;
 

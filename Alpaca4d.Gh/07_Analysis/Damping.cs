@@ -75,7 +75,7 @@ namespace Alpaca4d.Gh
 
 
 
-        public override GH_Exposure Exposure => GH_Exposure.quarternary;
+        public override GH_Exposure Exposure => GH_Exposure.quinary;
 
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Rayleigh_Damping__Alpaca4d_;
