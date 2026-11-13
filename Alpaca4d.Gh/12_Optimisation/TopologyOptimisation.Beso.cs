@@ -12,14 +12,14 @@ using Alpaca4d.UIWidgets;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// BESO Topology: finds where a solid needs its material by bi-directional evolutionary structural
+    /// The BESO method of Topology Optimisation: finds where a solid needs its material by bi-directional evolutionary structural
     /// optimisation (<see cref="BesoOptimiser"/>, esoL of Xia et al. 2018 in soft-kill form). It starts from
     /// every solid, takes a few percent of the volume away each iteration and lets elements come back, each
     /// element solid or void all along. The run and its outputs work as Topology Optimisation's.
     /// </summary>
-    public class BesoTopology : TopologyComponent
+    public partial class TopologyOptimisation
     {
-        private const string Help =
+        private const string BesoHelp =
             "Finds where a solid needs its material by BESO, bi-directional evolutionary structural optimisation. It starts from " +
             "every solid of the model and takes EvolutionRate of the volume away each iteration, until VolumeFraction is left: each " +
             "iteration keeps the elements that work hardest - their strain energy per volume, smoothed over FilterRadius and averaged " +
@@ -32,32 +32,16 @@ namespace Alpaca4d.Gh
             "Set Run to true to start. Switching Run off pauses it; on again, it goes on from where it stopped. Changing any input " +
             "but Iterations and Tolerance starts it again from the beginning.";
 
-        public BesoTopology()
-          : base("BESO Topology (Alpaca4d)", "BESO", Help, "Alpaca4d", "12_Optimisation")
-        {
-            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
-        }
-
-        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
-        {
-            // All inputs belong to the evaluation unit, see RegisterEvaluationUnits.
-        }
-
-        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
-        {
-            // All outputs belong to the evaluation unit, see RegisterEvaluationUnits.
-        }
-
-        private const int ModelInput = 0, KeepInput = 1, VolumeFractionInput = 2, IterationsInput = 3, RunInput = 4;
-        private const int EvolutionRateInput = 5, PenaltyInput = 6, FilterRadiusInput = 7, ToleranceInput = 8, MinStiffnessInput = 9, SystemInput = 10;
-        private const int StepInput = 11;
+        private const int BesoModelInput = 0, BesoKeepInput = 1, BesoVolumeFractionInput = 2, BesoIterationsInput = 3, BesoRunInput = 4;
+        private const int BesoEvolutionRateInput = 5, BesoPenaltyInput = 6, BesoFilterRadiusInput = 7, BesoToleranceInput = 8, BesoMinStiffnessInput = 9, BesoSystemInput = 10;
+        private const int BesoStepInput = 11;
 
         /// <summary>Every element is 1 or x_min, a thousandth by default, so any threshold between finds the same solids.</summary>
-        private const double Threshold = 0.5;
+        private const double BesoThreshold = 0.5;
 
-        protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
+        private void RegisterBeso(EvaluationUnitManager mngr)
         {
-            var unit = new EvaluationUnit("BesoTopology", "BESO Topology", "Find where a solid needs its material, by BESO.");
+            var unit = new EvaluationUnit(BesoUnit, "BESO", "Find where a solid needs its material, by BESO.");
             unit.Icon = Alpaca4d.Gh.Properties.Resources.BESO_Topology__Alpaca4d_;
             mngr.RegisterUnit(unit);
 
@@ -164,24 +148,18 @@ namespace Alpaca4d.Gh
                 Name = "Settings",
                 Header = "Evolution rate, penalty, filter radius, tolerance, void stiffness and solver; history and log"
             };
-            for (int i = EvolutionRateInput; i <= SystemInput; i++)
+            for (int i = BesoEvolutionRateInput; i <= BesoSystemInput; i++)
                 settings.RegisterInputPlug(unit.Inputs[i]);
             foreach (var name in new[] { "History", "log" })
                 settings.RegisterOutputPlug(unit.Outputs.First(plug => plug.Parameter.Name == name));
             unit.AddMenu(settings);
         }
 
-        protected override void BeforeSolveInstance()
-        {
-            base.BeforeSolveInstance();
-            ValueListUtils.UpdateValueLists(this, SystemInput, Enum.GetNames(typeof(Alpaca4d.SystemEquation.SystemType)).ToList(), null);
-        }
-
-        protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)
+        private void SolveBeso(IGH_DataAccess DA)
         {
             if (DA.Iteration > 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "One model at a time: give BESO Topology a single AlpacaModel.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "One model at a time: give Topology Optimisation a single AlpacaModel.");
                 return;
             }
 
@@ -191,19 +169,19 @@ namespace Alpaca4d.Gh
             bool run = false;
             string system = DefaultSystem;
 
-            if (!DA.GetData(ModelInput, ref model)) return;
-            var keep = ElementFilterInput.Read(DA, KeepInput, this);
-            DA.GetData(VolumeFractionInput, ref volumeFraction);
-            DA.GetData(IterationsInput, ref iterations);
-            DA.GetData(RunInput, ref run);
-            DA.GetData(EvolutionRateInput, ref rate);
-            DA.GetData(PenaltyInput, ref penalty);
-            DA.GetData(FilterRadiusInput, ref filterRadius);
-            DA.GetData(ToleranceInput, ref tolerance);
-            DA.GetData(MinStiffnessInput, ref minStiffness);
-            DA.GetData(SystemInput, ref system);
+            if (!DA.GetData(BesoModelInput, ref model)) return;
+            var keep = ElementFilterInput.Read(DA, BesoKeepInput, this);
+            DA.GetData(BesoVolumeFractionInput, ref volumeFraction);
+            DA.GetData(BesoIterationsInput, ref iterations);
+            DA.GetData(BesoRunInput, ref run);
+            DA.GetData(BesoEvolutionRateInput, ref rate);
+            DA.GetData(BesoPenaltyInput, ref penalty);
+            DA.GetData(BesoFilterRadiusInput, ref filterRadius);
+            DA.GetData(BesoToleranceInput, ref tolerance);
+            DA.GetData(BesoMinStiffnessInput, ref minStiffness);
+            DA.GetData(BesoSystemInput, ref system);
             int stepValue = -1;
-            int? step = DA.GetData(StepInput, ref stepValue) && stepValue >= 0 ? stepValue : (int?)null;
+            int? step = DA.GetData(BesoStepInput, ref stepValue) && stepValue >= 0 ? stepValue : (int?)null;
 
             if (model == null || model.Bricks.Count == 0)
             {
@@ -261,7 +239,7 @@ namespace Alpaca4d.Gh
                     var previous = next == Going.OnFromWhereItStopped ? Run.Result : null;
                     Run?.Stop();
                     Run = null;
-                    if (Prepare(DA, model, kept, "BESO Topology takes", "Beso", out var tcl, out var cells, out var openSees, out var folder, out var stem))
+                    if (Prepare(DA, model, kept, "Topology Optimisation (BESO) takes", "Beso", out var tcl, out var cells, out var openSees, out var folder, out var stem))
                         Run = TopologyRun.Start(this, key, model, tcl, cells, settings, cells.Select(_ => 1.0).ToArray(),
                             (analyse, stop, progress, before, frames) => BesoOptimiser.Run(cells, settings, analyse, stop, progress, before, frames),
                             systemObj, openSees, folder, stem, previous);
@@ -278,7 +256,7 @@ namespace Alpaca4d.Gh
             }
 
             var result = Run.Result;
-            ShowDensities(DA, Run, Threshold, step,
+            ShowDensities(DA, Run, BesoThreshold, step,
                 done => result?.BrokeAfter is int broke
                     ? $"The design broke apart after iteration {broke}: a member was cut through, the compliance came out more than " +
                       $"{BesoOptimiser.Breakdown:0} times what it was and never came back, and the run settled on what was left. Drag Step to " +
@@ -287,10 +265,5 @@ namespace Alpaca4d.Gh
                       "raise Iterations to go on from there.");
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
-
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.BESO_Topology__Alpaca4d_;
-
-        public override Guid ComponentGuid => new Guid("{3B7E5C21-9A4D-4F68-B2E1-7C5D0A8F6E14}");
     }
 }

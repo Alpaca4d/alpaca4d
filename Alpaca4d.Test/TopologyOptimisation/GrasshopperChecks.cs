@@ -414,7 +414,7 @@ public static class GrasshopperCheck
 
         var doc = new Doc("beso");
         var assemble = SmallModel(doc);
-        var beso = doc.Add<Alpaca4d.Gh.BesoTopology>("BesoTopology");
+        var beso = doc.Add<Alpaca4d.Gh.TopologyOptimisation>("BesoTopology");
         Wire(assemble, "AlpacaModel", beso, "AlpacaModel");
         Set(beso, "Keep", new GH_String("UnderLoad"));
         Set(beso, "VolumeFraction", new GH_Number(0.5));
@@ -463,7 +463,7 @@ public static class GrasshopperCheck
         var stiff = Material(doc);
         Set(stiff, "E", new GH_Number(5.0));
         Set(stiff, "G", new GH_Number(5.0 / 2.6));
-        var mm = doc.Add<Alpaca4d.Gh.MultiMaterialTopology>("MultiMaterialTopology");
+        var mm = doc.Add<Alpaca4d.Gh.TopologyOptimisation>("MultiMaterialTopology");
         Wire(assemble, "AlpacaModel", mm, "AlpacaModel");
         In(mm, "Materials").AddSource(Out(soft, "Material"));
         In(mm, "Materials").AddSource(Out(stiff, "Material"));

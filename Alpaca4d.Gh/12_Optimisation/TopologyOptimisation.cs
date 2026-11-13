@@ -7,6 +7,8 @@ using System.Linq;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
+using System.Drawing;
+using Rhino.Display;
 using Rhino.Geometry;
 
 using Alpaca4d.Generic;
@@ -25,9 +27,9 @@ namespace Alpaca4d.Gh
     /// The run goes on a thread of its own (<see cref="TopologyRun"/>), and the outputs follow it as it
     /// goes. Run starts it; switching Run off, or changing any input, stops it.
     /// </summary>
-    public class TopologyOptimisation : TopologyComponent
+    public partial class TopologyOptimisation : TopologyComponent
     {
-        private const string Help =
+        private const string SimpHelp =
             "Finds where a solid needs its material. Every solid of the model - SSP Bricks, Ten Node or Four Node Tetrahedra - " +
             "gets a density between 0 and 1 and a stiffness of density cubed, and the densities are found that make the model " +
             "stiffest under its loads with VolumeFraction of the material: SIMP with the optimality criteria update and a density " +
@@ -44,7 +46,41 @@ namespace Alpaca4d.Gh
         public TopologyOptimisation()
           : base("Topology Optimisation (Alpaca4d)", "Topology", Help, "Alpaca4d", "12_Optimisation")
         {
-            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
+            UpdateMessage();
+        }
+
+        private const string SimpUnit = "TopologyOptimisation", BesoUnit = "BesoTopology", MultiMaterialUnit = "MultiMaterialTopology";
+
+        private const string Help =
+            "Finds where a solid needs its material. Method picks how: SIMP (the default) gives every solid a density and finds " +
+            "the stiffest design for VolumeFraction of the material, as top3d; BESO starts from every solid and takes a few percent " +
+            "of the volume away each iteration, each element solid or void all along; Multi-Material finds where each of several " +
+            "materials goes, and where none is needed. Right click the component, Method, to switch; the inputs and outputs change " +
+            "with it, and a switch starts any run again.\n" +
+            "The solids of the model - SSP Bricks, Ten Node or Four Node Tetrahedra - are the design domain. A removed element keeps " +
+            "a billionth of its stiffness instead of being cut out, so the mesh never changes. Every solid needs an Elastic Isotropic " +
+            "Material. Set Run to true to start; the outputs follow the run as it goes.\n" +
+            "Once it stops, AlpacaModel is the design as a model of its own, to analyse.\n\n" +
+            "SIMP: " + SimpHelp + "\n\nBESO: " + BesoHelp + "\n\nMulti-Material: " + MultiMaterialHelp;
+
+        public override string UnitMenuName => "Method";
+        public override string UnitMenuHeader => "Select the method";
+        protected override string DefaultEvaluationUnit => SimpUnit;
+
+        private void UpdateMessage()
+        {
+            string name = ActiveUnit?.DisplayName ?? this.NickName;
+            this.Message = $"{name}\n{this.Category}";
+        }
+
+        protected override void SwitchUnit(EvaluationUnit unit, bool recompute = true, bool recordEvent = true)
+        {
+            // A run is of one method: the other's inputs are not its inputs.
+            Run?.Stop();
+            Run = null;
+            _surfaces = new List<(Mesh mesh, Color colour)>();
+            base.SwitchUnit(unit, recompute, recordEvent);
+            UpdateMessage();
         }
 
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
@@ -65,7 +101,14 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
         {
-            var unit = new EvaluationUnit("TopologyOptimisation", "Topology Optimisation", "Find where a solid needs its material.");
+            RegisterSimp(mngr);
+            RegisterBeso(mngr);
+            RegisterMultiMaterial(mngr);
+        }
+
+        private void RegisterSimp(EvaluationUnitManager mngr)
+        {
+            var unit = new EvaluationUnit(SimpUnit, "SIMP", "Find where a solid needs its material.");
             unit.Icon = Alpaca4d.Gh.Properties.Resources.Topology_Optimisation__Alpaca4d_;
             mngr.RegisterUnit(unit);
 
@@ -185,10 +228,22 @@ namespace Alpaca4d.Gh
         protected override void BeforeSolveInstance()
         {
             base.BeforeSolveInstance();
-            ValueListUtils.UpdateValueLists(this, SystemInput, Enum.GetNames(typeof(Alpaca4d.SystemEquation.SystemType)).ToList(), null);
+            _surfaces = new List<(Mesh mesh, Color colour)>();
+            int systemInput = ActiveUnit?.Name == BesoUnit ? BesoSystemInput : ActiveUnit?.Name == MultiMaterialUnit ? MmSystemInput : SystemInput;
+            ValueListUtils.UpdateValueLists(this, systemInput, Enum.GetNames(typeof(Alpaca4d.SystemEquation.SystemType)).ToList(), null);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)
+        {
+            switch (unit?.Name)
+            {
+                case BesoUnit: SolveBeso(DA); return;
+                case MultiMaterialUnit: SolveMultiMaterial(DA); return;
+                default: SolveSimp(DA); return;
+            }
+        }
+
+        private void SolveSimp(IGH_DataAccess DA)
         {
             if (DA.Iteration > 0)
             {
@@ -309,6 +364,42 @@ namespace Alpaca4d.Gh
             if (!Prepare(DA, model, kept, "Topology Optimisation takes", "Topology", out var tcl, out var cells, out var openSees, out var folder, out var stem))
                 return null;
             return TopologyRun.Start(this, key, model, tcl, cells, settings, system, openSees, folder, stem, previous);
+        }
+
+        private bool DrawsOwnSurfaces => ActiveUnit?.Name == MultiMaterialUnit;
+
+        public override void DrawViewportMeshes(IGH_PreviewArgs args)
+        {
+            // Multi-Material draws its surfaces in their materials' colours, rather than the outputs' preview.
+            if (!DrawsOwnSurfaces)
+            {
+                base.DrawViewportMeshes(args);
+                return;
+            }
+            if (this.Hidden || this.Locked) return;
+            foreach (var (mesh, colour) in _surfaces)
+                if (mesh != null && mesh.Faces.Count > 0)
+                    args.Display.DrawMeshShaded(mesh, new DisplayMaterial(colour, this.Attributes.Selected ? 0.3 : 0.0));
+        }
+
+        public override void DrawViewportWires(IGH_PreviewArgs args)
+        {
+            if (!DrawsOwnSurfaces)
+                base.DrawViewportWires(args);
+        }
+
+        public override BoundingBox ClippingBox
+        {
+            get
+            {
+                if (!DrawsOwnSurfaces)
+                    return base.ClippingBox;
+                var box = BoundingBox.Empty;
+                foreach (var (mesh, _) in _surfaces)
+                    if (mesh != null)
+                        box.Union(mesh.GetBoundingBox(false));
+                return box.IsValid ? box : base.ClippingBox;
+            }
         }
 
         public override GH_Exposure Exposure => GH_Exposure.tertiary;

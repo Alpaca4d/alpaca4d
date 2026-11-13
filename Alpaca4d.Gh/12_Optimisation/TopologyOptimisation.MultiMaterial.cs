@@ -20,13 +20,13 @@ using ElasticMaterial = Alpaca4d.Material.ElasticIsotropicMaterial;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// Multi-Material Topology: finds where each of several materials goes in a solid, and where none is
+    /// The Multi-Material method of Topology Optimisation: finds where each of several materials goes in a solid, and where none is
     /// needed (<see cref="MultiMaterialOptimiser"/>, after Zheng et al. 2024). The run and its outputs work
     /// as Topology Optimisation's, with a surface, a volume and densities per material.
     /// </summary>
-    public class MultiMaterialTopology : TopologyComponent
+    public partial class TopologyOptimisation
     {
-        private const string Help =
+        private const string MultiMaterialHelp =
             "Finds where each of several materials goes in a solid, and where none is needed: the design stiffest under the model's " +
             "loads with each material filling at most its share of the volume. Every solid of the model - SSP Bricks, Ten Node or " +
             "Four Node Tetrahedra - gets a density of every material, and its stiffness mixes the materials' Young's moduli so that " +
@@ -39,25 +39,9 @@ namespace Alpaca4d.Gh
             "Set Run to true to start. Switching Run off pauses it; on again, it goes on from where it stopped. Changing any input " +
             "but Iterations and Tolerance starts it again from the beginning.";
 
-        public MultiMaterialTopology()
-          : base("Multi-Material Topology (Alpaca4d)", "MultiTopology", Help, "Alpaca4d", "12_Optimisation")
-        {
-            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
-        }
-
-        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
-        {
-            // All inputs belong to the evaluation unit, see RegisterEvaluationUnits.
-        }
-
-        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
-        {
-            // All outputs belong to the evaluation unit, see RegisterEvaluationUnits.
-        }
-
-        private const int ModelInput = 0, KeepInput = 1, MaterialsInput = 2, VolumeFractionsInput = 3, IterationsInput = 4, RunInput = 5;
-        private const int PenaltyInput = 6, PNormInput = 7, FilterRadiusInput = 8, ToleranceInput = 9, MinStiffnessInput = 10, MoveInput = 11;
-        private const int ThresholdInput = 12, SystemInput = 13, StepInput = 14;
+        private const int MmModelInput = 0, MmKeepInput = 1, MmMaterialsInput = 2, MmVolumeFractionsInput = 3, MmIterationsInput = 4, MmRunInput = 5;
+        private const int MmPenaltyInput = 6, MmPNormInput = 7, MmFilterRadiusInput = 8, MmToleranceInput = 9, MmMinStiffnessInput = 10, MmMoveInput = 11;
+        private const int MmThresholdInput = 12, MmSystemInput = 13, MmStepInput = 14;
 
         /// <summary>The colours of materials that have none of their own, in order: the brand palette's.</summary>
         private static readonly Color[] Palette =
@@ -66,9 +50,9 @@ namespace Alpaca4d.Gh
             Alpaca4d.Colors.DarkTech, Alpaca4d.Colors.AlpacaDarkBlue,
         };
 
-        protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
+        private void RegisterMultiMaterial(EvaluationUnitManager mngr)
         {
-            var unit = new EvaluationUnit("MultiMaterialTopology", "Multi-Material Topology", "Find where each of several materials goes in a solid.");
+            var unit = new EvaluationUnit(MultiMaterialUnit, "Multi-Material", "Find where each of several materials goes in a solid.");
             unit.Icon = Alpaca4d.Gh.Properties.Resources.Multi_Material_Topology__Alpaca4d_;
             mngr.RegisterUnit(unit);
 
@@ -193,25 +177,18 @@ namespace Alpaca4d.Gh
                 Name = "Settings",
                 Header = "Penalty, p-norm, filter radius, tolerance, void stiffness, move limit, threshold and solver; history and log"
             };
-            for (int i = PenaltyInput; i <= SystemInput; i++)
+            for (int i = MmPenaltyInput; i <= MmSystemInput; i++)
                 settings.RegisterInputPlug(unit.Inputs[i]);
             foreach (var name in new[] { "History", "log" })
                 settings.RegisterOutputPlug(unit.Outputs.First(plug => plug.Parameter.Name == name));
             unit.AddMenu(settings);
         }
 
-        protected override void BeforeSolveInstance()
-        {
-            base.BeforeSolveInstance();
-            ValueListUtils.UpdateValueLists(this, SystemInput, Enum.GetNames(typeof(Alpaca4d.SystemEquation.SystemType)).ToList(), null);
-            _surfaces = new List<(Mesh mesh, Color colour)>();
-        }
-
-        protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)
+        private void SolveMultiMaterial(IGH_DataAccess DA)
         {
             if (DA.Iteration > 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "One model at a time: give Multi-Material Topology a single AlpacaModel.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "One model at a time: give Topology Optimisation a single AlpacaModel.");
                 return;
             }
 
@@ -223,22 +200,22 @@ namespace Alpaca4d.Gh
             bool run = false;
             string system = DefaultSystem;
 
-            if (!DA.GetData(ModelInput, ref model)) return;
-            var keep = ElementFilterInput.Read(DA, KeepInput, this);
-            if (!DA.GetDataList(MaterialsInput, items)) return;
-            DA.GetDataList(VolumeFractionsInput, fractions);
-            DA.GetData(IterationsInput, ref iterations);
-            DA.GetData(RunInput, ref run);
-            DA.GetData(PenaltyInput, ref penalty);
-            DA.GetData(PNormInput, ref pNorm);
-            DA.GetData(FilterRadiusInput, ref filterRadius);
-            DA.GetData(ToleranceInput, ref tolerance);
-            DA.GetData(MinStiffnessInput, ref minStiffness);
-            DA.GetData(MoveInput, ref move);
-            DA.GetData(ThresholdInput, ref threshold);
-            DA.GetData(SystemInput, ref system);
+            if (!DA.GetData(MmModelInput, ref model)) return;
+            var keep = ElementFilterInput.Read(DA, MmKeepInput, this);
+            if (!DA.GetDataList(MmMaterialsInput, items)) return;
+            DA.GetDataList(MmVolumeFractionsInput, fractions);
+            DA.GetData(MmIterationsInput, ref iterations);
+            DA.GetData(MmRunInput, ref run);
+            DA.GetData(MmPenaltyInput, ref penalty);
+            DA.GetData(MmPNormInput, ref pNorm);
+            DA.GetData(MmFilterRadiusInput, ref filterRadius);
+            DA.GetData(MmToleranceInput, ref tolerance);
+            DA.GetData(MmMinStiffnessInput, ref minStiffness);
+            DA.GetData(MmMoveInput, ref move);
+            DA.GetData(MmThresholdInput, ref threshold);
+            DA.GetData(MmSystemInput, ref system);
             int stepValue = -1;
-            int? step = DA.GetData(StepInput, ref stepValue) && stepValue >= 0 ? stepValue : (int?)null;
+            int? step = DA.GetData(MmStepInput, ref stepValue) && stepValue >= 0 ? stepValue : (int?)null;
 
             if (model == null || model.Bricks.Count == 0)
             {
@@ -324,7 +301,7 @@ namespace Alpaca4d.Gh
                     var previous = next == Going.OnFromWhereItStopped ? Run.Result : null;
                     Run?.Stop();
                     Run = null;
-                    if (Prepare(DA, model, kept, "Multi-Material Topology takes", "MultiTopology", out var tcl, out var cells, out var openSees, out var folder, out var stem))
+                    if (Prepare(DA, model, kept, "Topology Optimisation (Multi-Material) takes", "MultiTopology", out var tcl, out var cells, out var openSees, out var folder, out var stem))
                     {
                         var start = new double[materials.Count * cells.Count];
                         Run = TopologyRun.Start(this, key, model, tcl, cells, settings, start,
@@ -448,38 +425,5 @@ namespace Alpaca4d.Gh
         }
 
         private List<(Mesh mesh, Color colour)> _surfaces = new List<(Mesh, Color)>();
-
-        public override void DrawViewportMeshes(IGH_PreviewArgs args)
-        {
-            // The surfaces in their materials' colours, rather than the outputs' preview.
-            if (this.Hidden || this.Locked) return;
-            foreach (var (mesh, colour) in _surfaces)
-                if (mesh != null && mesh.Faces.Count > 0)
-                    args.Display.DrawMeshShaded(mesh, new DisplayMaterial(colour, this.Attributes.Selected ? 0.3 : 0.0));
-        }
-
-        public override void DrawViewportWires(IGH_PreviewArgs args)
-        {
-        }
-
-        public override bool IsPreviewCapable => true;
-
-        public override BoundingBox ClippingBox
-        {
-            get
-            {
-                var box = BoundingBox.Empty;
-                foreach (var (mesh, _) in _surfaces)
-                    if (mesh != null)
-                        box.Union(mesh.GetBoundingBox(false));
-                return box.IsValid ? box : base.ClippingBox;
-            }
-        }
-
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
-
-        protected override Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Multi_Material_Topology__Alpaca4d_;
-
-        public override Guid ComponentGuid => new Guid("{6D2A9E47-1C8B-4E35-A9F0-58B3C7D16A22}");
     }
 }
