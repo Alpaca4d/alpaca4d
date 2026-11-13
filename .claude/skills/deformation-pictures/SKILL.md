@@ -1,9 +1,9 @@
 ---
 name: deformation-pictures
-description: Make the picture of a structure deforming - a looping GIF and MP4 of it swinging from rest to its deformed shape, and the still at full deformation - from an Alpaca4d definition in a live Rhino 8. Use it for the first picture of an example, a docs page or a post, and for mode shapes and buckling modes too.
+description: Make the picture of a structure deforming - a looping GIF of it swinging from rest to its deformed shape, and the still at full deformation - from an Alpaca4d definition in a live Rhino 8. Use it for the first picture of an example, a docs page or a post, and for mode shapes and buckling modes too.
 ---
 
-# A structure deforming: the GIF, the MP4 and the still
+# A structure deforming: the GIF and the still
 
 The pictures are made by a scene of `Tools/Marketing` (its README says how to run one), with the
 `Deforming` helper of `Shots.cs`. `Structures` and `TwoSpan` in `Shots.cs` are worked examples: `Structures` makes the six conventional
@@ -87,7 +87,8 @@ myexample() {
 }
 ```
 
-- `anim frames base margin width fps hold`: a GIF `width` wide and an MP4 twice that, both looping.
+- `anim frames base margin width fps hold`: a looping GIF `width` wide. No MP4 (user, 2026-11-13):
+  `post.py` writes one only with `MP4=1`.
   With `hold` 0 there is no pause, which the cosine swing does not need. 40 frames at 15 fps is a
   2.7 s loop.
 - A GIF over about 5 MB is too heavy for a page: make it narrower (700) or use fewer frames (30).
@@ -95,9 +96,9 @@ myexample() {
 
 ## 4. Where the pictures go
 
-- `marketing/<topic>/<case>/`, as every picture of the work does: the still, the GIF, the MP4.
 - The still is the **first picture** of an example (`examples/<slug>/<slug>.png`) or a docs page.
-  The GIF can take its place on a page. The MP4 is for the website and for posts.
+  The GIF can take its place on a page.
+- Copies in `marketing/<topic>/<case>/` only when the user asks, with `/marketing-content`.
 
 ## Look
 
@@ -129,6 +130,6 @@ structure moves the most, found by stepping through the record and reading Model
   after setting their data, or they keep the old). `post.py animcharts` stacks them under the frames,
   cut to what is drawn; `post.py stack` puts the worst step's under the still as `<slug>-2.png`.
 - Set the legend smaller for the frames than for the still, which is captured larger than the screen.
-- On a page use the MP4 in a `<video autoplay loop muted playsinline>`: ten seconds of shaking make too
-  heavy a GIF. Keep the GIF, 900 px wide, for posts.
+- Ten seconds of shaking make a heavy GIF: on a page use `post.py pagegif` (64 colours, made narrower
+  until it is under 4.5 MB), with every second frame if it is still too heavy.
 

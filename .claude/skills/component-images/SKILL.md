@@ -1,9 +1,12 @@
 ---
 name: component-images
-description: Redraw the pictures of the Alpaca4d Grasshopper components in the docs (alpaca4d.github.io/doc/.gitbook/assets/components) after a component's name, inputs, outputs, menus, message or icon changed, or a component was added. Builds the plugin in Release without touching the live Grasshopper folder, runs Tools/ComponentImages/run.sh and checks what it changed.
+description: Redraw the pictures of the Alpaca4d Grasshopper components in the docs (alpaca4d.github.io/doc/.gitbook/assets/components) once, before a push, for the components whose name, inputs, outputs, menus, message or icon changed since the last push, or that were added. Builds the plugin in Release without touching the live Grasshopper folder, runs Tools/ComponentImages/run.sh and checks what it changed.
 ---
 
 # Redraw the component pictures in the docs
+
+Run it once before a push, for everything changed since the last push, not after each change
+(user, 2026-11-13). The components changed: `git diff --stat origin/<branch>... -- Alpaca4d.Gh`.
 
 `Tools/ComponentImages/run.sh` reads the components from a Release build and draws every one of
 them, NodePen style, into the docs. Its README says what it needs (mono with libgdiplus, Rhino 7
@@ -31,9 +34,8 @@ for the Visual Basic runtime, node, the network for fonts).
    - The end of run.sh's output lists components with no page. A new component there needs a
      page, as `.claude/rules/docs.md` says.
 
-4. **Look at the changed pictures** with Read, to see that they show the change. Copy the pictures
-   of the components that changed (not the whole redrawn set) to
-   `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/`, so they can be shared.
+4. **Look at the changed pictures** with Read, to see that they show the change. No copies in
+   `marketing/` unless the user asks, with `/marketing-content`.
 
 5. Leave the docs uncommitted. When asked, commit them in the docs repository, for example
    `🍱 Redraw the Support picture with its new icon`.

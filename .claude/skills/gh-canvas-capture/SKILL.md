@@ -7,18 +7,12 @@ description: Make pictures of Grasshopper definitions or single Alpaca4d compone
 
 Run the capture scripts as the run-in-rhino skill says. Keep the working files (definitions,
 scripts, raw captures) in the scratchpad.
-- Every finished picture goes to
-  `/Users/mp/Documents/GitHub/alpaca4d.github.io/marketing/<topic>/<case>/`, whether the user asked
-  for it or not, so it can be shared: a subfolder for each case a topic shows, such as
-  `principal-stress-lines/deep-beam`, holding its stills, animations and `grasshopper-definition.png`.
-  Overwrite them on the next round instead of adding versions.
-- Pictures for a docs page go beside that page too, with a copy in marketing.
-- **`Tools/Marketing/run.sh` makes the marketing pictures of the examples.** Its README lists the
+- Finished pictures go only where the work needs them: beside a docs page, in an example's folder.
+  Copies in `marketing/` only when the user asks, with `/marketing-content`.
+- **Animations are GIFs only, no MP4** (user, 2026-11-13).
+- **`Tools/Marketing/run.sh` makes the pictures of the examples.** Its README lists the
   scenes and how to add one, and its `Shots.cs` holds working code for everything below. For new
   work on an example, add or extend a scene there rather than writing a script from nothing.
-- **Topology optimisation always gets a GIF and an MP4 of its run**, design by design along Step,
-  and a picture of the final design analysed in Von Mises stress. Use `Iterations` and `Analyse`
-  in `Shots.cs`.
 
 ## Definitions written by Tools/Examples/make.sh
 

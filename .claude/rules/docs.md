@@ -36,14 +36,19 @@ Emoji mark only the top of the tree: a section's page and a page at the top of i
 (`# 🔗 Constraints`) have one, in its title and its `SUMMARY.md` entry; a page under a section
 (`# Rigid Diaphragm`) has none.
 
-Do these as part of the same piece of work, without being asked. The docs are in the docs
-repository next to this one, `../alpaca4d.github.io/doc`.
+Do these as part of the same piece of work, without being asked, except the component pictures.
+The docs are in the docs repository next to this one, `../alpaca4d.github.io/doc`.
+
+**Component pictures are redrawn once, before a push**, not after each change (user, 2026-11-13).
+When asked to push, first run the component-images skill for the components changed since the last
+push (`git diff --stat origin/<branch>...` for `Alpaca4d.Gh/` and `Resources/`), commit the
+pictures in the docs repository, then push both. Until then, leave the pictures as they are.
 
 - **A Grasshopper component changes** (`Alpaca4d.Gh/NN_*/`): its name, inputs, outputs, defaults,
   menus, message or behaviour. Update its docs page, the one whose title line reads
   `` `Name (Alpaca4d)` — **Alpaca4d ▸ Tab** ``. Fix the Inputs and Outputs tables
-  (Name | Nick | Type | Default | Description) and any text about what changed, then redraw its
-  picture (see the next item). Keep the tables in that form, under `### Inputs` (or
+  (Name | Nick | Type | Default | Description) and any text about what changed. Its picture waits
+  for the push. Keep the tables in that form, under `### Inputs` (or
   `### Inputs — <type>`, one per type of a switcher) and `### Outputs`: the docs site folds them
   and the picture into one card (`docs-site/scripts/cards.mjs`), with the first sentence of each
   Description on the port's line and the rest a click away, so put the gist first. Name a type as
@@ -52,10 +57,10 @@ repository next to this one, `../alpaca4d.github.io/doc`.
   which the component-images tool draws for every type of a switcher. Grep the docs for the component's name, because other pages and
   examples may mention it.
 - **A component's icon changes** (`Alpaca4d.Gh/Resources/*.png`), or anything else its picture
-  shows: redraw the docs pictures with the component-images skill. To draw the icon itself,
-  use the alpaca-icon skill.
+  shows: its docs picture is redrawn before the push, with the component-images skill. To draw the
+  icon itself, use the alpaca-icon skill.
 - **A new component**: add a page in `doc/basics/<section>/`, written like the pages next to it
-  (title line, Inputs, Outputs, When to use it). List it in `doc/SUMMARY.md` and draw its picture.
+  (title line, Inputs, Outputs, When to use it). List it in `doc/SUMMARY.md`. Its picture is drawn before the push.
 - **A component is removed, hidden or renamed**: remove or rename its page, then update
   `doc/SUMMARY.md` and every link to the page.
 - **An example's .gh changes** (`Tools/Examples/`): copy it over the one in its example folder

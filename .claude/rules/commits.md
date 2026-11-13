@@ -2,7 +2,7 @@
 
 - Do not commit after every change. Leave the work uncommitted and wait until you are asked to
   commit. This holds for this repository and for the docs repository, alpaca4d.github.io.
-- Before committing, read the diff. If a component or an icon changed and its docs did not,
+- Before committing, read the diff. If a component or an icon changed and its docs page did not (its picture waits for the push),
   perhaps because it was changed by hand, say so and offer to update the docs first
   (see `docs.md`).
 - When asked, commit in small, single-purpose chunks, each one building, in gitmoji style.
@@ -14,4 +14,5 @@
   - Order the commits so each one builds: Core, then tests, the Gh component, icons, docs.
   - Split shared files (csproj, Resources.resx and Resources.Designer.cs) by hunk.
   - Commit the docs repository separately, in the same style.
-- Do not push unless asked.
+- Do not push unless asked. Before a push, redraw the pictures of the components changed since the
+  last push (component-images skill, see `docs.md`) and commit them in the docs repository.
