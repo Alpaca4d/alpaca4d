@@ -3,13 +3,14 @@
     ./run.sh
     OPENSEES=/Applications/OpenSeesLatest-Mumps/bin/OpenSees ./run.sh
     PIPE=rhinocode_remotepipe_<pid> ./grasshopper.sh
+    PIPE=rhinocode_remotepipe_<pid> ./plate.sh
 
-Checks `Alpaca4d.Footfall`, which Footfall Analysis runs - SCI P354's response of a floor or a stair
-to a person walking, by self and by full excitation - and `Read.MassNormalisedModes`, which reads the
+Checks `Alpaca4d.Footfall`, which Footfall Analysis runs - SCI P354's response of a floor or a stair to
+a person walking, by self and by full excitation - and `Read.MassNormalisedModes`, which reads the
 modes it works from as OpenSees recorded them. Every formula is written out again in the check, from
-P354 (revised 2009, with the January 2009 corrections), rather than called from the code under test:
-the steady state as P354's full time history, Equation 31 with the phases of Equation 32, sampled over
-a pace.
+P354 (revised 2009, with the January 2009 corrections), rather than called from the code under test
+(`ByHand.cs`, which `PlateCheck.cs` shares): the steady state as P354's full time history, Equation 31
+with the phases of Equation 32, sampled over a pace.
 
 | part | against |
 | --- | --- |
@@ -38,3 +39,17 @@ model and settings and a few Walk and Feel points: a result per Feel point, each
 walker on a Walk node, none less than self excitation where it is walked on, the walker alone on the
 worst node giving self excitation's R there. Saved and opened again, it keeps its unit, points, wires
 and values. `PIPE=` names the Rhino when more than one runs.
+
+`plate.sh` checks the whole chain on shells, in a running Rhino 8 (`StartScriptServer`). It builds the
+beam above again as a plate strip out of the real components: ElasticIsotropic, Plate Fiber Section,
+ASD Shell, Support, Assemble Model, Natural Vibration and Footfall Analysis. Build Alpaca4d.Gh in
+Release anywhere (`GHDIR=`); the live Grasshopper folder is not needed, as this build is loaded beside
+the installed one. It installs the test licence first (`LICENSE=` to name another file).
+
+| model | what it pins down |
+| --- | --- |
+| the beam as a steel strip, 10 x 1.8 m, 100 mm, ν = 0, 20 x 4 ASD shells, 0.5 t/m from its density, held along X, Y and Z on its short edges; P354's defaults, 401 paces, 3% | b t³ / 12 is the beam's I, and with ν = 0 the plate's D b is E I exactly. Assemble's Mass is 5 t; the first frequency is π/2 √(EI / m L⁴) within 1%, the next past 12 Hz, so the first mode counts alone. Self excitation walks on the 105 nodes of the shells. R is the same all across midspan and is the largest there, as by hand (`ByHand.cs`) with the strip's own frequency and φ² = 2 / m L, and within 1% of the beam's R by hand. The supports do not respond, and quarter span gives sin² 45° of midspan. Full excitation felt at quarter span finds the worst walker at midspan, with R the midspan's times sin 45° |
+| the same strip, half its mass from its density and half from a mesh load in a Load Pattern named "Finishes", which Mass from Loads names | ASD shells lump their mass a quarter to each corner, as Mass from Loads lumps a mesh load, so the model is the same one: the same Mass, the same frequencies to 1e-6, the same R at every node and in full excitation |
+
+Last run 2026-11-12, all 17 checks passed: 3.946 Hz against the beam's 3.943 Hz, R = 54.72 at midspan
+against 54.72 by hand and 54.65 for the beam, at 1.977 Hz.

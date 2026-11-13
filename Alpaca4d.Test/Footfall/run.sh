@@ -13,7 +13,7 @@ RHINO=${RHINO:-$(ls ~/.nuget/packages/rhinocommon/7.18.*/lib/net48/RhinoCommon.d
 OPENSEES=${OPENSEES:-$(command -v OpenSees || ls /Applications/OpenSees*/bin/OpenSees 2>/dev/null | tail -1)}
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-cp FootfallCheck.cs "$work/"
+cp FootfallCheck.cs ByHand.cs "$work/"
 # PureHDF and its dependencies come from the build output; the modes are read with them.
 cp "$COREDIR"/*.dll "$RHINO" "$work/"
 ( cd "$work"
@@ -21,5 +21,5 @@ cp "$COREDIR"/*.dll "$RHINO" "$work/"
   NETSTD=${NETSTD:-$(ls /Library/Frameworks/Mono.framework/Versions/Current/lib/mono/4.5/Facades/netstandard.dll 2>/dev/null | head -1)}
   NETSTD_REF=""
   [ -n "$NETSTD" ] && NETSTD_REF="-r:$NETSTD"
-  mcs -target:exe -out:FootfallCheck.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:PureHDF.dll -r:System.Drawing.dll $NETSTD_REF FootfallCheck.cs
+  mcs -target:exe -out:FootfallCheck.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:PureHDF.dll -r:System.Drawing.dll $NETSTD_REF FootfallCheck.cs ByHand.cs
   mono FootfallCheck.exe "$OPENSEES" )
