@@ -189,7 +189,8 @@ namespace Alpaca4d.Optimisation
             }
 
             var masses = new List<MassLoad>();
-            foreach (var mass in model.Mass)
+            // The masses made of loads as the model lumped them, kept where they still stand like any other.
+            foreach (var mass in model.Mass.Concat(model.LumpedMass))
             {
                 if (Stands(mass.Pos)) masses.Add(mass);
                 else loadsLeftOut++;

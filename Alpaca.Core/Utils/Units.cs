@@ -87,6 +87,22 @@ namespace Alpaca4d
         public static double ToMillimetres(double length) => length * MillimetresPerUnit;
     }
 
+    /// <summary>
+    /// The acceleration of gravity, which turns a weight in the model's force unit into a mass in its
+    /// mass unit: kN over m/s² is the tonne, the unit <see cref="ModelMass"/> writes masses in.
+    /// </summary>
+    public static class ModelGravity
+    {
+        /// <summary>g in m/s², as Gravity Load takes it.</summary>
+        public const double G = 9.81;
+
+        /// <summary>g in the model's own acceleration unit: 9.81 with lengths in m.</summary>
+        public static double Acceleration => G * 1000.0 / ModelLength.MillimetresPerUnit;
+
+        /// <summary>A weight in the model's force unit as a mass in kg.</summary>
+        public static double WeightToKg(double weight) => ModelMass.ToKg(weight / Acceleration);
+    }
+
     public enum AngleUnit
     {
         deg,
