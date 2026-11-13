@@ -37,6 +37,12 @@ namespace Alpaca4d.Gh
 
             evaluationUnit.RegisterInputParam(new Param_Number(), "Factor", "Factor", "Constant factor", GH_ParamAccess.item, new GH_Number(1));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
+
+            // Last, as new inputs go: a file saved before it still lines up with the ones before.
+            evaluationUnit.RegisterInputParam(new Param_String(), "Name", "Name",
+                "The load case's name - Finishes, Imposed, Wind X. Mass from Loads names a pattern by it, and the export to "
+                + "FEM-Design names its load case. OpenSees never sees it. Left empty, the pattern has no name.", GH_ParamAccess.item);
+            evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
         }
 
         public override void SolveInstance(IGH_DataAccess DA, out string msg, out GH_RuntimeMessageLevel level)
@@ -58,7 +64,11 @@ namespace Alpaca4d.Gh
 
             var direction = (Alpaca4d.Loads.Direction)Enum.Parse(typeof(Alpaca4d.Loads.Direction), _direction, true);
 
+            string name = null;
+            DA.GetData(4, ref name);
+
             var load = Alpaca4d.Loads.LoadPattern.CreateUniformExcitation(direction, timeSeries, velocity, factor);
+            load.Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
             DA.SetData(0, load);
         }

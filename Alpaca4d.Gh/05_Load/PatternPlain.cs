@@ -39,6 +39,12 @@ namespace Alpaca4d.Gh
 
             evaluationUnit.RegisterInputParam(new Param_Number(), "Factor", "Factor", "Constant factor", GH_ParamAccess.item, new GH_Number(1));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
+
+            // Last, as new inputs go: a file saved before it still lines up with the ones before.
+            evaluationUnit.RegisterInputParam(new Param_String(), "Name", "Name",
+                "The load case's name - Finishes, Imposed, Wind X. Mass from Loads names a pattern by it, and the export to "
+                + "FEM-Design names its load case. OpenSees never sees it. Left empty, the pattern has no name.", GH_ParamAccess.item);
+            evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
         }
 
         /// <summary>
@@ -75,7 +81,13 @@ namespace Alpaca4d.Gh
             double factor = 1;
             DA.GetData(2, ref factor);
 
-            var load = new Alpaca4d.Loads.LoadPattern(PatternType.Plain, timeSeries, loads, factor);
+            string name = null;
+            DA.GetData(3, ref name);
+
+            var load = new Alpaca4d.Loads.LoadPattern(PatternType.Plain, timeSeries, loads, factor)
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
+            };
 
             DA.SetData(0, load);
         }

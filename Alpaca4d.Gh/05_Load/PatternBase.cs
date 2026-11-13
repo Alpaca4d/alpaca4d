@@ -27,7 +27,8 @@ namespace Alpaca4d.Gh
 
         public PatternBase()
             : base("Load Pattern (Alpaca4d)", "Load Pattern",
-              "Pattern Base Component",
+              "Groups loads into a load case for Assemble Model: a time series that scales them through the analysis, a " +
+              "factor, and a name. Mass from Loads names a pattern by it, to make its loads' weight mass.",
               "Alpaca4d", "05_Load")
         {
             ((GH_Component)this).Hidden = false;
