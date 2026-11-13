@@ -28,7 +28,7 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("Elements", "Elements", "Every element in the model - beams, shells, bricks and tetrahedra together.", GH_ParamAccess.list);
             pManager.AddGenericParameter("Supports", "Supports", "The supports, from the Support component. A support only takes hold if it lands within Tolerance of a node.", GH_ParamAccess.list);
-            pManager.AddGenericParameter("LoadPatterns", "LoadPatterns", "Load patterns and/or mass loads (mixed allowed)", GH_ParamAccess.list);
+            pManager.AddGenericParameter("LoadPatterns", "LoadPatterns", "Load patterns, Mass Points and Mass from Loads, mixed as they come. Masses that land on one node are added together.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Constraints", "Constraints", "Rigid diaphragms and rigid links.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -59,6 +59,7 @@ namespace Alpaca4d.Gh
             var loadPattern = new List<Alpaca4d.Loads.LoadPattern>();
             var constraint = new List<Alpaca4d.Generic.IConstraint>();
             var massLoad = new List<Alpaca4d.Loads.MassLoad>();
+            var massFromLoads = new List<Alpaca4d.Loads.MassFromLoads>();
             var recorder = new List<Alpaca4d.Generic.IRecorder>();
             double tolerance = DefaultTolerance;
 
@@ -82,6 +83,10 @@ namespace Alpaca4d.Gh
                 else if (val is Alpaca4d.Loads.MassLoad ml)
                 {
                     massLoad.Add(ml);
+                }
+                else if (val is Alpaca4d.Loads.MassFromLoads fromLoads)
+                {
+                    massFromLoads.Add(fromLoads);
                 }
                 else if (val != null)
                 {
@@ -107,6 +112,7 @@ namespace Alpaca4d.Gh
 
             var model = new Model(element, support, loadPattern, constraint, recorder);
             model.Mass = massLoad;
+            model.MassFromLoads = massFromLoads;
 
             model.Tollerance = tolerance;
             model.Assemble();

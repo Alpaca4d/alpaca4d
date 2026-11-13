@@ -34,7 +34,8 @@ namespace Alpaca4d.Gh
             "the threshold of perception. SCI P354's method, with its Fourier coefficients for walking (Table 3.1) or for stairs " +
             "(Table 3.2).\n" +
             "Connect the model from Natural Vibration Analysis, with modes up to 2 Hz past the cut-off frequency. Its mass should " +
-            "be what the structure carries in use: P354 takes the self-weight, the superimposed dead load and 10% of the imposed load.\n" +
+            "be what the structure carries in use: P354 takes the self-weight, the superimposed dead load and 10% of the imposed load. " +
+            "The self-weight is mass already; add the rest with Mass from Loads before Assemble Model.\n" +
             "Walk gives where people walk, Feel where the vibration is felt; each point takes the model's nearest node. With " +
             "nothing in Walk, the nodes of the shell elements are walked on - the slabs, treads and landings.\n" +
             "Self excitation: the walker is at the point the response is read at, which P354 takes as the worst place in most " +
