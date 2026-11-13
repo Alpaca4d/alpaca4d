@@ -533,7 +533,7 @@ namespace Alpaca4d.Gh
             return text.ToString();
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.tertiary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Footfall_Analysis__Alpaca4d_;
 

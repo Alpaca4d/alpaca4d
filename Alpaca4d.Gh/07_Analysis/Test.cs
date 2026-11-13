@@ -21,7 +21,7 @@ namespace Alpaca4d.Gh
         public override string UnitMenuName => "Test";
         protected override string DefaultEvaluationUnit => _subcomponents.Count > 0 ? _subcomponents[0].name() : "EnergyIncr";
         public override Guid ComponentGuid => new Guid("{F8A3B2C1-D4E5-4F6A-B7C8-9D0E1F2A3B4C}");
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.quarternary;
 
         protected override Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Analysis_settings__Alpaca4d_;
 

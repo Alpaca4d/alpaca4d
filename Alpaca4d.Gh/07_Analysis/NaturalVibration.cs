@@ -292,7 +292,7 @@ namespace Alpaca4d.Gh
             ValueListUtils.UpdateValueLists(this, SolverInput, names, null);
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.primary;
+        public override GH_Exposure Exposure => GH_Exposure.secondary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Run_Natural_Vibration_Analysis__Alpaca4d_;
 

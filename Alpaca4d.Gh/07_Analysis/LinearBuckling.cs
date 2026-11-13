@@ -285,7 +285,7 @@ namespace Alpaca4d.Gh
             };
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.primary;
+        public override GH_Exposure Exposure => GH_Exposure.secondary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Linear_Buckling_Analysis__Alpaca4d_;
 

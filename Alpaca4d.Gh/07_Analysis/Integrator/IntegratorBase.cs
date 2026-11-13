@@ -21,7 +21,7 @@ namespace Alpaca4d.Gh
         public override string UnitMenuName => "Integrator (Alpaca4d)";
         protected override string DefaultEvaluationUnit => _subcomponents.Count > 0 ? _subcomponents[0].name() : "LoadControl";
         public override Guid ComponentGuid => new Guid("{A5F2B8C3-D1E4-4F5A-B6C7-8D9E0F1A2B3C}");
-        public override GH_Exposure Exposure => GH_Exposure.secondary;
+        public override GH_Exposure Exposure => GH_Exposure.quarternary;
 
         protected override Bitmap Icon => null;
 
