@@ -68,6 +68,7 @@ public static class GrasshopperCheck
             DisplayOnly(small);
             Drawn(small);
             LoadsDrawn(small);
+            LoadsByPattern(small);
             LoadsDeformed(small);
             UpgradeModelView(small);
             UpgradeViewResults(small);
@@ -775,6 +776,72 @@ public static class GrasshopperCheck
         }
     }
 
+    /// <summary>
+    /// LoadPattern picks the loads drawn by a pattern's Name, whatever its case, by its Id, or by
+    /// the Load Pattern wired in; a name no pattern has draws nothing and says which there are.
+    /// </summary>
+    static void LoadsByPattern(Plate plate)
+    {
+        Section("Loads of one pattern, by name or Id");
+
+        var point = plate.Add<Alpaca4d.Gh.PointLoad>();
+        Set(point, "Point", new GH_Point(new Point3d(6, 5, 0)));
+        Set(point, "Force", new GH_Vector(new Vector3d(0, 0, -50)));
+        var dead = plate.Add<Alpaca4d.Gh.PatternBase>("PlainPattern (Alpaca4d)");
+        In(dead, "Loads").AddSource(point.Params.Output[0]);
+        Set(dead, "Name", new GH_String("Dead"));
+
+        var line = plate.Add<Alpaca4d.Gh.LinearLoad>();
+        In(line, "Beam|Id").AddSource(Out(plate.BeamElements, "Element"));
+        Set(line, "Force", new GH_Vector(new Vector3d(0, 0, -10)));
+        var wind = plate.Add<Alpaca4d.Gh.PatternBase>("PlainPattern (Alpaca4d)");
+        In(wind, "Loads").AddSource(line.Params.Output[0]);
+        Set(wind, "Name", new GH_String("Wind"));
+
+        var assemble = plate.Add<Alpaca4d.Gh.AssembleModel>();
+        Wire(plate.ShellElements, "Element", assemble, "Elements");
+        Wire(plate.BeamElements, "Element", assemble, "Elements");
+        Wire(plate.SupportsMade, "Support", assemble, "Supports");
+        foreach (var source in new[] { dead, wind })
+            In(assemble, "LoadPatterns").AddSource(source.Params.Output[0]);
+
+        var view = plate.Add<Alpaca4d.Gh.ModelView>();
+        Wire(assemble, "AlpacaModel", view, "AlpacaModel");
+        Field<MenuCheckBox>(view, "_ckShowLoads").Active = true;
+        Field<MenuCheckBox>(view, "_ckShowLoadValues").Active = true;
+
+        string Drawn()
+        {
+            plate.Solve();
+            var values = ((System.Collections.IEnumerable)Field<object>(Call(view, "Loads"), "_values")).Cast<object>()
+                .Select(v => (string)v.GetType().GetField("Item1").GetValue(v)).Distinct().OrderBy(v => v);
+            return string.Join(" + ", values);
+        }
+
+        Check(Drawn() == "10 kN/m + 50 kN", $"with LoadPattern empty, both patterns' loads ({Drawn()})");
+
+        Set<IGH_Goo>(view, "LoadPattern", new GH_String(" dead "));
+        Check(Drawn() == "50 kN", $"\" dead \" draws the Dead pattern alone, whatever the case and the spaces ({Drawn()})");
+
+        int windId = Field<Alpaca4d.Model>(view, "_model").LoadPatterns.Single(p => p.Name == "Wind").Id.Value;
+        Set<IGH_Goo>(view, "LoadPattern", new GH_Integer(windId));
+        Check(Drawn() == "10 kN/m", $"Wind's Id, {windId}, as a number draws Wind alone ({Drawn()})");
+        Set<IGH_Goo>(view, "LoadPattern", new GH_String(windId.ToString()));
+        Check(Drawn() == "10 kN/m", $"and as text too ({Drawn()})");
+
+        ((GH_PersistentParam<IGH_Goo>)In(view, "LoadPattern")).PersistentData.Clear();
+        In(view, "LoadPattern").AddSource(dead.Params.Output[0]);
+        In(view, "LoadPattern").ExpireSolution(false);
+        Check(Drawn() == "50 kN", $"the Dead Load Pattern wired in draws Dead alone ({Drawn()})");
+        In(view, "LoadPattern").RemoveAllSources();
+
+        Set<IGH_Goo>(view, "LoadPattern", new GH_String("Snow"));
+        var drawn = Drawn();
+        var warnings = Messages(view, GH_RuntimeMessageLevel.Warning);
+        Check(drawn == "" && warnings.Any(m => m.Contains("\"Snow\"") && m.Contains("\"Dead\"") && m.Contains("\"Wind\"")),
+              "a name no pattern has draws no loads, with a warning naming the patterns there are" + Said(warnings));
+    }
+
     static void UpgradeModelView(Plate plate)
     {
         Section("The old Model View, upgraded");
@@ -811,7 +878,7 @@ public static class GrasshopperCheck
         Check(Field<MenuSlider>(upgraded, "_slSupportScale").Value == 3.0 && Field<MenuSlider>(upgraded, "_slTextSize").Value == 1.25,
               "and its sliders");
         Check(In(upgraded, "AlpacaModel").Sources.Any(s => s.Attributes.GetTopLevel.DocObject == plate.Assemble), "AlpacaModel keeps its wire");
-        var lp = ((GH_PersistentParam<GH_Integer>)In(upgraded, "LoadPattern")).PersistentData.AllData(true).Select(x => ((GH_Integer)x).Value);
+        var lp = ((GH_PersistentParam<IGH_Goo>)In(upgraded, "LoadPattern")).PersistentData.AllData(true).Select(x => x.ScriptVariable());
         Check(string.Join(",", lp) == "2", "LP's value goes to LoadPattern");
         var tags = ((GH_PersistentParam<GH_String>)In(upgraded, "ElementId")).PersistentData.AllData(true).Select(x => ((GH_String)x).Value);
         Check(string.Join(",", tags) == "4,17", $"ElemIds' tags go to ElementId as text ({string.Join(",", tags)})");
