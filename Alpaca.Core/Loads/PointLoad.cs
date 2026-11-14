@@ -73,32 +73,19 @@ namespace Alpaca4d.Loads
         //    }
         //}
 
+        /// <summary>
+        /// The node the load lands on: the one within tolerance of it, the six degree of freedom
+        /// one when a point has one of each, as <see cref="Model.NodeTagAt"/> has it. It used to
+        /// have to be in both pools of a model with both.
+        /// </summary>
         public void SetTag(Model model)
         {
+            int tag = model.NodeTagNear(this.Pos, out int ndf);
+            if (tag == 0)
+                throw new Exception($"Point load at location '{this.Pos}' is not part of the model!");
 
-            if (model.UniquePointsThreeNDF.Count != 0)
-                {
-                    var closestPointInThreeNDF = Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsThreeNDF, this.Pos);
-                    if (this.Pos.DistanceTo(closestPointInThreeNDF) <= model.Tollerance)
-                    {
-                        this.Id = model.CloudPointThreeNDF.ClosestPoint(this.Pos) + 1;
-                        this.Ndf = 3;
-                    }
-                    else
-                        throw new Exception($"Point load at location '{this.Pos}' is not part of the model!");
-                }
-
-                if (model.UniquePointsSixNDF.Count != 0)
-                {
-                    var closestPointInSixNDF = Rhino.Collections.Point3dList.ClosestPointInList(model.UniquePointsSixNDF, this.Pos);
-                    if (this.Pos.DistanceTo(closestPointInSixNDF) <= model.Tollerance)
-                    {
-                        this.Id = model.CloudPointSixNDF.ClosestPoint(this.Pos) + 1 + model.UniquePointsThreeNDF.Count();
-                        this.Ndf = 6;
-                }
-                    else
-                        throw new Exception($"Point load at location '{this.Pos}' is not part of the model!");
-                }
+            this.Id = tag;
+            this.Ndf = ndf;
         }
 
         public string WriteTcl()

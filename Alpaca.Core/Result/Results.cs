@@ -143,7 +143,10 @@ namespace Alpaca4d.Result
         /// <exception cref="Exception"></exception>
         public static IEnumerable<Rhino.Geometry.Vector3d> NodalOutput(Model alpacaModel, int step, ResultType resultType, List<int?> nodeIndex = null)
         {
-            var dataOutput = Enumerable.Empty<Rhino.Geometry.Vector3d>();
+            // A list, not Enumerable.Append in a loop: that chains one iterator per node, and a
+            // caller reading node i walks the chain from the start, so reading every node of a
+            // large model took time growing as the square of its size.
+            var dataOutput = new List<Rhino.Geometry.Vector3d>();
 
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
 
@@ -165,11 +168,17 @@ namespace Alpaca4d.Result
             }
             else
             {
-                var dataset = h5File.Dataset($"MODEL_STAGE[1]/RESULTS/ON_NODES/{_resultType}/DATA/STEP_0/MODE_{step}");
-                var dimX = (long)dataset.Space.Dimensions[0];
-                var dimY = (long)dataset.Space.Dimensions[1];
+                values = ModeData(h5File, _resultType, step);
 
-                values = dataset.Read<double>().ToArray2D(dimX, dimY);
+                // Rotations by the factor of the translations of the same mode, so the two still
+                // make one shape.
+                var translations = resultType == ResultType.MODES_OF_VIBRATION_R
+                    ? ModeData(h5File, Alpaca4d.Helper.EnumHelper.ResultTypeConvert(ResultType.MODES_OF_VIBRATION_U), step)
+                    : values;
+                double scale = ModeScale(translations);
+                for (int i = 0; i < values.GetLength(0); i++)
+                    for (int j = 0; j < values.GetLength(1); j++)
+                        values[i, j] *= scale;
             }
 
 
@@ -183,7 +192,7 @@ namespace Alpaca4d.Result
                         double x = (double)values.GetValue(i, 0);
                         double y = (double)values.GetValue(i, 1);
                         double z = (double)values.GetValue(i, 2);
-                        dataOutput = dataOutput.Append(new Rhino.Geometry.Vector3d(x, y, z));
+                        dataOutput.Add(new Rhino.Geometry.Vector3d(x, y, z));
                     }
                     h5File.Dispose();
                 }
@@ -195,7 +204,7 @@ namespace Alpaca4d.Result
                         double x = (double)values.GetValue(i - 1, 0);
                         double y = (double)values.GetValue(i - 1, 1);
                         double z = (double)values.GetValue(i - 1, 2);
-                        dataOutput = dataOutput.Append(new Rhino.Geometry.Vector3d(x, y, z));
+                        dataOutput.Add(new Rhino.Geometry.Vector3d(x, y, z));
                     }
                     h5File.Dispose();
                 }
@@ -210,15 +219,53 @@ namespace Alpaca4d.Result
             return dataOutput;
         }
 
+        /// <summary>Mode <paramref name="mode"/> of a modal run, a node per row, as the file holds it.</summary>
+        private static double[,] ModeData(PureHDF.IH5Group h5File, string resultType, int mode)
+        {
+            var dataset = h5File.Dataset($"MODEL_STAGE[1]/RESULTS/ON_NODES/{resultType}/DATA/STEP_0/MODE_{mode}");
+            var dimX = (long)dataset.Space.Dimensions[0];
+            var dimY = (long)dataset.Space.Dimensions[1];
+
+            return dataset.Read<double>().ToArray2D(dimX, dimY);
+        }
+
+        /// <summary>
+        /// What a mode's translations, a node per row, are multiplied by to make its largest
+        /// translation 1, in model length units, pointing the positive way - the size
+        /// <see cref="Buckling.Normalise"/> gives a buckling mode.
+        ///
+        /// OpenSees hands the modes out mass-normalised, φᵀMφ = 1, so their size went with the mass
+        /// of the model: the tip of one cantilever moved 3.2 m at 0.39 t and 0.03 m at 3925 t, and a
+        /// heavy building needed a deformation scale of hundreds to show anything. The -unorm that
+        /// Natural Vibration passes to modalProperties scales the copy its report is worked out
+        /// from, not the modes in the domain the recorder writes.
+        /// </summary>
+        public static double ModeScale(double[,] translations)
+        {
+            double largest = 0.0, signed = 0.0;
+            for (int i = 0; i < translations.GetLength(0); i++)
+                for (int j = 0; j < Math.Min(3, translations.GetLength(1)); j++)
+                    if (Math.Abs(translations[i, j]) > largest)
+                    {
+                        largest = Math.Abs(translations[i, j]);
+                        signed = translations[i, j];
+                    }
+
+            return largest == 0.0 ? 1.0 : 1.0 / signed;
+        }
+
         /// <summary>
         /// 
         /// </summary>
         /// <param name="alpacaModel"></param>
         /// <param name="step"></param>
         /// <param name="resultType"></param>
+        /// <param name="only">The places in Model.Beams to read, or null for every beam. The others
+        /// come back as empty lists, so the lists still run in the order of Model.Beams. A handful of
+        /// beams out of a large model are read row by row, which skips most of the file.</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public static (List<List<double>> n, List<List<double>> mz, List<List<double>> vy, List<List<double>> my, List<List<double>> vz, List<List<double>> t) ForceBeamColumn(Model alpacaModel, int step, string resultType = null)
+        public static (List<List<double>> n, List<List<double>> mz, List<List<double>> vy, List<List<double>> my, List<List<double>> vz, List<List<double>> t) ForceBeamColumn(Model alpacaModel, int step, string resultType = null, ICollection<int> only = null)
         {
             // MPCORecorder names every element result group
             //     <classTag>-<className>[<integrationRule>:<customRuleIndex>:<headerIndex>]
@@ -233,8 +280,8 @@ namespace Alpaca4d.Result
             // that fall outside it, so enumerate whatever the file actually holds and key the
             // rows by element ID, which is unique across the whole model.
             const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.force";
+            const string TRUSS_BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/axialForce";
             const string BEAM_CLASS = "ForceBeamColumn";
-            const int SECTIONFORCES = 6;
 
             var nNested  = new List<List<double>>();
             var mzNested = new List<List<double>>();
@@ -247,18 +294,53 @@ namespace Alpaca4d.Result
 
             using var h5File = PureHDF.H5File.OpenRead(recorderPath);
 
-            if (!h5File.LinkExists(BASE))
+            // Trusses answer "axialForce" and nothing else does; beams answer "section.force". A file
+            // needs only what the model has.
+            bool hasTrusses = alpacaModel.Beams.Any(beam => beam is Alpaca4d.Element.Truss);
+            bool hasFrames = alpacaModel.Beams.Any(beam => !(beam is Alpaca4d.Element.Truss));
+
+            if (hasFrames && !h5File.LinkExists(BASE))
                 throw new Exception(
                     "The recorder file holds no section forces. Switch \"section.force\" on in the MPCO Recorder component.");
+            if (hasTrusses && !h5File.LinkExists(TRUSS_BASE))
+                throw new Exception(
+                    "The recorder file holds no truss forces. Switch \"axialForce\" on in the MPCO Recorder component.");
 
-            // Map: element ID -> row data (all columns for that element)
-            var rowById = new Dictionary<int, double[]>();
+            // Map: element ID -> row data (all columns for that element), and where each section
+            // force sits in it
+            var rowById = new Dictionary<int, (double[] Row, int[][] Columns)>();
 
-            var beamGroups = h5File.Group(BASE)
+            // The element tags of the beams asked for; null keeps every row.
+            var wanted = only == null ? null : new HashSet<int>(only.Select(b => alpacaModel.Beams[b].Id.Value));
+
+            var beamGroups = !h5File.LinkExists(BASE) ? new List<PureHDF.IH5Group>() :
+                             h5File.Group(BASE)
                                    .Children()
                                    .OfType<PureHDF.IH5Group>()
                                    .Where(group => group.Name.Contains(BEAM_CLASS))
                                    .ToList();
+
+            // A truss writes one number, its axial force, under axialForce/<tag>-CorotTruss[...].
+            var axialById = new Dictionary<int, double>();
+            if (hasTrusses)
+            {
+                foreach (var group in h5File.Group(TRUSS_BASE).Children().OfType<PureHDF.IH5Group>())
+                {
+                    var stepGroup = group.Group("DATA");
+                    if (!stepGroup.LinkExists($"STEP_{step}"))
+                        throw new Exception($"STEP_{step} not defined!");
+
+                    var dataDataset = stepGroup.Dataset($"STEP_{step}");
+                    long rows = (long)dataDataset.Space.Dimensions[0];
+                    long cols = (long)dataDataset.Space.Dimensions[1];
+                    double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
+                    int[] ids = ElementIds(recorderPath, TRUSS_BASE, group);
+
+                    for (int r = 0; r < rows; r++)
+                        if (wanted == null || wanted.Contains(ids[r]))
+                            axialById[ids[r]] = data[r, 0];
+                }
+            }
 
             foreach (var group in beamGroups)
             {
@@ -266,25 +348,43 @@ namespace Alpaca4d.Result
                 if (!stepGroup.LinkExists($"STEP_{step}"))
                     throw new Exception($"STEP_{step} not defined!");
 
-                var idDataset   = group.Dataset("ID");
                 var dataDataset = stepGroup.Dataset($"STEP_{step}");
 
                 long rows = (long)dataDataset.Space.Dimensions[0];
                 long cols = (long)dataDataset.Space.Dimensions[1];
-                long idRows = (long)idDataset.Space.Dimensions[0];
+
+                int[] ids = ElementIds(recorderPath, BASE, group);
+                int[][] columns = SectionColumns(recorderPath, BASE, group, (int)cols);
+
+                // A few rows asked for are read one by one, which skips reading the rest of the
+                // file; past an eighth of the group one read of the whole of it is quicker.
+                if (wanted != null)
+                {
+                    var picked = Enumerable.Range(0, (int)rows).Where(r => wanted.Contains(ids[r])).ToList();
+                    if (picked.Count * 8 < rows)
+                    {
+                        foreach (int r in picked)
+                            rowById[ids[r]] = (dataDataset.Read<double>(new PureHDF.HyperslabSelection(2, new[] { (ulong)r, 0UL }, new[] { 1UL, (ulong)cols })), columns);
+                        continue;
+                    }
+                }
 
                 double[,] data = dataDataset.Read<double>().ToArray2D(rows, cols);
-                int[,]    ids  = idDataset.Read<int>().ToArray2D(idRows, 1L);
 
                 for (int r = 0; r < rows; r++)
                 {
-                    int elemId = ids[r, 0];
+                    int elemId = ids[r];
+                    if (wanted != null && !wanted.Contains(elemId))
+                        continue;
                     var rowData = new double[cols];
                     for (int c = 0; c < cols; c++)
                         rowData[c] = data[r, c];
-                    rowById[elemId] = rowData;
+                    rowById[elemId] = (rowData, columns);
                 }
             }
+
+            // Node positions by tag, for the length of a beam whose shears have to be worked out.
+            Dictionary<int, Point3d> positions = null;
 
             try
             {
@@ -297,18 +397,49 @@ namespace Alpaca4d.Result
                     var vz = new List<double>();
                     var t  = new List<double>();
 
-                    if (rowById.TryGetValue(beam.Id.Value, out double[] row))
+                    // A truss reports its axial force at both ends, which is where its two stations are
+                    // (Truss.BeamIntegration), and no shear, moment or torsion.
+                    if (beam is Alpaca4d.Element.Truss && axialById.TryGetValue(beam.Id.Value, out double axial))
                     {
-                        // Derive the number of integration points from the column count
-                        int numIP = row.Length / SECTIONFORCES;
-                        for (int j = 0; j < SECTIONFORCES * numIP; j += SECTIONFORCES)
+                        n.AddRange(new[] { axial, axial });
+                        mz.AddRange(new[] { 0.0, 0.0 });
+                        vy.AddRange(new[] { 0.0, 0.0 });
+                        my.AddRange(new[] { 0.0, 0.0 });
+                        vz.AddRange(new[] { 0.0, 0.0 });
+                        t.AddRange(new[] { 0.0, 0.0 });
+                    }
+                    else if (rowById.TryGetValue(beam.Id.Value, out var entry))
+                    {
+                        Func<int, double> at = column => column < 0 ? double.NaN : entry.Row[column];
+                        foreach (var station in entry.Columns)
                         {
-                            n.Add(row[j + 0]);
-                            mz.Add(row[j + 1]);
-                            vy.Add(row[j + 2]);
-                            my.Add(row[j + 3]);
-                            vz.Add(row[j + 4]);
-                            t.Add(row[j + 5]);
+                            n.Add(at(station[0]));
+                            mz.Add(at(station[1]));
+                            vy.Add(at(station[2]));
+                            my.Add(at(station[3]));
+                            vz.Add(at(station[4]));
+                            t.Add(at(station[5]));
+                        }
+
+                        // A section without shear - an Elastic section given no shear factors - records
+                        // P, Mz, My and T only. Its shears are the slopes of its moments, Vy = dMz/dx and
+                        // Vz = dMy/dx as OpenSees has them, and exactly so: a force-based beam's moments
+                        // follow from equilibrium, and under the uniform loads that are the only ones
+                        // Alpaca4d puts on a beam they are at most quadratic along it.
+                        if (vy.Any(double.IsNaN) || vz.Any(double.IsNaN))
+                        {
+                            positions ??= alpacaModel.Nodes.Where(node => node.Id.HasValue)
+                                                           .GroupBy(node => node.Id.Value)
+                                                           .ToDictionary(group => group.Key, group => group.First().Pos);
+                            double length = positions.TryGetValue(beam.INode ?? 0, out var i) && positions.TryGetValue(beam.JNode ?? 0, out var j)
+                                ? i.DistanceTo(j)
+                                : beam.Curve != null ? beam.Curve.PointAtStart.DistanceTo(beam.Curve.PointAtEnd) : 0.0;
+                            var xi = beam.BeamIntegration?.SectionLocations(length);
+                            if (length > 0.0 && xi != null && xi.Count == n.Count)
+                            {
+                                Slopes(xi, mz, vy, length);
+                                Slopes(xi, my, vz, length);
+                            }
                         }
                     }
 
@@ -328,6 +459,215 @@ namespace Alpaca4d.Result
             }
 
             return (nNested, mzNested, vyNested, myNested, vzNested, tNested);
+        }
+
+        /// <summary>The names OpenSees gives a beam section's deformations that a fibre section's strains follow from.</summary>
+        private static readonly string[] SectionDeformationNames = { "eps", "kappaZ", "kappaY" };
+
+        /// <summary>
+        /// Every beam's section deformations at <paramref name="step"/>, by element tag: for each
+        /// station, from the I end, the axial strain at the section's centroid and its curvatures about
+        /// local z and y - eps, kappaZ and kappaY as OpenSees names them, from which a fibre section's
+        /// every strain follows, eps - y kappaZ + z kappaY. Read from the recorder's
+        /// "section.deformation" group, which Pushover Analysis records, and Run Analysis for a model
+        /// with fibre sections; an exception names what to tick when the file has none.
+        /// </summary>
+        public static Dictionary<int, double[][]> SectionDeformations(Model alpacaModel, int step) =>
+            SectionDeformations(alpacaModel, new[] { step })[0];
+
+        /// <summary>As <see cref="SectionDeformations(Model, int)"/>, at each of <paramref name="steps"/>, the file opened once.</summary>
+        public static List<Dictionary<int, double[][]>> SectionDeformations(Model alpacaModel, IReadOnlyList<int> steps)
+        {
+            const string BASE = "/MODEL_STAGE[1]/RESULTS/ON_ELEMENTS/section.deformation";
+            var results = steps.Select(_ => new Dictionary<int, double[][]>()).ToList();
+            string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
+
+            using var h5File = PureHDF.H5File.OpenRead(recorderPath);
+            if (!h5File.LinkExists(BASE))
+                throw new Exception(
+                    "The recorder file holds no section deformations. Pushover Analysis records them; for Run Analysis, " +
+                    "tick \"section.deformation\" in an MPCO Recorder.");
+
+            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>().Where(g => g.Name.Contains("ForceBeamColumn")))
+            {
+                var data = group.Group("DATA");
+                int[] ids = ElementIds(recorderPath, BASE, group);
+                for (int k = 0; k < steps.Count; k++)
+                {
+                    if (!data.LinkExists($"STEP_{steps[k]}"))
+                        throw new Exception($"STEP_{steps[k]} not defined!");
+                    var dataset = data.Dataset($"STEP_{steps[k]}");
+                    long rows = (long)dataset.Space.Dimensions[0];
+                    long cols = (long)dataset.Space.Dimensions[1];
+                    double[,] values = dataset.Read<double>().ToArray2D(rows, cols);
+                    int[][] columns = StationColumns(recorderPath, BASE, group, (int)cols, SectionDeformationNames, 4);
+
+                    for (int r = 0; r < rows; r++)
+                    {
+                        var stations = new double[columns.Length][];
+                        for (int s = 0; s < columns.Length; s++)
+                            stations[s] = columns[s].Select(c => c < 0 ? 0.0 : values[r, c]).ToArray();
+                        results[k][ids[r]] = stations;
+                    }
+                }
+            }
+            return results;
+        }
+
+        /// <summary>
+        /// Where each of <paramref name="names"/> sits in a row of a beam's section result group,
+        /// station by station, read off META/COMPONENTS as <see cref="SectionColumns"/> reads it; -1 for
+        /// one the section does not record. A file without the names is read <paramref name="perStation"/>
+        /// to a station, in the order of the names.
+        /// </summary>
+        private static int[][] StationColumns(string recorderPath, string basePath, PureHDF.IH5Group group, int rowLength,
+                                              string[] names, int perStation) =>
+            GroupInfo(recorderPath, basePath + "/" + group.Name + "#COMPONENTS", () =>
+            {
+                if (!group.LinkExists("META/COMPONENTS"))
+                    return Enumerable.Range(0, rowLength / perStation)
+                                     .Select(s => Enumerable.Range(s * perStation, names.Length).ToArray())
+                                     .ToArray();
+
+                var stations = string.Concat(group.Dataset("META/COMPONENTS").ReadString())
+                                     .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                var columns = new int[stations.Length][];
+                int offset = 0;
+                for (int s = 0; s < stations.Length; s++)
+                {
+                    var recorded = stations[s].Substring(stations[s].LastIndexOf('.') + 1).Split(',');
+                    columns[s] = names.Select(name => Array.IndexOf(recorded, name)).Select(k => k < 0 ? -1 : offset + k).ToArray();
+                    offset += recorded.Length;
+                }
+                return columns;
+            });
+
+        /// <summary>The recorder file <see cref="_groupInfo"/> holds what it holds of, as path, size and time written.</summary>
+        private static string _groupInfoFile;
+
+        /// <summary>What is the same at every step of a result group of that file, by the group's path and what it is.</summary>
+        private static readonly Dictionary<string, object> _groupInfo = new Dictionary<string, object>();
+
+        /// <summary>
+        /// What <paramref name="read"/> reads of a result group, read once per file and kept: the
+        /// element tags of its rows and where its columns sit are the same at every step. A file
+        /// written again, by another run of the analysis, has another size or time and starts afresh.
+        /// </summary>
+        private static T GroupInfo<T>(string recorderPath, string key, Func<T> read)
+        {
+            var file = new System.IO.FileInfo(recorderPath);
+            string stamp = $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
+
+            lock (_groupInfo)
+            {
+                if (_groupInfoFile != stamp)
+                {
+                    _groupInfo.Clear();
+                    _groupInfoFile = stamp;
+                }
+
+                if (!_groupInfo.TryGetValue(key, out var info))
+                    _groupInfo[key] = info = read();
+                return (T)info;
+            }
+        }
+
+        /// <summary>
+        /// The element tag of each row of a result group, from its ID dataset. Kept per file, as
+        /// PureHDF takes as long over a group's tags as over a step's whole data - 80 ms for the
+        /// 45,300 tags of a grillage, against 85 ms for its 1.4 million forces - so reading a few
+        /// beams, or every step of a history, would otherwise spend most of its time reading the same
+        /// tags again.
+        /// </summary>
+        private static int[] ElementIds(string recorderPath, string basePath, PureHDF.IH5Group group) =>
+            GroupInfo(recorderPath, basePath + "/" + group.Name + "#ID", () => group.Dataset("ID").Read<int>());
+
+        /// <summary>The names OpenSees gives a beam section's forces, in the order Read.ForceBeamColumn returns them.</summary>
+        private static readonly string[] SectionForceNames = { "P", "Mz", "Vy", "My", "Vz", "T" };
+
+        /// <summary>
+        /// Where each section force sits in a row of a section.force group, station by station: the
+        /// column of P, Mz, Vy, My, Vz and T, or -1 for one the section does not record.
+        ///
+        /// Read off the group's META/COMPONENTS, which names the columns of every station - for
+        /// instance "0.1.2.P,Mz,My,T" - rather than assumed. A section with shear records six forces
+        /// a station, an Elastic section given no shear factors four, and taking six from a row of
+        /// fours read a cantilever's five stations as three, with the wrong forces in them. A file
+        /// without the names is read six to a station, as it always was.
+        /// </summary>
+        private static int[][] SectionColumns(string recorderPath, string basePath, PureHDF.IH5Group group, int rowLength) =>
+            GroupInfo(recorderPath, basePath + "/" + group.Name + "#COMPONENTS", () =>
+            {
+                if (!group.LinkExists("META/COMPONENTS"))
+                {
+                    return Enumerable.Range(0, rowLength / SectionForceNames.Length)
+                                     .Select(s => Enumerable.Range(s * SectionForceNames.Length, SectionForceNames.Length).ToArray())
+                                     .ToArray();
+                }
+
+                var stations = string.Concat(group.Dataset("META/COMPONENTS").ReadString())
+                                     .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                var columns = new int[stations.Length][];
+                int offset = 0;
+                for (int s = 0; s < stations.Length; s++)
+                {
+                    var names = stations[s].Substring(stations[s].LastIndexOf('.') + 1).Split(',');
+                    columns[s] = SectionForceNames.Select(name => Array.IndexOf(names, name)).Select(k => k < 0 ? -1 : offset + k).ToArray();
+                    offset += names.Length;
+                }
+                return columns;
+            });
+
+        /// <summary>
+        /// Fills the gaps in <paramref name="shear"/> with the slope of <paramref name="moment"/>
+        /// along the beam: a quadratic in the stations' abscissae <paramref name="xi"/>, fitted by
+        /// least squares, differentiated and divided by <paramref name="length"/>. A quadratic holds
+        /// the moments of a beam under uniform load exactly; two stations give a straight line.
+        /// </summary>
+        private static void Slopes(IReadOnlyList<double> xi, List<double> moment, List<double> shear, double length)
+        {
+            int degree = Math.Min(2, xi.Count - 1);
+            if (degree < 1)
+                return;
+
+            // The normal equations of the fit, (degree + 1) square.
+            int size = degree + 1;
+            var a = new double[size, size + 1];
+            for (int k = 0; k < xi.Count; k++)
+            {
+                for (int r = 0; r < size; r++)
+                {
+                    for (int c = 0; c < size; c++)
+                        a[r, c] += Math.Pow(xi[k], r + c);
+                    a[r, size] += Math.Pow(xi[k], r) * moment[k];
+                }
+            }
+
+            // Gaussian elimination with partial pivoting.
+            for (int p = 0; p < size; p++)
+            {
+                int best = p;
+                for (int r = p + 1; r < size; r++)
+                    if (Math.Abs(a[r, p]) > Math.Abs(a[best, p])) best = r;
+                for (int c = 0; c <= size; c++)
+                    (a[p, c], a[best, c]) = (a[best, c], a[p, c]);
+                for (int r = 0; r < size; r++)
+                {
+                    if (r == p || a[p, p] == 0.0) continue;
+                    double factor = a[r, p] / a[p, p];
+                    for (int c = p; c <= size; c++)
+                        a[r, c] -= factor * a[p, c];
+                }
+            }
+            var coefficient = Enumerable.Range(0, size).Select(r => a[r, r] == 0.0 ? 0.0 : a[r, size] / a[r, r]).ToArray();
+
+            for (int k = 0; k < xi.Count; k++)
+            {
+                if (!double.IsNaN(shear[k]))
+                    continue;
+                double slope = coefficient[1] + (degree == 2 ? 2.0 * coefficient[2] * xi[k] : 0.0);
+                shear[k] = slope / length;
+            }
         }
 
         public static (List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>, List<List<double>>) ASDQ4Forces(Model alpacaModel, int step, string resultType = null)
@@ -700,8 +1040,10 @@ namespace Alpaca4d.Result
 
             // One group per element class, named <classTag>-<className>[<rule>:<index>:<header>].
             // Enumerated rather than named: the index is handed out in order of discovery, so it is
-            // not a stable label, and a model can hold quads and triangles at once.
-            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>())
+            // not a stable label, and a model can hold quads and triangles at once. Shells only: a
+            // beam on a fibre section answers section.fiber.stress too, with its own layout.
+            foreach (var group in h5File.Group(BASE).Children().OfType<PureHDF.IH5Group>()
+                                        .Where(group => group.Name.IndexOf("Shell", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 if (!group.LinkExists("DATA") || !group.LinkExists("ID") || !group.LinkExists("META"))
                     continue;
@@ -834,17 +1176,42 @@ namespace Alpaca4d.Result
         /// is run in the global axes whatever this says.
         /// </param>
         private static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>)
-            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local)
+            SolidStress(Model alpacaModel, int step, string className, IReadOnlyList<Generic.IBrick> elements, bool local, int points = 1)
         {
-            const string BASE = ON_ELEMENTS + "/stresses";
             const int COMPONENTS = 6;
 
             var sigma = new List<double>[COMPONENTS];
             for (int c = 0; c < COMPONENTS; c++)
                 sigma[c] = new List<double>();
 
+            // One value per element: the mean over its integration points, which for a single
+            // point is that point, and for the four of a ten node tetrahedron is the stress at its
+            // centre - the points sit symmetrically about it and the stress there is linear.
+            foreach (var atPoints in SolidStressAtPoints(alpacaModel, step, className, elements, local, points))
+                for (int c = 0; c < COMPONENTS; c++)
+                    sigma[c].Add(atPoints.Average(point => point[c]));
+
+            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+        }
+
+        /// <summary>
+        /// What <see cref="SolidStress"/> reads, before it is averaged: for each element, the six
+        /// components at each of its <paramref name="points"/> integration points.
+        ///
+        /// A row of the file holds one block per point, one after the other, and each block is
+        /// whatever the material answers to "stresses" - six numbers for every material Alpaca4d
+        /// writes, but more for some, so only the first six of each block are taken.
+        /// </summary>
+        private static List<double[][]> SolidStressAtPoints(Model alpacaModel, int step, string className,
+            IReadOnlyList<Generic.IBrick> elements, bool local, int points)
+        {
+            const string BASE = ON_ELEMENTS + "/stresses";
+            const int COMPONENTS = 6;
+
+            var stresses = new List<double[][]>();
+
             if (elements.Count == 0)
-                return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+                return stresses;
 
             string recorderPath = System.IO.Path.GetFullPath(alpacaModel.Recorders.First().FileName);
 
@@ -888,7 +1255,7 @@ namespace Alpaca4d.Result
 
             foreach (var element in elements)
             {
-                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS)
+                if (element.Id == null || !rowById.TryGetValue(element.Id.Value, out double[] row) || row.Length < COMPONENTS * points)
                     throw new Exception(
                         $"The recorder file holds no stresses for {className} {element.Id}. The file was " +
                         "written by a different model from the one being read - re-run the analysis.");
@@ -897,18 +1264,20 @@ namespace Alpaca4d.Result
                 // the element's own frame is done here rather than by the caller because the six
                 // numbers only mean anything together, and a caller holding six separate lists has
                 // already lost the tensor.
-                var values = row;
-                if (local)
+                var frame = local ? Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray()) : default;
+                int block = row.Length / points;
+
+                var atPoints = new double[points][];
+                for (int p = 0; p < points; p++)
                 {
-                    var frame = Utils.SolidFrame(element.Mesh.Vertices.ToPoint3dArray());
-                    values = Utils.StressInFrame(row, frame.X, frame.Y, frame.Z);
+                    var values = row.Skip(p * block).Take(COMPONENTS).ToArray();
+                    atPoints[p] = local ? Utils.StressInFrame(values, frame.X, frame.Y, frame.Z) : values;
                 }
 
-                for (int c = 0; c < COMPONENTS; c++)
-                    sigma[c].Add(values[c]);
+                stresses.Add(atPoints);
             }
 
-            return (sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5]);
+            return stresses;
         }
 
         /// <summary>
@@ -943,6 +1312,56 @@ namespace Alpaca4d.Result
                 .ToList();
 
             return SolidStress(alpacaModel, step, "SSPbrick", bricks, local);
+        }
+
+        /// <summary>
+        /// The stress in every ten node tetrahedron, one value per element, in the order the model
+        /// lists them: the mean of its four integration points, which is the stress at its centre.
+        /// Same six components and same axes as <see cref="TetrahedronStress"/>. The recorder
+        /// files them under TenNodeTetrahedron, the element's class, whichever of its two commands
+        /// built it.
+        /// </summary>
+        public static (List<double>, List<double>, List<double>, List<double>, List<double>, List<double>) TenNodeTetrahedronStress(Model alpacaModel, int step, string resultType = null, bool local = false)
+        {
+            return SolidStress(alpacaModel, step, "TenNodeTetrahedron", TenNodeTetrahedra(alpacaModel),
+                               local, Element.TenNodeTetrahedron.GaussPoints);
+        }
+
+        /// <summary>
+        /// The stress in every ten node tetrahedron at each of its ten nodes, in the order the model
+        /// lists the elements and each element its nodes: six components per node, the field of the
+        /// element alone, since a stress jumps from one element to the next. See
+        /// Element.TenNodeTetrahedron.AtNodes for how four integration points make ten nodes.
+        /// </summary>
+        public static List<double[][]> TenNodeTetrahedronStressAtNodes(Model alpacaModel, int step, bool local = false)
+        {
+            var atNodes = new List<double[][]>();
+
+            foreach (var atPoints in SolidStressAtPoints(alpacaModel, step, "TenNodeTetrahedron", TenNodeTetrahedra(alpacaModel),
+                                                         local, Element.TenNodeTetrahedron.GaussPoints))
+            {
+                var nodes = new double[10][];
+                for (int n = 0; n < nodes.Length; n++)
+                    nodes[n] = new double[6];
+
+                for (int c = 0; c < 6; c++)
+                {
+                    var component = Element.TenNodeTetrahedron.AtNodes(atPoints.Select(point => point[c]).ToList());
+                    for (int n = 0; n < nodes.Length; n++)
+                        nodes[n][c] = component[n];
+                }
+
+                atNodes.Add(nodes);
+            }
+
+            return atNodes;
+        }
+
+        private static List<Generic.IBrick> TenNodeTetrahedra(Model alpacaModel)
+        {
+            return alpacaModel.Bricks
+                .Where(x => x.ElementClass == Element.ElementClass.TenNodeTetrahedron)
+                .ToList();
         }
 
 

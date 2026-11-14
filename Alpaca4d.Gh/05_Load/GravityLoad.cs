@@ -12,7 +12,7 @@ namespace Alpaca4d.Gh
     {
         public GravityLoad()
           : base("Gravity Load (Alpaca4d)", "Gravity Load",
-            "Construct a Gravity Load. For beams, the algorithm generates equivalent concentrated nodal loads at the element ends; discretize beams for a better gravity-load representation.",
+            "Construct a Gravity Load: the model's own weight, down. A beam carries its weight as a uniform load along it, a truss half on each end, a shell or a solid shared among its nodes.",
             "Alpaca4d", "05_Load")
         {
             // Draw a Description Underneath the component

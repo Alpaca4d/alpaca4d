@@ -63,7 +63,7 @@ namespace Alpaca4d.Gh
             attr.AddMenu(Menu(0, "Nodes", "Results at the nodes",
                 Alpaca4d.Recorder.NodeResultTypes, Alpaca4d.Recorder.TransientNodeResults, _nodeBoxes));
             attr.AddMenu(Menu(1, "Elements", "Results in the elements",
-                Alpaca4d.Recorder.ElementResultTypes, Alpaca4d.Recorder.DefaultElementResults, _elementBoxes));
+                Alpaca4d.Recorder.ElementResultTypes, Alpaca4d.Recorder.ElementResultTypes, _elementBoxes));
 
             attr.MinWidth = 230f;
         }

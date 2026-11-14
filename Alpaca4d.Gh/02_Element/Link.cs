@@ -64,6 +64,13 @@ namespace Alpaca4d.Gh
             pManager.Register_GenericParam("Element", "Element", "The links. Feed them to the Elements input of Assemble Model.");
         }
 
+        /// <summary>The links on the branch their lines came from, as beams are: see <see cref="ElementOutput"/>.</summary>
+        protected override void AfterSolveInstance()
+        {
+            base.AfterSolveInstance();
+            ElementOutput.OntoInputBranches(this, 0);
+        }
+
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var lines = new List<Line>();

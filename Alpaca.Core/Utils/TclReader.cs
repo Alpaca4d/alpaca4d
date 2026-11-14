@@ -381,6 +381,10 @@ namespace Alpaca4d
                             ReadElementId(tokens);
                             break;
 
+                        case "alpaca:density":
+                            ReadDensity(tokens);
+                            break;
+
                         case "mass":
                             ReadMass(tokens);
                             break;
@@ -488,10 +492,66 @@ namespace Alpaca4d
                     Number(tokens, 6), Number(tokens, 7), Number(tokens, 8),
                     rho);
             }
+            else if (string.Equals(type, "J2Plasticity", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(type, "J2", StringComparison.OrdinalIgnoreCase))
+            {
+                // nDMaterial J2Plasticity $tag $K $G $sig0 $sigInf $delta $H <$eta>. Alpaca4d keeps
+                // E and nu, and writes K and G from them.
+                double k = Number(tokens, 3);
+                double g = Number(tokens, 4);
+                double sig0 = Number(tokens, 5);
+                double sigInf = tokens.Length > 6 && TryNumber(tokens[6], out double si) ? si : sig0;
+                double delta = tokens.Length > 7 && TryNumber(tokens[7], out double d) ? d : 0.0;
+                double h = tokens.Length > 8 && TryNumber(tokens[8], out double hh) ? hh : 0.0;
+
+                double e = 9.0 * k * g / (3.0 * k + g);
+                double nu = (3.0 * k - 2.0 * g) / (2.0 * (3.0 * k + g));
+
+                if (sigInf != sig0 && delta != 0.0)
+                    Warn($"nDMaterial J2Plasticity {tag}: the saturation hardening (sigInf {sigInf}, delta {delta}) is not kept; " +
+                         "only the linear hardening H is.");
+                if (tokens.Length > 9 && TryNumber(tokens[9], out double eta) && eta != 0.0)
+                    Warn($"nDMaterial J2Plasticity {tag}: the viscosity eta {eta} is not kept.");
+
+                try
+                {
+                    _ndMaterials[tag] = new J2PlasticityMaterial($"nDMaterial_{tag}", e, nu, sig0, h);
+                }
+                catch (ArgumentException ex)
+                {
+                    Warn($"nDMaterial J2Plasticity {tag} was skipped: {ex.Message}");
+                }
+            }
+            else if (string.Equals(type, "PlateFromPlaneStress", StringComparison.OrdinalIgnoreCase))
+            {
+                // The plate form Alpaca4d writes next to a J2Plasticity material, for the shell
+                // sections to name: it reads back as that material. Around anything else it is a
+                // material Alpaca4d does not model.
+                if (tokens.Length > 3 && TryTag(tokens[3], out int inner) &&
+                    _ndMaterials.TryGetValue(inner, out var wrapped) && wrapped is J2PlasticityMaterial)
+                    _ndMaterials[tag] = wrapped;
+                else
+                    Warn($"nDMaterial PlateFromPlaneStress {tag} is supported only around a J2Plasticity material, and was skipped.");
+            }
             else
             {
                 Warn($"nDMaterial {type} is not supported and was skipped.");
             }
+        }
+
+        /// <summary>
+        /// Reads an "# alpaca:density $tag $rho" line: the density, in kg/m³, of a material whose
+        /// OpenSees command takes none - J2Plasticity - which Gravity Load still needs.
+        /// </summary>
+        private void ReadDensity(string[] tokens)
+        {
+            if (tokens.Length < 3 || !TryTag(tokens[1], out int tag) || !TryNumber(tokens[2], out double rho))
+                return;
+
+            if (_ndMaterials.TryGetValue(tag, out var material) && material is J2PlasticityMaterial plastic)
+                plastic.Rho = rho;
+            else
+                Warn($"alpaca:density names material {tag}, which is not a J2Plasticity material read from the file.");
         }
 
         private void ReadSection(string[] tokens)
@@ -683,6 +743,9 @@ namespace Alpaca4d
                 ReadBrick(tokens, 8, type);
             else if (string.Equals(type, "FourNodeTetrahedron", StringComparison.OrdinalIgnoreCase))
                 ReadBrick(tokens, 4, type);
+            else if (string.Equals(type, TenNodeTetrahedron.Command, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(type, "TenNodeTetrahedron", StringComparison.OrdinalIgnoreCase))
+                ReadBrick(tokens, 10, type);
             else
                 Warn($"element {type} is not supported and was skipped.");
 
@@ -813,29 +876,9 @@ namespace Alpaca4d
             return ratio;
         }
 
-        /// <summary>
-        /// Recovers the end releases of a BeamWithHinges. BeamWithHinges.CreateHingeSection multiplies
-        /// each released property by 1e-6, so a hinge property that is still close to the interior one
-        /// means that degree of freedom was held.
-        /// </summary>
+        /// <summary>Recovers the end releases of a BeamWithHinges from its hinge sections.</summary>
         private static Release ReleaseOf(IUniaxialSection hinge, IUniaxialSection interior)
-        {
-            bool Held(double hingeValue, double interiorValue)
-            {
-                // A property that is zero to begin with carries no information; call it held.
-                if (Math.Abs(interiorValue) <= double.Epsilon)
-                    return true;
-                return Math.Abs(hingeValue / interiorValue) > 1e-3;
-            }
-
-            return new Release(
-                Held(hinge.Area, interior.Area),
-                Held(hinge.AlphaY, interior.AlphaY),
-                Held(hinge.AlphaZ, interior.AlphaZ),
-                Held(hinge.J, interior.J),
-                Held(hinge.Iyy, interior.Iyy),
-                Held(hinge.Izz, interior.Izz));
-        }
+            => BeamWithHinges.ReleaseOf(hinge, interior);
 
         private void ReadShell(string[] tokens, int vertexCount, string type)
         {
@@ -862,6 +905,15 @@ namespace Alpaca4d
         private void ReadBrick(string[] tokens, int vertexCount, string type)
         {
             int tag = Tag(tokens, 2);
+
+            // Plain TenNodeTetrahedron takes its last two edge nodes the other way round from
+            // TenNodeTetrahedronStd, which is the order the mesh is kept in.
+            if (string.Equals(type, "TenNodeTetrahedron", StringComparison.OrdinalIgnoreCase) && tokens.Length > 12)
+            {
+                tokens = (string[])tokens.Clone();
+                (tokens[11], tokens[12]) = (tokens[12], tokens[11]);
+            }
+
             var mesh = SolidMeshOf(tokens, 3, vertexCount);
 
             int materialTag = Tag(tokens, 3 + vertexCount);
@@ -872,6 +924,8 @@ namespace Alpaca4d
 
             if (string.Equals(type, "SSPbrick", StringComparison.OrdinalIgnoreCase))
                 _elements.Add(new SSPbrick(mesh, material) { BodyForce = bodyForce });
+            else if (vertexCount == 10)
+                _elements.Add(new TenNodeTetrahedron(mesh, material) { BodyForce = bodyForce });
             else
                 _elements.Add(new Tetrahedron(mesh, material) { BodyForce = bodyForce });
         }

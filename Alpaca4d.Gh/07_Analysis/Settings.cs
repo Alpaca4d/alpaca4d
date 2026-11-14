@@ -40,10 +40,14 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("System", "System",
                 "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "BandSPD is the default, fastest of the nine on every model measured. Reach for " +
-                "UmfPack if a model refuses to solve - it assumes nothing about the matrix.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral",
-                GH_ParamAccess.item, "BandSPD");
+                "Auto is the default: Mumps when the OpenSees in use has it, BandSPD when it does not.\n" +
+                "Mumps factorises on several cores at once - all of them, unless the component's right-click menu says " +
+                "otherwise: as quick as BandSPD on a small model, and " +
+                "2 to 18 times quicker on a large one (Alpaca4d.Test/SolverChoice), in less memory. Only an OpenSees " +
+                "built with it has it - the official one does not; Alpaca4d says so in the log and solves with BandSPD.\n" +
+                "UmfPack assumes nothing about the matrix: reach for it if a model refuses to solve.\n" +
+                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
+                GH_ParamAccess.item, "Auto");
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Test", "Test", "Convergence test - what counts as solved, and how many iterations to allow. From the Test component. Defaults to EnergyIncr.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -61,6 +65,54 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("AnalysisSteps", "AnalysisSteps", "How many increments to solve, from the Analysis Step component. A transient analysis needs one with Dt set. Defaults to a single increment.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
+        }
+
+        /// <summary>
+        /// How many cores Mumps solves on, chosen from the component's right-click menu and saved with
+        /// it; 0, the default, takes them all. Not an input: it is set once for a machine, not wired.
+        /// </summary>
+        private int cores = 0;
+
+        private const string CoresKey = "Cores";
+
+        protected override void AppendAdditionalComponentMenuItems(System.Windows.Forms.ToolStripDropDown menu)
+        {
+            base.AppendAdditionalComponentMenuItems(menu);
+            Menu_AppendSeparator(menu);
+
+            // One item a core, as far as this machine has - and the one saved, should a file come from a bigger one.
+            int available = Environment.ProcessorCount;
+            var coresMenu = Menu_AppendItem(menu, "Cores for Mumps: " + (cores == 0 ? $"all ({available})" : cores.ToString()));
+            coresMenu.ToolTipText = "How many cores Mumps solves on - with System Mumps, or Auto on an OpenSees that has it. " +
+                                    "Every other System solves on one.";
+            Menu_AppendItem(coresMenu.DropDown, $"All ({available})", (sender, e) => SetCores(0), true, cores == 0);
+            for (int n = 1; n <= Math.Max(available, cores); n++)
+            {
+                int count = n;
+                Menu_AppendItem(coresMenu.DropDown, count.ToString(), (sender, e) => SetCores(count), true, cores == count);
+            }
+        }
+
+        private void SetCores(int count)
+        {
+            if (count == cores) return;
+            RecordUndoEvent("Cores for Mumps");
+            cores = count;
+            ExpireSolution(true);
+        }
+
+        public override bool Write(GH_IO.Serialization.GH_IWriter writer)
+        {
+            writer.SetInt32(CoresKey, cores);
+            return base.Write(writer);
+        }
+
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            cores = 0;
+            reader.TryGetInt32(CoresKey, ref cores);
+            cores = Math.Max(0, cores);
+            return base.Read(reader);
         }
 
         /// <summary>
@@ -93,13 +145,15 @@ namespace Alpaca4d.Gh
             var numbererObj = new Numberer(numberer);
 
             ///
-            var system = "BandSPD";
+            var system = "Auto";
             DA.GetData(3, ref system);
-            var systemObj = new Alpaca4d.SystemEquation(system);
+            var systemObj = new Alpaca4d.SystemEquation(system, cores);
+            if (cores > 1 && systemObj.Type != Alpaca4d.SystemEquation.SystemType.Mumps && systemObj.Type != Alpaca4d.SystemEquation.SystemType.Auto)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Only Mumps solves on more than one core: {systemObj.Type} solves on one.");
 
             ///
             var test = Alpaca4d.Test.EnergyIncr();
-            DA.GetData(4, ref test);
+            bool testGiven = DA.GetData(4, ref test);
 
             ///
             var algorithm = "Newton";
@@ -154,6 +208,7 @@ namespace Alpaca4d.Gh
             }
             
             var settings = new Settings(constraintObj, numbererObj, systemObj, test, algorithmObj, integrator, analysisObj, analysisStep, damping);
+            settings.TestIsDefault = !testGiven;
 
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, settings);

@@ -96,6 +96,13 @@ Run against recorder files this suite solves itself, so the numbers are the solv
   its layer thicknesses, reports each distinct material once (Assemble writes one declaration per
   entry, so a symmetric stack must not ask for the same material five times), and refuses fewer
   than three layers rather than writing a deck that dies in the solver.
+- A Local X along a face's normal is found the way ASD Shell finds it (`Utils.ShellLocalXAngle`,
+  turned away within `Utils.ShellLocalXTolerance`, 1°). ASDShellQ4 and ASDShellT3 stop OpenSees on
+  a `-local` exactly along the normal, in setDomain with exit code 255, and run one a hair off it
+  with an axis that turns with the face. It reads 0° along the normal either way and 90° in the
+  face, a 1e-9 lean inside the tolerance, the 1° between 0.017 and 0.018 across, a warped quad's
+  normal from its diagonals as OpenSees takes it, and nothing - not an error - for a face with no
+  normal or no vector. `Utils.ShellFrame` stands on the same normal. These need no OpenSees.
 
 ## Running
 

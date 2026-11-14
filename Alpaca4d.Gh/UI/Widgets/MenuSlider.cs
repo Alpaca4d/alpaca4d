@@ -70,7 +70,7 @@ namespace Alpaca4d.UIWidgets
 			}
 			set
 			{
-				numDecimals = Math.Min(0, Math.Max(12, value));
+				numDecimals = Math.Max(0, Math.Min(12, value));
 			}
 		}
 

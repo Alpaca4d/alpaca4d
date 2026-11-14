@@ -25,8 +25,8 @@ namespace Alpaca4d.Constraints
             // to add the threends start counting
             // Counting from zero for the cloud index, from one for the node tag, and past every
             // three degree of freedom node because those are written first.
-            this.SlaveNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, SlaveNodes, model.Tollerance).Select(x => x + 1 + model.UniquePointsThreeNDF.Count).ToList();
-            this.MasterNodeId = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, new List<Point3d> { (Point3d)MasterNode }, model.Tollerance).Select(x => x + 1 + model.UniquePointsThreeNDF.Count).First();
+            this.SlaveNodeId = Alpaca4d.Utils.NodeSearch(model.NodeIndexSixNDF, SlaveNodes, "A Rigid Diaphragm").Select(x => x + 1 + model.UniquePointsThreeNDF.Count).ToList();
+            this.MasterNodeId = Alpaca4d.Utils.NodeSearch(model.NodeIndexSixNDF, new List<Point3d> { (Point3d)MasterNode }, "A Rigid Diaphragm").Select(x => x + 1 + model.UniquePointsThreeNDF.Count).First();
 
             // A node cannot be its own slave, and a diaphragm whose master is one of the points it
             // was drawn over is an ordinary thing to draw. Dropped rather than refused: what was

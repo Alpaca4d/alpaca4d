@@ -153,6 +153,68 @@ namespace Alpaca4d.Design
         /// <summary>An I or H, for the torsion reduction of 6.2.7(9).</summary>
         public bool IOrH;
 
+        #region Lateral-torsional buckling and Annex B
+
+        /// <summary>Shear modulus, from the material.</summary>
+        public double G;
+
+        /// <summary>St. Venant torsion constant, worked out from the plates - not the section's J.</summary>
+        public double It;
+
+        /// <summary>Warping constant. Zero for a closed section, a solid one or a pair of angles, which is the safe side.</summary>
+        public double Iw;
+
+        /// <summary>
+        /// Whether the major axis - the one lateral-torsional buckling is about - is local z, so that
+        /// Mz is the moment that can make the member buckle sideways. Always for an I and a pair of
+        /// angles; for a box or a flat bar, whichever way it is stiffer.
+        /// </summary>
+        public bool MajorIsZ = true;
+
+        /// <summary>A tube or a round bar cannot buckle laterally: the same about every axis.</summary>
+        public bool LateralTorsional = true;
+
+        /// <summary>
+        /// Symmetric about both axes, which 6.3.3(1) asks of every member it checks. An I with unequal
+        /// flanges, a box whose top and bottom walls differ and a pair of angles are not.
+        /// </summary>
+        public bool DoublySymmetric = true;
+
+        /// <summary>
+        /// Open, and so free to twist: Table B.2 rather than B.1 for kzy. An I, a flat bar, a pair of
+        /// angles; not a box or a tube.
+        /// </summary>
+        public bool TorsionallyDeformable;
+
+        /// <summary>The curve of Table 6.4 or 6.5.</summary>
+        public BucklingCurve CurveLT = BucklingCurve.d;
+
+        /// <summary>λ̄LT,0 and β: 0.4 and 0.75 for 6.3.2.3 (rolled or equivalent welded I), 0.2 and 1 for 6.3.2.2.</summary>
+        public double LtPlateau = 0.2, LtBeta = 1.0;
+
+        /// <summary>6.3.2.3 rather than the general case 6.3.2.2.</summary>
+        public bool LtRolledMethod;
+
+        /// <summary>
+        /// The shear centre and the two extreme fibres, centroidal, along the depth the major-axis
+        /// moment bends across: local y when <see cref="MajorIsZ"/>, local z otherwise.
+        /// </summary>
+        public double ShearCentre, FibreTop, FibreBottom;
+
+        /// <summary>
+        /// The monosymmetry constant β for the major-axis moment, (1/I) ∫ y (y² + z²) dA − 2 y0: zero
+        /// for a doubly symmetric section, positive when a positive moment compresses the smaller flange.
+        /// </summary>
+        public double Monosymmetry;
+
+        public double LateralInertia => MajorIsZ ? Iy : Iz;
+        public double WelMajor => MajorIsZ ? WelZ : WelY;
+        public double WplMajor => MajorIsZ ? WplZ : WplY;
+        public double WelMinor => MajorIsZ ? WelY : WelZ;
+        public double WplMinor => MajorIsZ ? WplY : WplZ;
+
+        #endregion
+
         /// <summary>Things about the section that the check does not cover, for the report.</summary>
         public List<string> Notes = new List<string>();
 
@@ -174,6 +236,8 @@ namespace Alpaca4d.Design
                 Stress = stress,
                 Grade = grade,
                 E = section.Material?.E ?? 0.0,
+                G = section.Material?.G ?? 0.0,
+                It = stress.TorsionConstant,
                 A = stress.Area,
                 Iy = stress.Iy,
                 Iz = stress.Iz,
@@ -288,6 +352,33 @@ namespace Alpaca4d.Design
             this.CurveZ = rolled ? Ec3.CurveRolledI(hOverB, tfMm, true, this.FyMPa) : Ec3.CurveWeldedI(tfMm, true);
             this.CurveY = rolled ? Ec3.CurveRolledI(hOverB, tfMm, false, this.FyMPa) : Ec3.CurveWeldedI(tfMm, false);
 
+            // Lateral-torsional buckling. Each flange warps about its own centroid; the shear centre
+            // sits between them, nearer the one that is stiffer sideways.
+            double yTop = h / 2 - tfTop / 2 - cy, yBottom = -h / 2 + tfBottom / 2 - cy;
+            double ifTop = tfTop * bTop * bTop * bTop / 12, ifBottom = tfBottom * bBottom * bBottom * bBottom / 12;
+            this.ShearCentre = (ifTop * yTop + ifBottom * yBottom) / (ifTop + ifBottom);
+            this.Iw = ifTop * ifBottom / (ifTop + ifBottom) * (yTop - yBottom) * (yTop - yBottom);
+            this.FibreTop = h / 2 - cy;
+            this.FibreBottom = -h / 2 - cy;
+            this.Monosymmetry = symmetric ? 0.0 : stress.WagnerY / stress.Iz - 2 * this.ShearCentre;
+            this.DoublySymmetric = symmetric;
+            this.TorsionallyDeformable = true;
+
+            if (symmetric)
+            {
+                // 6.3.2.3, rolled or equivalent welded, with its recommended λ̄LT,0 = 0.4 and β = 0.75.
+                this.LtRolledMethod = true;
+                this.LtPlateau = 0.4;
+                this.LtBeta = 0.75;
+                this.CurveLT = Ec3.CurveLtRolled(rolled, h / bTop);
+            }
+            else
+            {
+                // 6.3.2.3 is for rolled sections and welded ones equivalent to them; a monosymmetric
+                // girder takes the general case, measured by its narrower flange.
+                this.CurveLT = Ec3.CurveLtGeneral(true, false, h / Math.Min(bTop, bBottom));
+            }
+
             if (hw / tw > 72.0 * this.Epsilon)
                 this.Notes.Add($"web hw/tw = {hw / tw:0.0} > 72ε = {72.0 * this.Epsilon:0.0}: shear buckling to EN 1993-1-5 is not checked");
             if (!symmetric)
@@ -374,6 +465,13 @@ namespace Alpaca4d.Design
             this.CurveY = Ec3.CurveHollow(fabrication == Fabrication.Rolled, this.FyMPa);
             this.CurveZ = this.CurveY;
 
+            // A closed section is stiff enough in torsion that M_cr is far above anything it can
+            // carry; the general case and curve d say so without needing it to be special.
+            this.MajorIsZ = stress.Iz >= stress.Iy;
+            this.DoublySymmetric = Math.Abs(tTop - tBottom) <= 1e-9 * h;
+            this.FibreTop = this.MajorIsZ ? h / 2 - cy : w / 2;
+            this.FibreBottom = this.MajorIsZ ? -h / 2 - cy : -w / 2;
+
             double sideDepth = h - tTop - tBottom;
             if (sideDepth / tw > 72.0 * this.Epsilon || 2 * inner / Math.Min(tTop, tBottom) > 72.0 * this.Epsilon)
                 this.Notes.Add($"slender walls (hw/t > 72ε = {72.0 * this.Epsilon:0.0}): shear buckling to EN 1993-1-5 is not checked");
@@ -405,6 +503,9 @@ namespace Alpaca4d.Design
 
             this.CurveY = solid ? BucklingCurve.c : Ec3.CurveHollow(fabrication == Fabrication.Rolled, this.FyMPa);
             this.CurveZ = this.CurveY;
+            this.LateralTorsional = false;
+            this.FibreTop = d / 2;
+            this.FibreBottom = -d / 2;
 
             if (solid)
                 this.Notes.Add("solid bar: M + N uses the tube's M_pl (1 − n^1.7), which is below the bar's own and so safe");
@@ -426,6 +527,12 @@ namespace Alpaca4d.Design
             this.WvZ = stress.WplZ;
             this.CurveY = BucklingCurve.c;
             this.CurveZ = BucklingCurve.c;
+
+            // A deep flat bar bent about its strong axis buckles sideways as surely as an I does.
+            this.MajorIsZ = stress.Iz >= stress.Iy;
+            this.TorsionallyDeformable = true;
+            this.FibreTop = this.MajorIsZ ? h / 2 : w / 2;
+            this.FibreBottom = -this.FibreTop;
         }
 
         private void DoubleAngle(double h, double w, double t, double gap)
@@ -458,6 +565,16 @@ namespace Alpaca4d.Design
 
             this.CurveY = BucklingCurve.b;
             this.CurveZ = BucklingCurve.b;
+
+            // Symmetric about local y only. The shear centre is where the legs' centre lines meet, on
+            // the line of the short legs; the legs all radiate from it, so they barely warp.
+            this.ShearCentre = -h / 2 + t / 2 - cy;
+            this.FibreTop = h / 2 - cy;
+            this.FibreBottom = -h / 2 - cy;
+            this.Monosymmetry = stress.WagnerY / stress.Iz - 2 * this.ShearCentre;
+            this.DoublySymmetric = false;
+            this.TorsionallyDeformable = true;
+
             this.Notes.Add("pair of angles: torsional-flexural buckling (6.3.1.4), which can govern in compression, is not checked");
         }
 

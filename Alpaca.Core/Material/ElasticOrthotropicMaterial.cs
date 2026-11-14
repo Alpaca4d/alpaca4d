@@ -12,6 +12,7 @@ namespace Alpaca4d.Material
     {
         public int? Id { get; set; } = IdGenerator.GenerateId();
         public string MatName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double E { get; set; } // it will be null
         public double Ex { get; set; }
         public double Ey { get; set; }
@@ -51,9 +52,19 @@ namespace Alpaca4d.Material
             return string.IsNullOrWhiteSpace(this.MatName) ? base.ToString() : this.MatName;
         }
 
+        /// <summary>
+        /// The material of a joint band: a thin band of solids standing in for springs spread over a
+        /// horizontal joint, its Ez the normal stiffness per area times its thickness and its Gxz, Gyz
+        /// the shear stiffness per area times it - such as the printed cylinder example's Surface
+        /// Connection makes between its layers. A comment before its line says so, for a buckling
+        /// analysis to give the band the stress stiffness of a joint (see Buckling.JointMarker).
+        /// </summary>
+        public bool IsSurfaceConnection { get; set; }
+
         public override string WriteTcl()
         {
-            string tclText = $"nDMaterial ElasticOrthotropic {this.Id} {this.Ex} {this.Ey} {this.Ez} {this.NuXy} {this.NuYz} {this.NuZx} {this.Gxy} {this.Gyz} {this.Gzx} {Alpaca4d.ModelMass.FromKg(this.Rho)}\n";
+            string marker = this.IsSurfaceConnection ? Alpaca4d.Buckling.JointMarker + "\n" : "";
+            string tclText = marker + $"nDMaterial ElasticOrthotropic {this.Id} {this.Ex} {this.Ey} {this.Ez} {this.NuXy} {this.NuYz} {this.NuZx} {this.Gxy} {this.Gyz} {this.Gzx} {Alpaca4d.ModelMass.FromKg(this.Rho)}\n";
             return tclText;
         }
     }

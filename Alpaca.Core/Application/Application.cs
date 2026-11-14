@@ -17,6 +17,85 @@ namespace Alpaca4d
         public static string GhAlpacaFolder = System.IO.Path.GetDirectoryName(assemblyLocation);
 
         /// <summary>
+        /// Where Alpaca4d keeps what the user sets - settings.json, with the OpenSees path, and the
+        /// license - so that it outlives an update: %APPDATA%\Alpaca4d on Windows,
+        /// ~/Library/Application Support/Alpaca4d on a Mac.
+        ///
+        /// Not <see cref="GhAlpacaFolder"/>, where both used to be. The package manager installs
+        /// every version in a folder of its own, so whatever was written beside the plugin stayed
+        /// behind with the version that wrote it, and every update started with no license and no
+        /// solver. <see cref="AdoptFromPluginFolders"/> brings those files over.
+        /// </summary>
+        public static string UserFolder = DefaultUserFolder();
+
+        private static string DefaultUserFolder()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Alpaca4d");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Alpaca4d");
+        }
+
+        /// <summary>
+        /// Every <paramref name="fileName"/> beside the plugin, newest first: in its own folder and,
+        /// when the package manager installed it, in the folders of the other versions it keeps next
+        /// to it (packages/8.0/Alpaca4d/&lt;version&gt;). Where the settings and the license were kept
+        /// before they moved to <see cref="UserFolder"/>.
+        /// </summary>
+        public static List<string> PluginFolderCopies(string fileName)
+        {
+            var folders = new List<string>();
+            if (string.IsNullOrEmpty(GhAlpacaFolder))
+                return folders;
+
+            folders.Add(GhAlpacaFolder);
+            try
+            {
+                // Only beneath a folder of Alpaca4d's own: a plugin installed by hand sits in
+                // Grasshopper's Libraries, and the folders beside it belong to other plugins.
+                string versions = Path.GetDirectoryName(GhAlpacaFolder);
+                if (string.Equals(Path.GetFileName(versions), "Alpaca4d", StringComparison.OrdinalIgnoreCase))
+                    folders.AddRange(Directory.GetDirectories(versions));
+            }
+            catch
+            {
+                // Nothing to look through but the plugin's own folder.
+            }
+
+            return folders
+                .Select(folder => Path.Combine(Path.GetFullPath(folder), fileName))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(File.Exists)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .ToList();
+        }
+
+        /// <summary>
+        /// When there is nothing at <paramref name="target"/> yet, copies there the newest of
+        /// <see cref="PluginFolderCopies"/> that <paramref name="accept"/> takes, so that an update
+        /// carries over what an earlier version kept beside itself. Best effort: whatever goes
+        /// wrong leaves things as they were.
+        /// </summary>
+        public static void AdoptFromPluginFolders(string fileName, string target, Func<string, bool> accept = null)
+        {
+            try
+            {
+                if (File.Exists(target))
+                    return;
+
+                string earlier = PluginFolderCopies(fileName).FirstOrDefault(path => accept == null || accept(path));
+                if (earlier == null)
+                    return;
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(earlier, target);
+            }
+            catch
+            {
+                // Left where it was; the user can still set it again.
+            }
+        }
+
+        /// <summary>
         /// How long <see cref="Model.RunOpenSees"/> waits for the solver before killing it
         /// and throwing. Null - the default - waits forever, because a long analysis on
         /// the canvas is a legitimate thing to do and no timeout we could pick here would

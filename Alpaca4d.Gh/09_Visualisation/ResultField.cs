@@ -10,11 +10,11 @@ using Alpaca4d.Result;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// The kinds of result View Results can draw.
+    /// The kinds of result Model View can draw.
     ///
-    /// Files saved before the menu had an order of its own hold the choice as a position in this
-    /// list, so a family is only ever added at the end: one slipped in beside its neighbours would
-    /// reopen those files one family along. The order the menu shows is
+    /// View Results_WIP files saved before its menu had an order of its own hold the choice as a
+    /// position in this list, so a family is only ever added at the end: one slipped in beside its
+    /// neighbours would reopen those files one family along. The order the menu shows is
     /// <see cref="ResultField.MenuOrder"/>.
     /// </summary>
     internal enum ResultFamily
@@ -31,7 +31,7 @@ namespace Alpaca4d.Gh
     /// <summary>
     /// One result, read out of a model and reduced to numbers the viewport can be coloured by.
     ///
-    /// This is the half of View Results that knows about recorder files, and it exists so that the
+    /// This is the half of Model View that knows about recorder files, and it exists so that the
     /// component itself does not. Every family is read to the same shape - a value per node, or a
     /// list of values per element tag - so the drawing code has one case to handle rather than six,
     /// and adding a seventh family means adding a branch here and a name to a list.
@@ -52,15 +52,19 @@ namespace Alpaca4d.Gh
 
         private static readonly string[] DisplacementNames = { "Magnitude", "Ux", "Uy", "Uz" };
         private static readonly string[] BeamForceNames = { "N", "Vy", "Vz", "Torsion", "My", "Mz" };
-        private static readonly string[] ShellForceNames = { "fxx", "fyy", "fxy", "mxx", "myy", "mxy", "vxz", "vyz" };
+        private static readonly string[] ShellForceNames = { "pxx", "pyy", "pxy", "mxx", "myy", "mxy", "vxz", "vyz" };
         private static readonly string[] ShellStressNames = { "σ11", "σ22", "σ12", "σ23", "σ31", "VonMises" };
         // Index notation, because the frame is the Axes dropdown's to choose: the solver reports in
         // the global axes, and Axes can turn the six components into the element's own, taken from
         // its node numbering. Naming them sigma-xx would be right for only one of the two settings.
         private static readonly string[] BrickStressNames = { "σ11", "σ22", "σ33", "σ12", "σ23", "σ13", "VonMises" };
         private static readonly string[] ReactionNames = { "Force", "Fx", "Fy", "Fz", "Moment", "Mx", "My", "Mz" };
-        // The outputs of Beam Stresses, in the same order.
-        private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σmax", "σmin", "τV", "τT", "VonMises" };
+        // The outputs of Beam Stresses, in the same order, with σx - N, My and Mz at each fibre -
+        // after its three parts. View Results_WIP files saved before σx are moved one along on load.
+        private static readonly string[] BeamStressNames = { "σN", "σMy", "σMz", "σx", "σmax", "σmin", "τV", "τT", "VonMises" };
+
+        /// <summary>Where σx sits in <see cref="BeamStressNames"/>: a saved Component at or past it predates it.</summary>
+        public const int SigmaX = 3;
 
         /// <summary>
         /// The order the Result dropdown offers the families in: element by element, beams before
@@ -91,6 +95,62 @@ namespace Alpaca4d.Gh
                 case ResultFamily.BrickStress: return BrickStressNames;
                 case ResultFamily.BeamStress: return BeamStressNames;
                 default: return ReactionNames;
+            }
+        }
+
+        /// <summary>
+        /// What kind of quantity a component of a family is, which is what decides the units it is
+        /// offered in. Beam forces and reactions are forces for the first half of their list and
+        /// moments for the rest; shell forces are a force per width, but for the three bending
+        /// moments in the middle.
+        /// </summary>
+        public static Quantity QuantityOf(ResultFamily family, int component)
+        {
+            switch (family)
+            {
+                case ResultFamily.Displacement: return Quantity.Length;
+                case ResultFamily.BeamForce: return component >= 3 ? Quantity.Moment : Quantity.Force;
+                case ResultFamily.ShellForce: return component >= 3 && component <= 5 ? Quantity.MomentPerLength : Quantity.ForcePerLength;
+                case ResultFamily.Reaction: return component >= 4 ? Quantity.Moment : Quantity.Force;
+                default: return Quantity.Stress;
+            }
+        }
+
+        /// <summary>
+        /// Whether a component differs from one point of a beam's section to the next, and so is
+        /// painted point by point when beams are drawn solid. σN is the same all over the section by
+        /// what it is, and σmax and σmin are each the worst anywhere on it: one value per section.
+        /// </summary>
+        public static bool VariesOverSection(ResultFamily family, int component)
+        {
+            if (family != ResultFamily.BeamStress) return false;
+
+            switch (component)
+            {
+                case 0:
+                case 4:
+                case 5:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>
+        /// One component at one point of a beam's surface. The shears in size, as the section's own
+        /// τV and τT are, since the way a shear runs along the surface has no sign of its own.
+        /// </summary>
+        public static double AtPoint(Alpaca4d.Result.PointStress stress, int component)
+        {
+            switch (component)
+            {
+                case 1: return stress.SigmaMy;
+                case 2: return stress.SigmaMz;
+                case 6: return Math.Abs(stress.TauV);
+                case 7: return Math.Abs(stress.TauT);
+                case 8: return stress.VonMises;
+                case 0: return stress.Sigma - stress.SigmaMy - stress.SigmaMz;
+                default: return stress.Sigma;
             }
         }
 
@@ -170,6 +230,16 @@ namespace Alpaca4d.Gh
         /// <summary>Reaction at each support, in the support's own axes, paired with where it acts.</summary>
         public List<Tuple<Plane, Vector3d, double>> Reactions;
 
+        /// <summary>
+        /// Beam stresses only: what each beam needs for its stress to be worked out at any point of
+        /// its section rather than once per section, by element tag. Beams whose section has no shape
+        /// are left out. Null for every other family.
+        /// </summary>
+        public Dictionary<int, BeamSectionField> BySection;
+
+        /// <summary>The component read, which <see cref="BySection"/> is turned into a value with.</summary>
+        public int Component;
+
         /// <summary>What is being shown, for the Info output and the viewport caption.</summary>
         public string Label = "";
 
@@ -189,6 +259,28 @@ namespace Alpaca4d.Gh
 
                 return Enumerable.Empty<double>();
             }
+        }
+
+        /// <summary>
+        /// Every value multiplied by <paramref name="factor"/>, to show the field in another unit
+        /// than the solver's. Into new lists, so nothing a reader handed back is changed under it.
+        /// </summary>
+        public void Scale(double factor)
+        {
+            if (factor == 1.0) return;
+
+            if (this.ByNode != null)
+                this.ByNode = this.ByNode.ToDictionary(x => x.Key, x => x.Value * factor);
+
+            if (this.ByElement != null)
+                this.ByElement = this.ByElement.ToDictionary(x => x.Key, x => x.Value?.Select(v => v * factor).ToList());
+
+            // The vector too, which the arrows are drawn and labelled from.
+            if (this.Reactions != null)
+                this.Reactions = this.Reactions.Select(x => Tuple.Create(x.Item1, x.Item2 * factor, x.Item3 * factor)).ToList();
+
+            if (this.BySection != null)
+                this.BySection = this.BySection.ToDictionary(x => x.Key, x => x.Value.Scaled(factor));
         }
 
         public static ResultField Read(Alpaca4d.Model model, ResultFamily family, int component, int layer, int step,
@@ -238,77 +330,105 @@ namespace Alpaca4d.Gh
 
         private static ResultField BeamForce(Alpaca4d.Model model, int component, int step)
         {
-            var field = new ResultField
+            return BeamForces(model, new[] { component }, step)[component];
+        }
+
+        /// <summary>
+        /// Several beam forces from one read of the recorder file, which hands back all six whichever
+        /// are asked for: a field per component, by its place in the Component list.
+        /// </summary>
+        public static Dictionary<int, ResultField> BeamForces(Alpaca4d.Model model, IEnumerable<int> components, int step)
+        {
+            var fields = components.Distinct().ToDictionary(c => c, c => new ResultField
             {
                 ByElement = new Dictionary<int, List<double>>(),
-                Label = BeamForceNames[component]
-            };
+                Component = c,
+                Label = BeamForceNames[c]
+            });
 
-            if (model.Beams.Count == 0)
-                return field;
+            if (model.Beams.Count == 0 || fields.Count == 0)
+                return fields;
 
             var read = Alpaca4d.Result.Read.ForceBeamColumn(model, step);
 
             // Read.ForceBeamColumn hands them back in the order of Model.Beams, and in the order
             // n, mz, vy, my, vz, t - which is not the order they are offered in.
-            List<List<double>> chosen;
-            switch (component)
+            foreach (var entry in fields)
             {
-                case 1: chosen = read.vy; break;
-                case 2: chosen = read.vz; break;
-                case 3: chosen = read.t; break;
-                case 4: chosen = read.my; break;
-                case 5: chosen = read.mz; break;
-                default: chosen = read.n; break;
+                List<List<double>> chosen;
+                switch (entry.Key)
+                {
+                    case 1: chosen = read.vy; break;
+                    case 2: chosen = read.vz; break;
+                    case 3: chosen = read.t; break;
+                    case 4: chosen = read.my; break;
+                    case 5: chosen = read.mz; break;
+                    default: chosen = read.n; break;
+                }
+
+                Fill(entry.Value.ByElement, model.Beams, chosen);
             }
 
-            Fill(field.ByElement, model.Beams, chosen);
-
-            return field;
+            return fields;
         }
+
+        /// <summary>The beam forces as the row of checkboxes under Beam forces names them, torsion short enough to fit.</summary>
+        public static readonly string[] BeamForceShortNames = { "N", "Vy", "Vz", "T", "My", "Mz" };
 
         private static ResultField BeamStress(Alpaca4d.Model model, int component, int step)
         {
             var field = new ResultField
             {
                 ByElement = new Dictionary<int, List<double>>(),
-                Label = BeamStressNames[component] + " [MPa]"
+                BySection = new Dictionary<int, BeamSectionField>(),
+                Component = component,
+                Label = BeamStressNames[component]
             };
 
             if (model.Beams.Count == 0)
                 return field;
 
-            var read = Alpaca4d.Result.Read.BeamStresses(model, step);
+            var read = Alpaca4d.Result.Read.BeamSectionForces(model, step);
 
             for (int i = 0; i < model.Beams.Count && i < read.Count; i++)
             {
-                var stresses = read[i];
-                if (!model.Beams[i].Id.HasValue || stresses.Count == 0)
+                var (shape, forces) = read[i];
+                if (!model.Beams[i].Id.HasValue || forces.Count == 0)
                     continue;
 
                 // An Elastic Section has no shape, so N/A is all it has. Left out of everything else,
                 // its beams draw plain rather than in a colour standing for a number they do not have.
-                if (!stresses[0].HasShape && component != 0)
+                if (!shape.HasShape && component != 0)
                     continue;
 
-                // In MPa, as the Beam Stresses component gives them, so the two read the same numbers.
-                field.ByElement[model.Beams[i].Id.Value] = stresses.Select(x => ModelStress.ToMPa(Of(x, component))).ToList();
+                // In the solver's kN/m², as every other family is: Model View turns them into the
+                // unit picked, which starts at MPa - the unit Beam Stresses gives them in.
+                int tag = model.Beams[i].Id.Value;
+                field.ByElement[tag] = forces.Select(f => Of(shape.At(f[0], f[1], f[2], f[3], f[4], f[5]), component)).ToList();
+
+                if (shape.HasShape)
+                    field.BySection[tag] = new BeamSectionField(shape, forces);
             }
 
             return field;
         }
 
+        /// <summary>
+        /// One component of a section's stresses. Drawn as a line, a beam has no section to paint,
+        /// so σx is the worst of it: σmax or σmin, whichever is larger in size, with its sign.
+        /// </summary>
         private static double Of(Alpaca4d.Result.BeamStress stress, int component)
         {
             switch (component)
             {
                 case 1: return stress.SigmaMy;
                 case 2: return stress.SigmaMz;
-                case 3: return stress.SigmaMax;
-                case 4: return stress.SigmaMin;
-                case 5: return stress.TauV;
-                case 6: return stress.TauT;
-                case 7: return stress.VonMises;
+                case 3: return Math.Abs(stress.SigmaMax) >= Math.Abs(stress.SigmaMin) ? stress.SigmaMax : stress.SigmaMin;
+                case 4: return stress.SigmaMax;
+                case 5: return stress.SigmaMin;
+                case 6: return stress.TauV;
+                case 7: return stress.TauT;
+                case 8: return stress.VonMises;
                 default: return stress.SigmaN;
             }
         }
@@ -426,6 +546,23 @@ namespace Alpaca4d.Gh
                     read.Item1, read.Item2, read.Item3, read.Item4, read.Item5, read.Item6);
             }
 
+            // A ten node tetrahedron's stress varies across it, so it gets a value at each of its
+            // ten nodes - the order its mesh carries its vertices in, which is how they are painted.
+            var tenNode = model.Bricks.Where(x => x.ElementClass == Alpaca4d.Element.ElementClass.TenNodeTetrahedron).ToList();
+            if (tenNode.Count > 0)
+            {
+                var read = Alpaca4d.Result.Read.TenNodeTetrahedronStressAtNodes(model, step, local: localAxes);
+                for (int i = 0; i < tenNode.Count && i < read.Count; i++)
+                {
+                    if (!tenNode[i].Id.HasValue)
+                        continue;
+
+                    field.ByElement[tenNode[i].Id.Value] = read[i]
+                        .Select(s => component < 6 ? s[component] : VonMises(s[0], s[1], s[2], s[3], s[4], s[5]))
+                        .ToList();
+                }
+            }
+
             return field;
         }
 
@@ -506,6 +643,37 @@ namespace Alpaca4d.Gh
             }
 
             return field;
+        }
+    }
+
+    /// <summary>
+    /// A beam's stress anywhere on its section: the section's shape and the section forces at each
+    /// of the beam's integration sections. See <see cref="ResultField.BySection"/>.
+    /// </summary>
+    internal class BeamSectionField
+    {
+        public readonly Alpaca4d.Result.BeamSectionStress Shape;
+
+        /// <summary>N, Vy, Vz, T, My, Mz at each integration section, from the I end.</summary>
+        public readonly List<double[]> Forces;
+
+        /// <summary>What every value is multiplied by on the way out, to show it in the unit picked.</summary>
+        public readonly double Factor;
+
+        public BeamSectionField(Alpaca4d.Result.BeamSectionStress shape, List<double[]> forces, double factor = 1.0)
+        {
+            this.Shape = shape;
+            this.Forces = forces;
+            this.Factor = factor;
+        }
+
+        public BeamSectionField Scaled(double factor) => new BeamSectionField(this.Shape, this.Forces, this.Factor * factor);
+
+        /// <summary>One component at a point of the surface, under one set of forces.</summary>
+        public double At(Alpaca4d.Result.SurfacePoint point, double[] forces, int component)
+        {
+            var stress = point.Under(forces[0], forces[1], forces[2], forces[3], forces[4], forces[5]);
+            return this.Factor * ResultField.AtPoint(stress, component);
         }
     }
 }

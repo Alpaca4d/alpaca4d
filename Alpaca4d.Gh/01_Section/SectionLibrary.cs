@@ -22,9 +22,6 @@ namespace Alpaca4d.Gh
 
         private Dictionary<string, List<string>> familyToSections = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
-        private static readonly object jsonLock = new object();
-        private static JObject steelSectionDb;
-
         // Persisted selection state (for GH file save/load)
         private string storedFamily = null;
         private string storedSection = null;
@@ -58,10 +55,17 @@ namespace Alpaca4d.Gh
             // Material is optional, defaulting to elastic steel if not supplied
             pManager.AddGenericParameter("Material", "Material", "Section material (defaults to Elastic Steel)", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
+
+            // Colour is optional: left empty, Model View picks one for each section
+            pManager.AddParameter(ColourInput.Make(ColourDescription));
             
             // Gap parameter for double L-sections (2L) will be added dynamically
-            // when the 2L family is selected
+            // when the 2L family is selected, after Material
         }
+
+        private const string ColourDescription =
+            "The colour the section is drawn in when Model View colours the elements by section - every section of the list, with Section set to All. " +
+            "Left empty, Model View gives each section a colour of its own.";
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
@@ -148,16 +152,8 @@ namespace Alpaca4d.Gh
 
             if (is2LFamily && !hasGapParameter)
             {
-                // Add Gap parameter after Section Name (at index 2)
-                var newGapParam = new Grasshopper.Kernel.Parameters.Param_Number();
-                newGapParam.Name = "Gap";
-                newGapParam.NickName = "Gap";
-                newGapParam.Description = "Gap between two L-sections (in meters)";
-                newGapParam.Access = GH_ParamAccess.item;
-                newGapParam.Optional = true;
-                newGapParam.SetPersistentData(0.01); // Default value 10mm
-                
-                Params.RegisterInputParam(newGapParam, 2);
+                // Add Gap parameter after Material (at index 2)
+                Params.RegisterInputParam(GapParam(), 2);
                 Params.OnParametersChanged();
                 OnDisplayExpired(true);
             }
@@ -170,35 +166,24 @@ namespace Alpaca4d.Gh
             }
         }
 
-        #endregion
-
-        #region JSON loading helpers
-
-        private static JObject LoadJsonResourceOnce(ref JObject cache, string resourceName)
+        private static IGH_Param GapParam()
         {
-            if (cache != null) return cache;
-            lock (jsonLock)
-            {
-                if (cache != null) return cache;
-                var coreAsm = typeof(Alpaca4d.Section.ISection).Assembly;
-                using (var stream = coreAsm.GetManifestResourceStream(resourceName))
-                {
-                    if (stream == null) throw new FileNotFoundException("Embedded resource not found", resourceName);
-                    using (var reader = new StreamReader(stream))
-                    {
-                        var json = reader.ReadToEnd();
-                        cache = JObject.Parse(json);
-                        return cache;
-                    }
-                }
-            }
+            var gapParam = new Grasshopper.Kernel.Parameters.Param_Number();
+            gapParam.Name = "Gap";
+            gapParam.NickName = "Gap";
+            gapParam.Description = "Gap between two L-sections (in meters)";
+            gapParam.Access = GH_ParamAccess.item;
+            gapParam.Optional = true;
+            gapParam.SetPersistentData(0.01); // Default value 10mm
+            return gapParam;
         }
 
-        private static double TryGetDouble(JObject obj, string key)
+        /// <summary>The inputs this component makes for itself, for <see cref="StoredInputs.Match"/>.</summary>
+        private static IGH_Param MakeInput(string name)
         {
-            if (obj == null) return double.NaN;
-            var token = obj[key];
-            return token != null ? token.Value<double>() : double.NaN;
+            if (name == "Gap") return GapParam();
+            if (name == ColourInput.Name) return ColourInput.Make(ColourDescription);
+            return null;
         }
 
         #endregion
@@ -232,7 +217,7 @@ namespace Alpaca4d.Gh
         private Dictionary<string, List<string>> BuildFamilyToSections()
         {
             var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            var db = LoadJsonResourceOnce(ref steelSectionDb, "Alpaca4d.Resources.Section.section.json");
+            var db = Alpaca4d.Section.SteelCatalogue.Database;
             if (db == null) return result;
 
             void AddSection(string familyName, string sectionName)
@@ -382,6 +367,9 @@ namespace Alpaca4d.Gh
                 try { DA.GetData(1, ref material); } catch { }
             }
 
+            // Colour input (optional) - left null, Model View picks one
+            System.Drawing.Color? colour = ColourInput.Read(this, DA);
+
             // Gap input (optional, for L-sections)
             double gap = 0.01; // Default 10mm gap
             var gapParamIndex = Params.Input.FindIndex(p => p.Name == "Gap");
@@ -431,18 +419,22 @@ namespace Alpaca4d.Gh
 
             if (selSection == All)
             {
-                DA.SetDataList(0, AllSections(selFamily, material, gap));
+                var sections = AllSections(selFamily, material, gap);
+                foreach (var each in sections)
+                    each.Color = colour;
+                DA.SetDataList(0, sections);
                 return;
             }
 
             // Create the appropriate section type based on the family
-            IUniaxialSection section = CreateSection(selFamily, selSection, material, gap);
+            IUniaxialSection section = Alpaca4d.Section.SteelCatalogue.Create(selFamily, selSection, material, gap);
             if (section == null)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Section '{selSection}' not found in the steel section database.");
                 return;
             }
 
+            section.Color = colour;
             DA.SetData(0, section);
         }
 
@@ -455,7 +447,6 @@ namespace Alpaca4d.Gh
         /// </summary>
         private List<IUniaxialSection> AllSections(string family, IUniaxialMaterial material, double gap)
         {
-            var db = LoadJsonResourceOnce(ref steelSectionDb, "Alpaca4d.Resources.Section.section.json");
             var families = family == All ? familyToSections.Keys.ToList() : new List<string> { family };
 
             var found = new List<Tuple<double, string, IUniaxialSection>>();
@@ -464,9 +455,9 @@ namespace Alpaca4d.Gh
                 if (!familyToSections.TryGetValue(fam, out var names)) continue;
                 foreach (var name in names)
                 {
-                    var section = CreateSection(fam, name, material, gap);
+                    var section = Alpaca4d.Section.SteelCatalogue.Create(fam, name, material, gap);
                     if (section == null) continue;
-                    found.Add(Tuple.Create(PlateArea(fam, FindSectionEntry(db, fam, name)), name, section));
+                    found.Add(Tuple.Create(Alpaca4d.Section.SteelCatalogue.PlateArea(fam, Alpaca4d.Section.SteelCatalogue.FindEntry(fam, name)), name, section));
                 }
             }
 
@@ -476,134 +467,12 @@ namespace Alpaca4d.Gh
                         .ToList();
         }
 
-        /// <summary>Cross-sectional area of a database entry, in mm², from the plates it is built of.</summary>
-        private static double PlateArea(string family, JObject entry)
-        {
-            if (entry == null) return double.MaxValue;
-
-            if (family.Equals("O", StringComparison.OrdinalIgnoreCase))
-            {
-                double d = TryGetDouble(entry, "d"), t = TryGetDouble(entry, "t");
-                double inner = d - 2.0 * t;
-                return Math.PI / 4.0 * (d * d - inner * inner);
-            }
-            if (family.Equals("[]", StringComparison.Ordinal))
-            {
-                double h = TryGetDouble(entry, "h"), b = TryGetDouble(entry, "b"), t = TryGetDouble(entry, "t");
-                return b * h - (b - 2.0 * t) * (h - 2.0 * t);
-            }
-            if (family.Equals("2L", StringComparison.OrdinalIgnoreCase))
-            {
-                double h = TryGetDouble(entry, "h"), b = TryGetDouble(entry, "b"), t = TryGetDouble(entry, "t");
-                return 2.0 * (h * t + (b - t) * t);
-            }
-
-            double hi = TryGetDouble(entry, "h"), bi = TryGetDouble(entry, "b");
-            double tw = TryGetDouble(entry, "tw"), tf = TryGetDouble(entry, "tf");
-            return 2.0 * bi * tf + (hi - 2.0 * tf) * tw;
-        }
-
-        /// <summary>
-        /// Creates the appropriate section type based on the family.
-        /// Returns CircleCS for O family, RectangleHollowCS for [] family, 
-        /// DoubleLAngleCS for 2L family, and ISection for I family.
-        /// </summary>
-        private IUniaxialSection CreateSection(string family, string sectionName, IUniaxialMaterial material, double gap)
-        {
-            var db = LoadJsonResourceOnce(ref steelSectionDb, "Alpaca4d.Resources.Section.section.json");
-            if (db == null) return null;
-
-            JObject sectionEntry = FindSectionEntry(db, family, sectionName);
-            if (sectionEntry == null) return null;
-
-            const double mmToM = 0.001;
-
-            if (family.Equals("O", StringComparison.OrdinalIgnoreCase))
-            {
-                // Circular hollow section: d (diameter), t (thickness)
-                var d = TryGetDouble(sectionEntry, "d");
-                var t = TryGetDouble(sectionEntry, "t");
-
-                if (double.IsNaN(d) || double.IsNaN(t))
-                    return null;
-
-                return new Alpaca4d.Section.CircleCS(sectionName, d * mmToM, t * mmToM, material);
-            }
-            else if (family.Equals("[]", StringComparison.Ordinal))
-            {
-                // Rectangular hollow section: h, b, t
-                var h = TryGetDouble(sectionEntry, "h");
-                var b = TryGetDouble(sectionEntry, "b");
-                var t = TryGetDouble(sectionEntry, "t");
-
-                if (double.IsNaN(h) || double.IsNaN(b) || double.IsNaN(t))
-                    return null;
-
-                // RectangleHollowCS constructor: (secName, width, height, web, topFlange, bottomFlange, material)
-                // For rectangular hollow sections with uniform thickness, all wall thicknesses are the same
-                return new Alpaca4d.Section.RectangleHollowCS(sectionName, b * mmToM, h * mmToM, t * mmToM, t * mmToM, t * mmToM, material);
-            }
-            else if (family.Equals("2L", StringComparison.OrdinalIgnoreCase))
-            {
-                // Double L-section (angle): h, b, t
-                var h = TryGetDouble(sectionEntry, "h");
-                var b = TryGetDouble(sectionEntry, "b");
-                var t = TryGetDouble(sectionEntry, "t");
-
-                if (double.IsNaN(h) || double.IsNaN(b) || double.IsNaN(t))
-                    return null;
-
-                // DoubleLAngleCS constructor: (secName, height, width, thickness, gap, material)
-                return new Alpaca4d.Section.DoubleLAngleCS(sectionName, h * mmToM, b * mmToM, t * mmToM, gap, material);
-            }
-            else
-            {
-                // I-section or similar: h, b, tw, tf
-                var h = TryGetDouble(sectionEntry, "h");
-                var b = TryGetDouble(sectionEntry, "b");
-                var tw = TryGetDouble(sectionEntry, "tw");
-                var tf = TryGetDouble(sectionEntry, "tf");
-
-                if (double.IsNaN(h) || double.IsNaN(b) || double.IsNaN(tw) || double.IsNaN(tf))
-                    return null;
-
-                return new Alpaca4d.Section.ISection(sectionName, h * mmToM, b * mmToM, tf * mmToM, b * mmToM, tf * mmToM, tw * mmToM, material);
-            }
-        }
 
 
-        private static JObject FindSectionEntry(JObject db, string family, string sectionName)
-        {
-            if (db == null || string.IsNullOrEmpty(sectionName)) return null;
 
-            // First try schema with explicit families: db[family][sectionName]
-            if (!string.IsNullOrEmpty(family))
-            {
-                var famToken = db[family] as JObject;
-                if (famToken != null)
-                {
-                    var entry = famToken[sectionName] as JObject;
-                    if (entry != null) return entry;
-                }
-            }
 
-            // Fallback: if there's a single top-level group (e.g. "I"), search inside it.
-            var singleGroup = db.Properties().FirstOrDefault()?.Value as JObject;
-            var candidate = singleGroup?[sectionName] as JObject;
-            if (candidate != null) return candidate;
 
-            // As a last resort, search all families for a matching section name.
-            foreach (var famProp in db.Properties())
-            {
-                if (famProp.Value is JObject famObj)
-                {
-                    var entry = famObj[sectionName] as JObject;
-                    if (entry != null) return entry;
-                }
-            }
 
-            return null;
-        }
 
         /// <summary>
         /// Searches for a section by name in the database and returns the family and section name.
@@ -627,7 +496,7 @@ namespace Alpaca4d.Gh
             }
 
             // If not found in cache, search directly in the JSON database
-            var db = LoadJsonResourceOnce(ref steelSectionDb, "Alpaca4d.Resources.Section.section.json");
+            var db = Alpaca4d.Section.SteelCatalogue.Database;
             if (db == null) return (false, null, null);
 
             // Search in all top-level properties
@@ -716,7 +585,12 @@ namespace Alpaca4d.Gh
                 try { storedSection = chunk.GetString("Section"); } catch { storedSection = null; }
             }
 
-            return base.Read(reader);
+            // The inputs as the file saved them, Gap included when it had one, so each is read into
+            // its own - and a file from before the Colour input gets one after.
+            StoredInputs.Match(this, reader, MakeInput);
+            bool read = base.Read(reader);
+            StoredInputs.Ensure(this, () => ColourInput.Make(ColourDescription), ColourInput.Name);
+            return read;
         }
 
         #endregion

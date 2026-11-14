@@ -137,10 +137,25 @@ def collect_files(paths: dict, version: str) -> Path:
     print_status(f"Collecting files from {output_dir} to {version_dir}")
 
     # Copy DLLs
+    #
+    # Never Karamba3D's. Alpaca4d.Karamba is compiled against KarambaCommon and uses the copy
+    # Karamba3D loads for itself; Karamba's licence does not allow passing its files on, and a
+    # second, different KarambaCommon next to Alpaca4d would be loaded in place of Karamba's own.
+    # The project file keeps them out of the build output; this keeps a slip there out of the
+    # package. Stale copies from an earlier run are removed for the same reason as the solvers below.
+    karamba_files = {"karambacommon.dll", "karamba.gha", "piglet.dll", "newtonsoft.json.bson.dll"}
+    for stale in version_dir.glob("*"):
+        if stale.name.lower() in karamba_files:
+            stale.unlink()
+            print_status(f"Removed {stale.name} from {version_dir.name} (Karamba3D's, never packaged)")
+
     dlls = glob(str(output_dir / "*.dll"))
     if not dlls:
         print_status("No DLL files found")
     for dll in dlls:
+        if Path(dll).name.lower() in karamba_files:
+            print_status(f"Skipped {Path(dll).name}: Karamba3D's, never packaged")
+            continue
         shutil.copy2(dll, str(version_dir))
 
     # Copy GHA
@@ -152,13 +167,11 @@ def collect_files(paths: dict, version: str) -> Path:
 
     # Copy folders and extra files (best-effort)
     #
-    # OpenSees-Solvers is deliberately not packaged. The solver is chosen by the user -
-    # Alpaca4d > Settings > Set OpenSees Executable - and Application.OpenSees reads that
-    # path and nothing else, so a bundled copy was never loaded at runtime. The project
-    # file keeps it out of the build output as well (None Remove="OpenSees-Solvers\**"),
-    # so it cannot reach the package by that road either; shipping it only added ~114 MB
-    # to every download, and on macOS a bundled unsigned solver arrives quarantined and
-    # gets SIGKILLed anyway.
+    # OpenSees is deliberately not packaged, and the repository keeps none. The solver is
+    # chosen by the user - Alpaca4d > Settings > Set OpenSees Executable - and
+    # Application.OpenSees reads that path and nothing else, so a bundled copy was never
+    # loaded at runtime. Shipping it only added ~114 MB to every download, and on macOS a
+    # bundled unsigned solver arrives quarantined and gets SIGKILLed anyway.
     #
     # Dropped from a version dir an older script already filled: the directory is reused,
     # not rebuilt, so a leftover copy would go on being packaged and quietly undo this.
@@ -167,8 +180,17 @@ def collect_files(paths: dict, version: str) -> Path:
         shutil.rmtree(stale_solvers)
         print_status(f"Removed stale OpenSees-Solvers from {version_dir.name} (no longer packaged)")
 
-    safe_copy_file(output_dir / "data.bin", version_dir)
+    # No data.bin. The license is kept in the user's folder, where an update leaves it, and the
+    # copy shipped here was a FreeVersion long expired - something to forge a license from, and
+    # nothing else. Dropped from a reused version dir for the same reason as the solvers above.
+    stale_license = version_dir / "data.bin"
+    if stale_license.exists():
+        stale_license.unlink()
+        print_status(f"Removed stale data.bin from {version_dir.name} (no longer packaged)")
+
     safe_copy_tree(output_dir / "UserObject", version_dir / "UserObject")
+    # The Explorer components follow Colibri, whose MIT license asks for its notice to travel along.
+    safe_copy_file(project_root / "THIRD-PARTY-NOTICES.md", version_dir)
 
     # Copy manifest + icon for yak build
     safe_copy_file(paths["manifest_file"], version_dir)

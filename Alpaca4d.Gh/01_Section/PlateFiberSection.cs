@@ -30,6 +30,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Material", "Material", "Material the plate is made of. Connect an nD material.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddParameter(ColourInput.Make(ColourInput.SectionDescription));
         }
 
         /// <summary>
@@ -62,6 +63,7 @@ namespace Alpaca4d.Gh
 
             var section = new Alpaca4d.Section.PlateFiberSection(secName, thickness, material);
 
+            section.Color = ColourInput.Read(this, DA);
             DA.SetData(0, section);
         }
 
@@ -72,6 +74,12 @@ namespace Alpaca4d.Gh
         /// each of which can be combined with the GH_Exposure.obscure flag, which 
         /// ensures the component will only be visible on panel dropdowns.
         /// </summary>
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            // A file saved before the Colour input has one input fewer; see StoredInputs.
+            return ColourInput.ReadComponent(this, reader, base.Read, ColourInput.SectionDescription);
+        }
+
         public override GH_Exposure Exposure => GH_Exposure.secondary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Fiber_section__Alpaca4d_;

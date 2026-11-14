@@ -11,6 +11,7 @@ namespace Alpaca4d.Material
     public partial class ReinforcingSteel : EntityBase, IMaterial
     {
         public string MatName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public int? Id { get; set; } = IdGenerator.GenerateId();
         /// <summary>Yield strength, in kN/m2.</summary>
         public double Fy { get; set; }

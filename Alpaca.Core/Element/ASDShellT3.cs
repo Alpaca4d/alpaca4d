@@ -48,8 +48,7 @@ namespace Alpaca4d.Element
             var meshPoints = this.Mesh.Vertices.ToPoint3dArray();
 
             this.IndexNodes = Alpaca4d.Utils
-                .RTreeSearch(model.RTreeCloudPointSixNDF, meshPoints, model.Tollerance,
-                             $"ASD Shell T3 {this.Id}", model.UniquePointsSixNDF)
+                .NodeSearch(model.NodeIndexSixNDF, meshPoints, $"ASD Shell T3 {this.Id}")
                 .Select(x => (int?)(x + 1 + model.UniquePointsThreeNDF.Count))
                 .ToList();
         }
@@ -57,7 +56,10 @@ namespace Alpaca4d.Element
         {
             string corotationalFlag = this.IsCorotational ? "-corotational" : string.Empty;
             string localXString = this.LocalX == default ? string.Empty : $"-local {TclNumber.Write(this.LocalX.X)} {TclNumber.Write(this.LocalX.Y)} {TclNumber.Write(this.LocalX.Z)}";
-            string tcl = $"element ASDShellT3 {this.Id} {this.IndexNodes[0]} {this.IndexNodes[1]} {this.IndexNodes[2]} {this.Section.Id} {corotationalFlag} {localXString}\n";
+            // A plastic section takes the drilling stiffness from the material's current tangent,
+            // as ASDShellQ4 does: see there.
+            string plasticFlags = Alpaca4d.Material.J2PlasticityMaterial.IsIn(this.Section) ? "-drillingNL" : string.Empty;
+            string tcl = $"element ASDShellT3 {this.Id} {this.IndexNodes[0]} {this.IndexNodes[1]} {this.IndexNodes[2]} {this.Section.Id} {corotationalFlag} {localXString} {plasticFlags}\n";
 
             return tcl;
         }

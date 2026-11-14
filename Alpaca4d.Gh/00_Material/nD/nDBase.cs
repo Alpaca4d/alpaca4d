@@ -47,6 +47,8 @@ namespace SimplexGh
         {
             _subcomponents.Add(new nDElasticIsotropic());
             _subcomponents.Add(new nDElasticOrthotropic());
+            // Last: the first unit is the default one a new nD component starts on.
+            _subcomponents.Add(new nDJ2Plasticity());
 
             foreach (SubComponent item in _subcomponents)
             {

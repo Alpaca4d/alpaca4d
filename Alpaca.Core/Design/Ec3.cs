@@ -278,5 +278,156 @@ namespace Alpaca4d.Design
         }
 
         #endregion
+
+        #region Lateral-torsional buckling, 6.3.2
+
+        /// <summary>
+        /// The lateral-torsional buckling curve of the general case, Table 6.4: a rolled I a up to
+        /// h/b = 2 and b beyond, a welded I c and d, any other section d.
+        /// </summary>
+        public static BucklingCurve CurveLtGeneral(bool iSection, bool rolled, double hOverB)
+        {
+            if (!iSection)
+                return BucklingCurve.d;
+            if (rolled)
+                return hOverB <= 2.0 ? BucklingCurve.a : BucklingCurve.b;
+            return hOverB <= 2.0 ? BucklingCurve.c : BucklingCurve.d;
+        }
+
+        /// <summary>
+        /// The lateral-torsional buckling curve of 6.3.2.3, rolled or equivalent welded I sections,
+        /// Table 6.5: rolled b up to h/b = 2 and c beyond, welded c and d.
+        /// </summary>
+        public static BucklingCurve CurveLtRolled(bool rolled, double hOverB)
+        {
+            if (rolled)
+                return hOverB <= 2.0 ? BucklingCurve.b : BucklingCurve.c;
+            return hOverB <= 2.0 ? BucklingCurve.c : BucklingCurve.d;
+        }
+
+        /// <summary>λ̄LT = √(Wy fy / M_cr). 6.3.2.2(1).</summary>
+        public static double SlendernessLt(double modulus, double fy, double criticalMoment)
+        {
+            return Math.Sqrt(modulus * fy / criticalMoment);
+        }
+
+        /// <summary>
+        /// χLT = 1 / (Φ + √(Φ² − β λ̄²)), Φ = 0.5 [1 + αLT (λ̄ − λ̄LT,0) + β λ̄²], at most 1 and at most
+        /// 1/λ̄². 6.3.2.2(1) equation (6.56) with λ̄LT,0 = 0.2 and β = 1; 6.3.2.3(1) equation (6.57)
+        /// with the recommended λ̄LT,0 = 0.4 and β = 0.75.
+        /// </summary>
+        public static double ReductionLt(double slenderness, double imperfection, double plateau, double beta)
+        {
+            double phi = 0.5 * (1.0 + imperfection * (slenderness - plateau) + beta * slenderness * slenderness);
+            double chi = 1.0 / (phi + Math.Sqrt(phi * phi - beta * slenderness * slenderness));
+            chi = Math.Min(chi, 1.0);
+            if (slenderness > 0.0)
+                chi = Math.Min(chi, 1.0 / (slenderness * slenderness));
+            return chi;
+        }
+
+        /// <summary>
+        /// 6.3.2.2(4): lateral-torsional buckling may be ignored for λ̄LT ≤ λ̄LT,0, or for
+        /// M_Ed / M_cr ≤ λ̄LT,0².
+        /// </summary>
+        public static bool LtIgnored(double slenderness, double plateau, double mEd, double criticalMoment)
+        {
+            return slenderness <= plateau || Math.Abs(mEd) / criticalMoment <= plateau * plateau;
+        }
+
+        #endregion
+
+        #region Bending and axial compression, 6.3.3 and Annex B
+
+        /// <summary>
+        /// The equivalent uniform moment factor of Table B.3, for a diagram with <paramref name="mh"/>
+        /// at one end, ψ mh at the other and <paramref name="ms"/> in the span, under a uniform load -
+        /// the only span load a member carries between its nodes. With no span load the diagram is
+        /// linear and its mid-span value makes the same factor, 0.6 + 0.4ψ, so one form serves both.
+        ///
+        /// <paramref name="mh"/> is the end moment of the larger size; <paramref name="ms"/>, the moment
+        /// in the span the table measures against it.
+        /// </summary>
+        public static double EquivalentMoment(double mh, double psi, double ms)
+        {
+            psi = Math.Max(-1.0, Math.Min(1.0, psi));
+
+            if (Math.Abs(ms) <= Math.Abs(mh))
+            {
+                if (mh == 0.0)
+                    return 0.95;
+
+                double alphaS = ms / mh;
+                double cm;
+                if (alphaS >= 0.0)
+                    cm = 0.2 + 0.8 * alphaS;
+                else if (psi >= 0.0)
+                    cm = 0.1 - 0.8 * alphaS;
+                else
+                    cm = 0.1 * (1.0 - psi) - 0.8 * alphaS;
+                return Math.Max(cm, 0.4);
+            }
+
+            double alphaH = mh / ms;
+            if (alphaH >= 0.0 || psi >= 0.0)
+                return 0.95 + 0.05 * alphaH;
+            return 0.95 + 0.05 * alphaH * (1.0 + 2.0 * psi);
+        }
+
+        /// <summary>The interaction factors of Annex B (method 2).</summary>
+        public struct InteractionFactors
+        {
+            public double Kyy, Kyz, Kzy, Kzz;
+        }
+
+        /// <summary>
+        /// kyy, kyz, kzy and kzz of Annex B, Table B.1 - and Table B.2's kzy for a member susceptible
+        /// to torsional deformations, an open section free to twist. y is the major axis, as the
+        /// standard has it.
+        ///
+        /// <paramref name="ny"/> and <paramref name="nz"/> are N_Ed / (χ N_Rk / γM1) about each axis,
+        /// <paramref name="plastic"/> Class 1 or 2. For kzz of a Class 1 or 2 member Table B.1 gives
+        /// one formula for an I and another for a rectangular hollow section, and is silent on the
+        /// rest: those take the larger of the two.
+        /// </summary>
+        public static InteractionFactors AnnexB(bool plastic, double lambdaY, double lambdaZ, double ny, double nz,
+                                                double cmy, double cmz, double cmLT, bool torsionallyDeformable,
+                                                SteelShape shape)
+        {
+            double kyy, kzz;
+            if (plastic)
+            {
+                kyy = cmy * Math.Min(1.0 + (lambdaY - 0.2) * ny, 1.0 + 0.8 * ny);
+
+                double kzzI = cmz * Math.Min(1.0 + (2.0 * lambdaZ - 0.6) * nz, 1.0 + 1.4 * nz);
+                double kzzBox = cmz * Math.Min(1.0 + (lambdaZ - 0.2) * nz, 1.0 + 0.8 * nz);
+                kzz = shape == SteelShape.I ? kzzI : shape == SteelShape.Box ? kzzBox : Math.Max(kzzI, kzzBox);
+            }
+            else
+            {
+                kyy = cmy * Math.Min(1.0 + 0.6 * lambdaY * ny, 1.0 + 0.6 * ny);
+                kzz = cmz * Math.Min(1.0 + 0.6 * lambdaZ * nz, 1.0 + 0.6 * nz);
+            }
+
+            double kyz = plastic ? 0.6 * kzz : kzz;
+
+            double kzy;
+            if (!torsionallyDeformable)
+            {
+                kzy = plastic ? 0.6 * kyy : 0.8 * kyy;
+            }
+            else
+            {
+                double factor = plastic ? 0.1 : 0.05;
+                double d = cmLT - 0.25;
+                kzy = Math.Max(1.0 - factor * lambdaZ / d * nz, 1.0 - factor / d * nz);
+                if (plastic && lambdaZ < 0.4)
+                    kzy = Math.Min(0.6 + lambdaZ, 1.0 - 0.1 * lambdaZ / d * nz);
+            }
+
+            return new InteractionFactors { Kyy = kyy, Kyz = kyz, Kzy = kzy, Kzz = kzz };
+        }
+
+        #endregion
     }
 }

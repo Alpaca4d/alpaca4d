@@ -12,6 +12,7 @@ namespace Alpaca4d.Section
     public partial class ElasticSection : ISerialize, IUniaxialSection
     {
         public string SectionName { get; set; }
+        public System.Drawing.Color? Color { get; set; }
         public double Area { get; set; }
         public double Izz { get; set; }
         public double Iyy { get; set; }
@@ -87,6 +88,14 @@ namespace Alpaca4d.Section
 
         public string WriteTcl()
         {
+            // OpenSees takes alphaY and alphaZ as shear shape factors and builds a shear-deformable
+            // section from them. A factor of zero is not "no shear deformation" there but zero shear
+            // stiffness, and forceBeamColumn fails on the first step with NaN forces. Without them
+            // the section is rigid in shear (Euler-Bernoulli), which is what a zero or missing
+            // shear area means - TclReader reads a deck written that way back as alpha = 0.
+            if (!(AlphaY > 0.0) || !(AlphaZ > 0.0))
+                return $"section Elastic {Id} {Material.E} {Area} {Izz} {Iyy} {Material.G} {J}\n";
+
             string tclText = $"section Elastic {Id} {Material.E} {Area} {Izz} {Iyy} {Material.G} {J} {AlphaY} {AlphaZ}\n";
             return tclText;
         }

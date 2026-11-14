@@ -1,0 +1,301 @@
+<title>Alpaca4d Posts</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;750&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* A desk of posts: a sticky bar to find one, then one card each - the pictures on the left, the words on the right. */
+:root {
+  --bg: #f3f5f8; --surface: #ffffff; --sunken: #f7f8fa; --ink: #2a2d31; --muted: #5f6672; --line: #dfe3e9;
+  --accent: #2f76e6; --accent-soft: #e6effd; --hold: #c4532a; --hold-soft: #fcebe3; --ready: #557017; --ready-soft: #eef4dc;
+  --purple: #8a2fc0;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171a; --surface: #1d2024; --sunken: #181a1e; --ink: #e7e9ec; --muted: #a0a7b1; --line: #30353c;
+  --accent: #6fa6fb; --accent-soft: #1d2a3d; --hold: #f08a62; --hold-soft: #3a2219; --ready: #b6d35a; --ready-soft: #262e17;
+  --purple: #c287ef; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15171a; --surface: #1d2024; --sunken: #181a1e; --ink: #e7e9ec; --muted: #a0a7b1; --line: #30353c;
+  --accent: #6fa6fb; --accent-soft: #1d2a3d; --hold: #f08a62; --hold-soft: #3a2219; --ready: #b6d35a; --ready-soft: #262e17;
+  --purple: #c287ef; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); margin: 0 }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg) }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0 }
+button, input { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+
+.top { padding-block: 32px 20px; display: grid; gap: 14px }
+.top h1 { font-size: clamp(28px, 4vw, 38px); font-weight: 750; letter-spacing: -0.01em }
+.top p { margin: 0; color: var(--muted); max-width: 70ch }
+.how { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 0; margin: 0; list-style: none; color: var(--muted); font-size: 14px }
+.how li { display: flex; gap: 8px; align-items: baseline }
+.how b { font-family: var(--display); font-weight: 650; color: var(--accent) }
+kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface) }
+.notice { border-left: 3px solid var(--hold); background: var(--hold-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14px }
+.tally { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums }
+.tally strong { color: var(--ink); font-weight: 600 }
+
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding-block: 10px }
+.bar .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+.search { flex: 1 1 220px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface) }
+.chips { display: flex; gap: 6px; overflow-x: auto; max-width: 100%; padding-bottom: 2px; scrollbar-width: thin }
+.chip { white-space: nowrap; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 11px; font-size: 13px; cursor: pointer }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.chip span { opacity: .65; margin-left: 4px; font-variant-numeric: tabular-nums }
+.toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer }
+
+main { padding-block: 20px 60px; display: grid; gap: 22px }
+.topic-head { font: 650 13px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 14px }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden }
+.card.done { opacity: .62 }
+.card-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line) }
+.card-head h2 { font-size: 21px; font-weight: 650 }
+.eyebrow { font: 500 12px var(--mono); color: var(--muted); margin-bottom: 2px }
+.state { display: flex; gap: 10px; align-items: center; flex-wrap: wrap }
+.pill { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap }
+.pill.ready { background: var(--ready-soft); color: var(--ready) }
+.pill.hold { background: var(--hold-soft); color: var(--hold) }
+.body { display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .body { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr) } .media { border-right: 1px solid var(--line) } }
+.media { padding: 18px; background: var(--sunken); display: grid; gap: 12px; align-content: start; min-width: 0 }
+.stage { background: #fbfbfb; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: grid; place-items: center; min-height: 160px }
+.stage img, .stage video { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain }
+.thumbs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px }
+.thumb { flex: 0 0 auto; width: 92px; border: 2px solid transparent; border-radius: 6px; padding: 0; background: #fbfbfb; cursor: pointer; position: relative; overflow: hidden }
+.thumb[aria-pressed="true"] { border-color: var(--accent) }
+.thumb img { display: block; width: 100%; height: 62px; object-fit: cover }
+.thumb i { position: absolute; left: 4px; top: 4px; font: 600 10px var(--body); font-style: normal; background: rgba(42,45,49,.82); color: #fff; border-radius: 4px; padding: 1px 5px }
+.file { display: grid; gap: 6px; font-size: 13px }
+.file .name { font: 500 12px var(--mono); overflow-wrap: anywhere; color: var(--muted) }
+.file .name b { color: var(--ink); font-weight: 500 }
+.actions { display: flex; flex-wrap: wrap; gap: 8px }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap }
+.btn:hover { border-color: var(--accent); color: var(--accent) }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff }
+.btn.primary:hover { filter: brightness(1.08); color: #fff }
+.btn.ok { border-color: var(--ready); color: var(--ready) }
+
+.words { padding: 18px 20px 20px; display: grid; gap: 18px; min-width: 0 }
+.block { display: grid; gap: 8px }
+.block-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline }
+.block-head h3 { font-size: 14px; font-weight: 650; letter-spacing: .02em }
+.block-head .meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-right: auto }
+.text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 15px/1.6 var(--body); background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px }
+.text.small { font-size: 13.5px }
+.note { font-size: 13.5px; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft) }
+.note.hold { background: var(--hold-soft) }
+details { border-top: 1px solid var(--line); padding-top: 10px }
+summary { cursor: pointer; font: 650 14px var(--display) }
+details .inner { margin-top: 10px; display: grid; gap: 8px }
+.opening { display: flex; gap: 10px; align-items: center; justify-content: space-between; font-size: 14px }
+.opening span { min-width: 0 }
+.where { display: grid; gap: 6px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px }
+.where code { font: 12px var(--mono); color: var(--ink); overflow-wrap: anywhere }
+.where div { display: flex; gap: 10px; align-items: center; flex-wrap: wrap }
+.empty { text-align: center; color: var(--muted); padding: 60px 0 }
+.helper { font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center }
+.helper code { font: 12px var(--mono); color: var(--ink); overflow-wrap: anywhere }
+a.btn { text-decoration: none; display: inline-block }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: 14px; z-index: 20 }
+@media (prefers-reduced-motion: no-preference) { .btn, .chip, .card { transition: border-color .15s, opacity .2s, background .15s } }
+</style>
+
+<div class="wrap top">
+  <h1>Alpaca4d Posts</h1>
+  <p id="lede"></p>
+  <ol class="how">
+    <li><b>1</b> Copy the post into LinkedIn.</li>
+    <li><b>2</b> Attach the file: Show in Finder and drag it in, use Copy image, or press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> in the upload window and paste its path.</li>
+    <li><b>3</b> Post, then paste the first comment.</li>
+  </ol>
+  <p class="helper">The Finder buttons need the helper running on this Mac: <code id="helper"></code> <button class="btn" id="copy-helper">Copy command</button></p>
+  <div class="notice" id="notice" hidden></div>
+  <div class="tally" id="tally"></div>
+</div>
+
+<div class="bar">
+  <div class="wrap">
+    <input class="search" id="search" type="search" placeholder="Search the posts" aria-label="Search the posts">
+    <label class="toggle"><input type="checkbox" id="hide-posted"> Hide posted</label>
+    <label class="toggle"><input type="checkbox" id="ready-only"> Ready only</label>
+    <div class="chips" id="chips" role="group" aria-label="Topics"></div>
+  </div>
+</div>
+
+<main class="wrap" id="list"></main>
+<div class="toast" id="toast" hidden></div>
+
+<script type="application/json" id="data">__DATA__</script>
+<script>
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+};
+const store = {
+  get(k) { try { return localStorage.getItem(k) } catch { return null } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch {} },
+};
+const posted = id => store.get("posted:" + id) === "1";
+const topicName = id => (DATA.topics.find(t => t.id === id) || { name: id }).name;
+const words = t => (t.split("#")[0].match(/[A-Za-z0-9][\w'.+%-]*/g) || []).length;
+
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 1800);
+}
+function selectText(node) {
+  const r = document.createRange(); r.selectNodeContents(node);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+async function copyText(text, btn, node, label) {
+  try { await navigator.clipboard.writeText(text); done(btn, label) }
+  catch { if (node) selectText(node); toast("Selected: press ⌘C to copy") }
+}
+function done(btn, label) {
+  const was = btn.textContent; btn.textContent = "Copied"; btn.classList.add("ok"); toast(label + " copied");
+  setTimeout(() => { btn.textContent = was; btn.classList.remove("ok") }, 1400);
+}
+function copyImage(src, btn) {
+  const png = new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
+      c.toBlob(b => (b ? resolve(b) : reject(new Error("no image"))), "image/png");
+    };
+    img.onerror = reject; img.src = src;
+  });
+  try {
+    navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
+      .then(() => done(btn, "Image"), () => toast("Copying images is blocked here: use Copy path"));
+  } catch { toast("Copying images is blocked here: use Copy path") }
+}
+
+// Finder opens through the helper on this computer (finder.py): a link in a tab of its own, which
+// closes itself once Finder is open. The page cannot tell whether the helper is running.
+const finderLink = (action, path, label, cls) => el("a", {
+  class: cls, href: `${DATA.finder}/${action}?path=${encodeURIComponent(path)}`, target: "_blank", rel: "noopener",
+  title: "Needs the Finder helper running: python3 " + DATA.helper, text: label });
+
+function media(p) {
+  if (!p.media.length) return el("div", { class: "media" }, el("p", { class: "empty", text: "No file named to attach." }));
+  const stage = el("div", { class: "stage" });
+  const file = el("div", { class: "file" });
+  const thumbs = el("div", { class: "thumbs" });
+  const show = (m, btn) => {
+    stage.replaceChildren(m.kind === "video"
+      ? el("video", { src: m.src, poster: m.poster, controls: "", muted: "", loop: "", playsinline: "", preload: "none" })
+      : el("img", { src: m.src, alt: p.alt || m.name, loading: "lazy" }));
+    if (m.kind === "video") stage.firstChild.muted = true;
+    const acts = el("div", { class: "actions" },
+      finderLink("reveal", m.path, "Show in Finder", "btn primary"),
+      m.kind === "video" ? null : el("button", { class: "btn", text: "Copy image", onclick: e => copyImage(m.src, e.currentTarget) }),
+      el("button", { class: "btn", text: "Copy path", onclick: e => copyText(m.path, e.currentTarget, null, "Path") }));
+    file.replaceChildren(
+      el("div", { class: "name" }, el("b", { text: m.name }), ` · ${m.role === "post" ? "for the post" : "for a carousel"} · ${m.mb} MB${m.kind === "video" ? " · video: attach the file" : ""}`),
+      acts);
+    for (const t of thumbs.children) t.setAttribute("aria-pressed", t === btn ? "true" : "false");
+  };
+  p.media.forEach((m, i) => {
+    const b = el("button", { class: "thumb", "aria-pressed": "false", "aria-label": m.name, title: m.name },
+      el("img", { src: m.poster || m.src, alt: "", loading: "lazy" }), el("i", { text: m.kind === "video" ? "video" : m.role === "post" ? "post" : "carousel" }));
+    b.addEventListener("click", () => show(m, b));
+    thumbs.append(b);
+    if (i === 0) queueMicrotask(() => show(m, b));
+  });
+  return el("div", { class: "media" }, stage, file, p.media.length > 1 ? thumbs : null);
+}
+
+function textBlock(title, text, label, meta, small) {
+  const pre = el("pre", { class: "text" + (small ? " small" : ""), text });
+  return el("section", { class: "block" },
+    el("div", { class: "block-head" }, el("h3", { text: title }), el("span", { class: "meta", text: meta || "" }),
+      el("button", { class: "btn primary", text: "Copy " + label.toLowerCase(), onclick: e => copyText(text, e.currentTarget, pre, label) })),
+    pre);
+}
+
+function card(p) {
+  const box = el("input", { type: "checkbox", id: "posted-" + p.id.replace(/[^a-z0-9]+/gi, "-") });
+  box.checked = posted(p.id);
+  const c = el("article", { class: "card" + (box.checked ? " done" : "") });
+  box.addEventListener("change", () => { store.set("posted:" + p.id, box.checked ? "1" : null); c.classList.toggle("done", box.checked); render() });
+  const head = el("header", { class: "card-head" },
+    el("div", {}, el("div", { class: "eyebrow", text: p.id }), el("h2", { text: p.title })),
+    el("div", { class: "state" },
+      el("span", { class: "pill " + (p.hold ? "hold" : "ready"), text: p.hold ? "Wait" : "Ready" }),
+      el("label", { class: "toggle", for: box.id }, box, "Posted")));
+  const words_ = el("div", { class: "words" },
+    p.hold ? el("div", { class: "note hold", text: "Wait: " + p.hold }) : null,
+    p.note ? el("div", { class: "note", text: p.note }) : null,
+    p.post ? textBlock("Post", p.post, "Post", `${words(p.post)} words · ${p.post.length} characters`) : null,
+    p.comment ? textBlock("First comment", p.comment, "Comment", "post it right after", true) : null,
+    p.alt ? textBlock("Alt text", p.alt, "Alt text", "for the picture", true) : null,
+    p.openings.length ? el("details", {}, el("summary", { text: "Other openings" }),
+      el("div", { class: "inner" }, ...p.openings.map(o => el("div", { class: "opening" }, el("span", { text: o }),
+        el("button", { class: "btn", text: "Copy", onclick: e => copyText(o, e.currentTarget, null, "Opening") }))))) : null,
+    p.numbers ? el("details", {}, el("summary", { text: "The numbers, if someone asks" }),
+      el("div", { class: "inner" }, el("pre", { class: "text small", text: p.numbers }))) : null,
+    p.extra.length ? el("details", {}, el("summary", { text: "Other files" }),
+      el("div", { class: "inner" }, ...p.extra.map(([l, t]) => el("p", { style: "margin:0;font-size:14px" }, el("b", { text: l + ": " }), t)))) : null,
+    el("div", { class: "where" },
+      el("div", {}, "Folder", el("code", { text: p.folder }), finderLink("open", p.folder, "Open folder", "btn primary"),
+        el("button", { class: "btn", text: "Copy path", onclick: e => copyText(p.folder, e.currentTarget, null, "Folder path") })),
+      el("div", {}, "README", el("code", { text: p.readme })),
+      el("div", {}, `Changed ${p.changed}`)));
+  c.append(head, el("div", { class: "body" }, media(p), words_));
+  return c;
+}
+
+const state = { topic: "all", q: "", hidePosted: false, readyOnly: false };
+try { Object.assign(state, JSON.parse(store.get("view") || "{}")) } catch {}
+const cards = new Map(DATA.posts.map(p => [p.id, card(p)]));
+
+function render() {
+  store.set("view", JSON.stringify(state));
+  const q = state.q.trim().toLowerCase();
+  const shown = DATA.posts.filter(p =>
+    (state.topic === "all" || p.topic === state.topic) && (!state.hidePosted || !posted(p.id)) && (!state.readyOnly || !p.hold) &&
+    (!q || (p.title + " " + p.post + " " + p.id).toLowerCase().includes(q)));
+  const list = $("#list"); list.replaceChildren();
+  let last = null;
+  for (const p of shown) {
+    if (p.topic !== last) { list.append(el("h2", { class: "topic-head", text: topicName(p.topic) })); last = p.topic }
+    list.append(cards.get(p.id));
+  }
+  if (!shown.length) list.append(el("p", { class: "empty", text: "No posts match. Clear the search or pick another topic." }));
+  const n = DATA.posts.length, ready = DATA.posts.filter(p => !p.hold).length, done = DATA.posts.filter(p => posted(p.id)).length;
+  $("#tally").replaceChildren(...[[n, "posts"], [ready, "ready"], [n - ready, "waiting"], [done, "posted, in this browser"]]
+    .map(([v, l]) => el("span", {}, el("strong", { text: v }), " " + l)));
+  $("#chips").replaceChildren(...[{ id: "all", name: "All" }, ...DATA.topics].map(t => {
+    const count = t.id === "all" ? n : DATA.posts.filter(p => p.topic === t.id).length;
+    return el("button", { class: "chip", "aria-pressed": String(state.topic === t.id), onclick: () => { state.topic = t.id; render() } },
+      t.name, el("span", { text: count }));
+  }));
+}
+
+$("#lede").textContent = `Every LinkedIn post made for Alpaca4d, ready to copy, with the pictures and videos to attach and where they are on disk. Updated ${DATA.built}.`;
+if (DATA.notice) { $("#notice").textContent = DATA.notice; $("#notice").hidden = false }
+$("#helper").textContent = "python3 " + DATA.helper;
+$("#copy-helper").addEventListener("click", e => copyText("python3 " + DATA.helper, e.currentTarget, $("#helper"), "Command"));
+$("#search").value = state.q;
+$("#hide-posted").checked = state.hidePosted;
+$("#ready-only").checked = state.readyOnly;
+$("#search").addEventListener("input", e => { state.q = e.target.value; render() });
+$("#hide-posted").addEventListener("change", e => { state.hidePosted = e.target.checked; render() });
+$("#ready-only").addEventListener("change", e => { state.readyOnly = e.target.checked; render() });
+render();
+</script>

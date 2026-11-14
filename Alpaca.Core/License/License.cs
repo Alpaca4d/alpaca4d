@@ -4,22 +4,46 @@ using System.IO;
 using System;
 using System.Linq;
 using System.Net.NetworkInformation;
-using System.Reflection;
 
 
 namespace Alpaca4d.License
 {
     public static class License
     {
-        public static string assemblyLocation = Assembly.GetExecutingAssembly().Location;
-        public static string GhAlpacaFolder = System.IO.Path.GetDirectoryName(assemblyLocation);
-        public static string licenseLocation = System.IO.Path.Combine(GhAlpacaFolder, "data.bin");
+        /// <summary>
+        /// The license file, in <see cref="Application.UserFolder"/>. It used to be data.bin beside
+        /// the plugin, and was left behind by every update; <see cref="AdoptEarlierLicense"/>
+        /// brings it over.
+        /// </summary>
+        public static string licenseLocation = System.IO.Path.Combine(Application.UserFolder, "license.bin");
+
+        /// <summary>What the license file was called when it sat beside the plugin.</summary>
+        private const string PluginFolderLicense = "data.bin";
+
+        /// <summary>The <see cref="licenseLocation"/> an earlier license was last looked for at.</summary>
+        private static string adoptedFor = null;
 
         /// <summary>
-        /// The most elements a model may have and still be analysed without a license. Past it,
-        /// Run Analysis and Natural Vibration Analysis refuse to run.
+        /// The most elements a model may have and still be analysed, and drawn by Model View, without
+        /// a license. Past it, Run Analysis, Natural Vibration and Linear Buckling refuse to run, and
+        /// Model View to draw.
         /// </summary>
         public const int FreeElementLimit = 50;
+
+        /// <summary>
+        /// The most elements a model may have for Topology Optimisation to run on it without a
+        /// license. Past it, Topology Optimisation refuses to start. The design it hands on is analysed
+        /// and drawn free up to the same limit (<see cref="FreeLimitFor"/>).
+        /// </summary>
+        public const int FreeTopologyElementLimit = 500;
+
+        /// <summary>
+        /// The most elements <paramref name="model"/> may have to be analysed, or drawn by Model View,
+        /// without a license: <see cref="FreeElementLimit"/>, or <see cref="FreeTopologyElementLimit"/>
+        /// for the design a topology optimisation handed on, which was free to find and so is free to check.
+        /// </summary>
+        public static int FreeLimitFor(Alpaca4d.Model model)
+            => model != null && model.IsTopologyDesign ? FreeTopologyElementLimit : FreeElementLimit;
 
         /// <summary>
         /// How often a refusal opens the License window. The refusal itself happens on every
@@ -32,36 +56,107 @@ namespace Alpaca4d.License
         {
             get
             {
-                var addresses = GetMacAddress();
+                AdoptEarlierLicense();
+                return IsLicense(licenseLocation);
+            }
+        }
 
+        /// <summary>Whether the file at <paramref name="filePath"/> licenses this computer today.</summary>
+        public static bool IsLicense(string filePath)
+        {
+            try
+            {
+                // if the file does not exist, it raise exception
+                var users = License.DeserializeBinary(filePath);
+
+                // Against the addresses found last time first, and only when that fails, against
+                // the ones there are now, in case an adapter has come since.
+                return Licenses(users, KnownMacAddresses()) || Licenses(users, macAddresses = GetMacAddress());
+            }
+            catch (Exception)
+            {
+                // No licence file, an unreadable one, or one written by something else:
+                // all of them mean the same thing here, so there is nothing to inspect.
+                return false;
+            }
+        }
+
+        private static bool Licenses(List<User> users, List<string> addresses)
+        {
+            foreach (var user in users)
+            {
+                if (user.user_name == "FreeVersion")
+                {
+                    if (DateTime.Now < user.expiring_date)
+                        return true;
+                }
+
+                foreach (var macAdress in addresses)
+                {
+                    if ((macAdress == user.mac_address) && (DateTime.Now < user.expiring_date))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// This computer's network addresses, as <see cref="GetMacAddress"/> found them the last
+        /// time it was asked. Kept because asking takes some 16 ms on a Mac, and the license is
+        /// checked on every solve of every component that needs one - Model View's twenty a second
+        /// while it animates.
+        /// </summary>
+        private static List<string> macAddresses;
+
+        private static List<string> KnownMacAddresses() => macAddresses ?? (macAddresses = GetMacAddress());
+
+        /// <summary>
+        /// Brings over the license an earlier version kept beside itself, when there is none at
+        /// <see cref="licenseLocation"/>: the newest of those copies that is still a license here,
+        /// so that the expired one the package used to ship is passed over. Looked for once a
+        /// session, as the license is read on every solve.
+        /// </summary>
+        public static void AdoptEarlierLicense()
+        {
+            if (adoptedFor == licenseLocation)
+                return;
+            adoptedFor = licenseLocation;
+            Application.AdoptFromPluginFolders(PluginFolderLicense, licenseLocation, IsLicense);
+        }
+
+        /// <summary>
+        /// Makes the license file at <paramref name="filePath"/> this computer's license, in place of
+        /// the one it had. Check it with <see cref="IsLicense"/> first: this replaces whatever is there.
+        /// </summary>
+        public static void Install(string filePath)
+        {
+            if (string.Equals(Path.GetFullPath(filePath), Path.GetFullPath(licenseLocation), StringComparison.OrdinalIgnoreCase))
+                return;
+            Directory.CreateDirectory(Path.GetDirectoryName(licenseLocation));
+            File.Copy(filePath, licenseLocation, true);
+        }
+
+        /// <summary>
+        /// Removes the license from this computer: the file the License window adds, and the copies
+        /// earlier versions kept beside themselves, which would otherwise be brought back the next
+        /// time Alpaca4d starts.
+        /// </summary>
+        public static void Remove()
+        {
+            if (File.Exists(licenseLocation))
+                File.Delete(licenseLocation);
+
+            foreach (var copy in Application.PluginFolderCopies(PluginFolderLicense))
+            {
                 try
                 {
-                    // if data.bin does not exist, it raise exception
-                    var users = License.DeserializeBinary(licenseLocation);
-
-                    // check data.bin
-                    foreach (var user in users)
-                    {
-                        if (user.user_name == "FreeVersion")
-                        {
-                            if (DateTime.Now < user.expiring_date)
-                                return true;
-                        }
-
-                        foreach (var macAdress in addresses)
-                        {
-                            if ((macAdress == user.mac_address) && (DateTime.Now < user.expiring_date))
-                                return true;
-                        }
-                    }
+                    File.Delete(copy);
                 }
-                catch (Exception)
+                catch
                 {
-                    // No licence file, an unreadable one, or one written by something else:
-                    // all of them mean the same thing here, so there is nothing to inspect.
-                    return false;
+                    // A folder that cannot be written to. A license left in it comes back at the
+                    // next start, as it would have stayed in use before.
                 }
-                return false;
             }
         }
 

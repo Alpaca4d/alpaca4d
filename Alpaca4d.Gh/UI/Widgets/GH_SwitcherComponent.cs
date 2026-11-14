@@ -311,15 +311,14 @@ namespace Alpaca4d.UIWidgets
                             {
                                 @string.Equals(text);
                             }
-                            evalUnits.GetUnit(@string)?.Read(val2);
+                            SavedUnit(@string)?.Read(val2);
                         }
                     }
                 }
             }
             if (text != null)
             {
-                GetUnit(text);
-                SwitchUnit(GetUnit(text), recompute: false, recordEvent: false);
+                SwitchUnit(SavedUnit(text), recompute: false, recordEvent: false);
             }
             for (int j = 0; j < EvalUnits.Count; j++)
             {
@@ -330,6 +329,16 @@ namespace Alpaca4d.UIWidgets
             }
             OnComponentLoaded();
             return flag;
+        }
+
+        /// <summary>
+        /// The unit a file saved under <paramref name="name"/>. Units were saved under their display
+        /// name - UniaxialElastic - before they took the name they have now, UniaxialElastic
+        /// (Alpaca4d); a file from then otherwise opened with no unit at all, and no inputs.
+        /// </summary>
+        private EvaluationUnit SavedUnit(string name)
+        {
+            return GetUnit(name) ?? EvalUnits.FirstOrDefault(unit => unit.DisplayName == name);
         }
 
         public override void CreateAttributes()

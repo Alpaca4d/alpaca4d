@@ -1,110 +1,292 @@
-﻿using Grasshopper;
-using Grasshopper.Kernel;
-using Rhino.Geometry;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
 
+using Grasshopper.Kernel;
+using Grasshopper.Kernel.Parameters;
+using Grasshopper.Kernel.Types;
+using Rhino.Geometry;
+
+using Alpaca4d.Element;
+using Alpaca4d.UIWidgets;
 
 namespace Alpaca4d.Gh
 {
-    public class Support : GH_Component
+    /// <summary>
+    /// A support, rigid or through springs. Rigid fixes the directions it is given. Elastic and
+    /// Compression Only hold through springs - elastic ones, or one that holds only while the node
+    /// pushes into it - and never fix the node themselves, so a Rigid support on the same point can
+    /// hold the directions they leave free.
+    /// </summary>
+    public class Support : GH_SwitcherComponent
     {
+        private readonly List<SubComponent> _subcomponents = new List<SubComponent>();
+
+        public override string UnitMenuName => "Support Type";
+        protected override string DefaultEvaluationUnit => RigidSupport.Name;
+
         public Support()
           : base("Support (Alpaca4d)", "Support",
-            "Construct a Support",
+            "A support. Rigid: fixes the node along and about the axes of the Position's plane you choose. " +
+            "Elastic: a spring along or about each axis of the plane. Compression Only: holds the node only while it " +
+            "pushes into the support, along the plane's Z, and lets it lift - after a gap, if there is one.\n" +
+            "Elastic and Compression Only never fix the node themselves, so a Rigid support on the same point can hold " +
+            "what they leave free: a pinned bearing that can lift is a Compression Only support with a Rigid one " +
+            "holding Tx and Ty only.\n" +
+            "Reaction Force gives a spring support a row of its own, with the spring's force.",
             "Alpaca4d", "02_Element")
         {
-            // Draw a Description Underneath the component
-            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
+            ((GH_Component)this).Hidden = false;
+            UpdateMessage();
         }
 
-        /// <summary>
-        /// Registers all the input parameters for this component.
-        /// </summary>
-        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
+        private void UpdateMessage()
         {
-            pManager.AddPlaneParameter("Position", "Position",
+            string name = ActiveUnit?.DisplayName ?? this.NickName;
+            this.Message = $"{name}\n{this.Category}";
+        }
+
+        protected override void SwitchUnit(EvaluationUnit unit, bool recompute = true, bool recordEvent = true)
+        {
+            base.SwitchUnit(unit, recompute, recordEvent);
+            UpdateMessage();
+        }
+
+        protected override void RegisterInputParams(GH_InputParamManager pManager) { }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager pManager)
+        {
+            pManager.Register_GenericParam("Support", "Support", "The support. Feed it to the Supports input of Assemble Model.");
+        }
+
+        protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
+        {
+            _subcomponents.Add(new RigidSupport());
+            _subcomponents.Add(new ElasticSpringSupport());
+            _subcomponents.Add(new CompressionOnlySpringSupport());
+
+            foreach (var sub in _subcomponents)
+                sub.registerEvaluationUnits(mngr);
+        }
+
+        protected override void OnComponentLoaded()
+        {
+            base.OnComponentLoaded();
+            foreach (var sub in _subcomponents)
+                sub.OnComponentLoaded();
+        }
+
+        protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)
+        {
+            if (unit == null) return;
+
+            foreach (var sub in _subcomponents)
+            {
+                if (unit.Name.Equals(sub.name()))
+                {
+                    sub.SolveInstance(DA, out var msg, out var level);
+                    if (!string.IsNullOrEmpty(msg))
+                        ((GH_ActiveObject)this).AddRuntimeMessage(level, msg);
+                    return;
+                }
+            }
+
+            throw new Exception("Invalid sub-component");
+        }
+
+        public override GH_Exposure Exposure => GH_Exposure.quarternary;
+
+        protected override Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Support__Alpaca4d_;
+
+        /// <summary>
+        /// The GUID Spring Support had, before the plain Support became its Rigid type: files saved
+        /// with it open on the same Elastic or Compression Only type.
+        /// </summary>
+        public override Guid ComponentGuid => new Guid("C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05");
+
+        internal const string PositionDescription =
+            "Point or Plane to support [{0}]. The springs act along and about the plane's own axes; a Point uses the global ones.";
+    }
+
+    /// <summary>
+    /// The plain support: it fixes the directions it is given. Its inputs are those of the Support
+    /// component it replaced, in the same order, which <see cref="SupportUpgrader"/> relies on.
+    /// </summary>
+    internal class RigidSupport : SubComponent
+    {
+        public const string Name = "Support Rigid (Alpaca4d)";
+
+        public override string name() => Name;
+        public override string display_name() => "Rigid";
+
+        public override void registerEvaluationUnits(EvaluationUnitManager mngr)
+        {
+            var unit = new EvaluationUnit(name(), display_name(), "Fixes the node along and about the axes of the plane you choose.");
+            unit.Icon = Alpaca4d.Gh.Properties.Resources.Support__Alpaca4d_;
+            mngr.RegisterUnit(unit);
+
+            unit.RegisterInputParam(new Param_Plane(), "Position", "Position",
                 $"Point or Plane to restrain [{Units.Length}]. A Point restrains the global axes. " +
                 "A Plane restrains its own axes instead, so the support can be skewed - " +
                 "an inclined roller, a support on a sloping face.", GH_ParamAccess.item);
-            pManager.AddBooleanParameter("Tx", "Tx", "Translation along the support plane's X axis", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Ty", "Ty", "Translation along the support plane's Y axis", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Tz", "Tz", "Translation along the support plane's Z axis", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Rx", "Rx", "Rotation about the support plane's X axis", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Ry", "Ry", "Rotation about the support plane's Y axis", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddBooleanParameter("Rz", "Rz", "Rotation about the support plane's Z axis", GH_ParamAccess.item, true);
-            pManager[pManager.ParamCount - 1].Optional = true;
+
+            var descriptions = new[]
+            {
+                "Translation along the support plane's X axis",
+                "Translation along the support plane's Y axis",
+                "Translation along the support plane's Z axis",
+                "Rotation about the support plane's X axis",
+                "Rotation about the support plane's Y axis",
+                "Rotation about the support plane's Z axis",
+            };
+            var names = new[] { "Tx", "Ty", "Tz", "Rx", "Ry", "Rz" };
+            for (int i = 0; i < names.Length; i++)
+            {
+                unit.RegisterInputParam(new Param_Boolean(), names[i], names[i], descriptions[i], GH_ParamAccess.item, new GH_Boolean(true));
+                unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+            }
         }
 
-        /// <summary>
-        /// Registers all the output parameters for this component.
-        /// </summary>
-        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
+        public override void SolveInstance(IGH_DataAccess DA, out string msg, out GH_RuntimeMessageLevel level)
         {
-            pManager.Register_GenericParam("Support", "Support", "Support");
-        }
+            msg = "";
+            level = GH_RuntimeMessageLevel.Warning;
 
-        /// <summary>
-        /// This is the method that actually does the work.
-        /// </summary>
-        /// <param name="DA">The DA object can be used to retrieve data from input parameters and 
-        /// to store data in output parameters.</param>
-        [STAThread]
-        protected override void SolveInstance(IGH_DataAccess DA)
-        {
             // A Point arriving on this input is cast to a world-aligned Plane at that
             // point, which is the support every model had before planes were an option.
-            Plane position = Plane.WorldXY;
-            bool tx = true;
-            bool ty = true;
-            bool tz = true;
-            bool rx = true;
-            bool ry = true;
-            bool rz = true;
-
+            var position = Plane.WorldXY;
             if (!DA.GetData(0, ref position)) return;
-            if (!DA.GetData(1, ref tx)) return;
-            if (!DA.GetData(2, ref ty)) return;
-            if (!DA.GetData(3, ref tz)) return;
-            if (!DA.GetData(4, ref rx)) return;
-            if (!DA.GetData(5, ref ry)) return;
-            if (!DA.GetData(6, ref rz)) return;
 
-            var support = new Alpaca4d.Element.Support(position, tx, ty, tz, rx, ry, rz);
+            var fixity = new bool[6];
+            for (int i = 0; i < fixity.Length; i++)
+            {
+                fixity[i] = true;
+                if (!DA.GetData(1 + i, ref fixity[i])) return;
+            }
 
-            // Finally assign the spiral to the output parameter.
-            DA.SetData(0, support);
+            DA.SetData(0, new Alpaca4d.Element.Support(position, fixity[0], fixity[1], fixity[2], fixity[3], fixity[4], fixity[5]));
+        }
+    }
 
+    internal class ElasticSpringSupport : SubComponent
+    {
+        public const string Name = "Spring Support Elastic (Alpaca4d)";
 
+        public override string name() => Name;
+        public override string display_name() => "Elastic";
+
+        private static readonly string[] Axes = { "Kx", "Ky", "Kz", "Krx", "Kry", "Krz" };
+
+        public override void registerEvaluationUnits(EvaluationUnitManager mngr)
+        {
+            var unit = new EvaluationUnit(name(), display_name(), "Elastic springs along and about the axes of the plane.");
+            unit.Icon = Alpaca4d.Gh.Properties.Resources.Spring_Support__Alpaca4d_;
+            mngr.RegisterUnit(unit);
+
+            unit.RegisterInputParam(new Param_Plane(), "Position", "Position",
+                string.Format(Support.PositionDescription, Units.Length), GH_ParamAccess.item);
+
+            for (int i = 0; i < Axes.Length; i++)
+            {
+                var unitText = i < 3 ? $"{Units.Force}/{Units.Length}" : $"{Units.Force}{Units.Length}/{Units.Angle}";
+                var what = i < 3 ? $"along the plane's {"XYZ"[i]} axis" : $"about the plane's {"XYZ"[i - 3]} axis";
+                unit.RegisterInputParam(new Param_Number(), Axes[i], Axes[i],
+                    $"Stiffness {what} [{unitText}]. Left empty, or zero, the node is free that way.", GH_ParamAccess.item);
+                unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+            }
         }
 
+        public override void SolveInstance(IGH_DataAccess DA, out string msg, out GH_RuntimeMessageLevel level)
+        {
+            msg = "";
+            level = GH_RuntimeMessageLevel.Warning;
 
-        /// <summary>
-        /// The Exposure property controls where in the panel a component icon 
-        /// will appear. There are seven possible locations (primary to septenary), 
-        /// each of which can be combined with the GH_Exposure.obscure flag, which 
-        /// ensures the component will only be visible on panel dropdowns.
-        /// </summary>
-        public override GH_Exposure Exposure => GH_Exposure.quarternary;
+            var position = Plane.WorldXY;
+            if (!DA.GetData(0, ref position)) return;
 
-        /// <summary>
-        /// Provides an Icon for every component that will be visible in the User Interface.
-        /// Icons need to be 24x24 pixels.
-        /// You can add image files to your project resources and access them like this:
-        /// return Resources.IconForThisComponent;
-        /// </summary>
-        protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Support__Alpaca4d_;
+            var springs = new List<SupportSpring>();
+            for (int i = 0; i < Axes.Length; i++)
+            {
+                double k = 0.0;
+                if (!DA.GetData(1 + i, ref k) || k == 0.0)
+                    continue;
+                if (!(k > 0.0))
+                {
+                    msg = $"{Axes[i]} is {k}. A spring's stiffness is greater than zero; leave it empty to free that direction.";
+                    level = GH_RuntimeMessageLevel.Error;
+                    return;
+                }
+                springs.Add(new SupportSpring(i + 1, k));
+            }
 
-        /// <summary>
-        /// Each component must have a unique Guid to identify it. 
-        /// It is vital this Guid doesn't change otherwise old ghx files 
-        /// that use the old ID will partially fail during loading.
-        /// </summary>
-        public override Guid ComponentGuid => new Guid("08A676AD-7332-4D86-8206-DABD66A17357");
+            if (springs.Count == 0)
+            {
+                msg = "Give at least one stiffness, Kx to Krz: with none the support holds nothing.";
+                return;
+            }
+
+            DA.SetData(0, Alpaca4d.Element.Support.WithSprings(position, springs));
+        }
+    }
+
+    internal class CompressionOnlySpringSupport : SubComponent
+    {
+        public override string name() => "Spring Support Compression Only (Alpaca4d)";
+        public override string display_name() => "Compression Only";
+
+        public override void registerEvaluationUnits(EvaluationUnitManager mngr)
+        {
+            var unit = new EvaluationUnit(name(), display_name(), "Holds the node along the plane's Z only while it pushes into the support.");
+            unit.Icon = Alpaca4d.Gh.Properties.Resources.Spring_Support__Alpaca4d_;
+            mngr.RegisterUnit(unit);
+
+            unit.RegisterInputParam(new Param_Plane(), "Position", "Position",
+                string.Format(Support.PositionDescription, Units.Length) +
+                " It holds along the plane's Z only, while the node moves against Z: down, for a Point. Turn the plane over " +
+                "for a support that holds only in tension.", GH_ParamAccess.item);
+
+            unit.RegisterInputParam(new Param_Number(), "Stiffness", "Stiffness",
+                $"[{Units.Force}/{Units.Length}]. Left empty it is rigid - as stiff as the supports Alpaca4d skews with.", GH_ParamAccess.item);
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            unit.RegisterInputParam(new Param_Number(), "Gap", "Gap",
+                $"How far the node moves into the support before it takes hold [{Units.Length}]. Until then the structure " +
+                "has to hold the node by itself.", GH_ParamAccess.item, new GH_Number(0.0));
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+        }
+
+        public override void SolveInstance(IGH_DataAccess DA, out string msg, out GH_RuntimeMessageLevel level)
+        {
+            msg = "";
+            level = GH_RuntimeMessageLevel.Warning;
+
+            var position = Plane.WorldXY;
+            if (!DA.GetData(0, ref position)) return;
+
+            double stiffness = 0.0;
+            double? k = DA.GetData(1, ref stiffness) ? stiffness : (double?)null;
+            if (k.HasValue && !(k.Value > 0.0))
+            {
+                msg = $"Stiffness is {k.Value}. Give one greater than zero, or leave it empty for a rigid support.";
+                level = GH_RuntimeMessageLevel.Error;
+                return;
+            }
+
+            double gap = 0.0;
+            DA.GetData(2, ref gap);
+            if (!(gap >= 0.0))
+            {
+                msg = $"Gap is {gap}. It is a distance: zero or more.";
+                level = GH_RuntimeMessageLevel.Error;
+                return;
+            }
+
+            var spring = new SupportSpring(3, k, SpringBehaviour.CompressionOnly, gap);
+            DA.SetData(0, Alpaca4d.Element.Support.WithSprings(position, new[] { spring }));
+
+            msg = "A compression-only support needs a non-linear analysis to let go: Newton, in several steps.";
+            level = GH_RuntimeMessageLevel.Remark;
+        }
     }
 }

@@ -115,6 +115,53 @@ namespace Alpaca4d.Element
                 baseSection.Material);
         }
 
+        /// <summary>
+        /// Recovers the release a hinge section was made from. <see cref="CreateHingeSection"/>
+        /// multiplies each released property by 1e-6, so a hinge property that is still close to the
+        /// interior one means that degree of freedom was held. The beam keeps only its hinge
+        /// sections, so this is how a reader of the model - Tcl, an export - gets the releases back.
+        /// </summary>
+        public static Release ReleaseOf(IUniaxialSection hinge, IUniaxialSection interior)
+        {
+            bool Held(double hingeValue, double interiorValue)
+            {
+                // A property that is zero to begin with carries no information; call it held.
+                if (Math.Abs(interiorValue) <= double.Epsilon)
+                    return true;
+                return Math.Abs(hingeValue / interiorValue) > 1e-3;
+            }
+
+            return new Release(
+                Held(hinge.Area, interior.Area),
+                Held(hinge.AlphaY, interior.AlphaY),
+                Held(hinge.AlphaZ, interior.AlphaZ),
+                Held(hinge.J, interior.J),
+                Held(hinge.Iyy, interior.Iyy),
+                Held(hinge.Izz, interior.Izz));
+        }
+
+        /// <summary>The release at the I end, read back off its hinge section.</summary>
+        public Release ReleaseI => ReleaseOf(this.HingeIntegration.SectionI, this.HingeIntegration.Section);
+
+        /// <summary>The release at the J end, read back off its hinge section.</summary>
+        public Release ReleaseJ => ReleaseOf(this.HingeIntegration.SectionJ, this.HingeIntegration.Section);
+
+        /// <summary>
+        /// The releases and hinge lengths are read back off the hinge sections, which are made again
+        /// from the new section.
+        /// </summary>
+        public IBeam WithSection(IUniaxialSection section)
+        {
+            var hinges = this.HingeIntegration;
+            return new BeamWithHinges(this.Curve, section, this.GeomTransf.Copy(),
+                                      ReleaseOf(hinges.SectionI, hinges.Section), this.LpRatioI,
+                                      ReleaseOf(hinges.SectionJ, hinges.Section), this.LpRatioJ)
+            {
+                ElementId = this.ElementId,
+                Color = this.Color,
+            };
+        }
+
         public void SetTags()
         {
             this.GeomTransf.Id = this.Id;
@@ -129,8 +176,7 @@ namespace Alpaca4d.Element
         {
             var ends = new[] { this.Curve.PointAtStart, this.Curve.PointAtEnd };
 
-            var nodes = Alpaca4d.Utils.RTreeSearch(model.RTreeCloudPointSixNDF, ends, model.Tollerance,
-                                                   $"Beam With Hinges {this.Id}", model.UniquePointsSixNDF);
+            var nodes = Alpaca4d.Utils.NodeSearch(model.NodeIndexSixNDF, ends, $"Beam With Hinges {this.Id}");
 
             this.INode = nodes[0] + 1 + model.UniquePointsThreeNDF.Count;
             this.JNode = nodes[1] + 1 + model.UniquePointsThreeNDF.Count;
