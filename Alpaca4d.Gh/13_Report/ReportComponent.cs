@@ -27,7 +27,8 @@ namespace Alpaca4d.Gh
     /// The pictures are drawn by Model View, without one on the canvas (<see cref="ReportFigures"/>):
     /// each picture's settings are the ones its menus would have. The report is written once the
     /// solution is over, as the pictures need the Rhino view to themselves, and the component then
-    /// solves again to hand out what it wrote. The Open report bar under the component opens it.
+    /// solves again to hand out what it wrote. The Open report bar under the component opens it; the
+    /// Templates bar over it puts ready-made reports on the canvas (<see cref="ReportTemplates"/>).
     /// </summary>
     public class ReportComponent : GH_Component
     {
@@ -39,13 +40,16 @@ namespace Alpaca4d.Gh
             "or a template written in JSON, or the path of a .json file.\n" +
             "Left empty, Content is a report of each model given to AlpacaModel; the Template output hands out the JSON of what was written, " +
             "to copy and change.\n" +
+            "Templates, under the component, puts a ready-made report or chapter on the canvas as components wired into Content - a panel for each text, " +
+            "Report Views with their tables ticked - to change as you like.\n" +
             "Set Run to True to write it: the pictures borrow the active Rhino view for a moment. Then click Open report, under the component, to read it.",
             "Alpaca4d", "13_Report")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
         }
 
-        private const int ModelsInput = 0, PageInput = 1, ContentInput = 2, FileInput = 3, RunInput = 4;
+        private const int ModelsInput = 0, PageInput = 1, FileInput = 3, RunInput = 4;
+        internal const int ContentInput = 2;
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
@@ -122,6 +126,7 @@ namespace Alpaca4d.Gh
             var models = new List<Alpaca4d.Model>();
             DA.GetDataList(ModelsInput, models);
             models = models.Where(m => m != null).ToList();
+            LastModels = models;
 
             Grasshopper.Kernel.Types.IGH_Goo page = null;
             DA.GetData(PageInput, ref page);
@@ -394,8 +399,23 @@ namespace Alpaca4d.Gh
             }
         }
 
-        /// <summary>The bar's caption, also for the pictures of the components in the docs.</summary>
-        internal string ButtonText => "Open report";
+        /// <summary>The models given at the last solution: what the template For the models given is fitted to.</summary>
+        internal List<Alpaca4d.Model> LastModels { get; private set; } = new List<Alpaca4d.Model>();
+
+        /// <summary>The bars' captions, top to bottom, also for the pictures of the components in the docs.</summary>
+        internal string[] ButtonTexts => new[] { TemplatesText, OpenText };
+
+        internal const string TemplatesText = "Templates", OpenText = "Open report";
+
+        /// <summary>The templates, from the right-click menu too.</summary>
+        protected override void AppendAdditionalComponentMenuItems(ToolStripDropDown menu)
+        {
+            base.AppendAdditionalComponentMenuItems(menu);
+            Menu_AppendSeparator(menu);
+            var templates = Menu_AppendItem(menu, "Add a template");
+            templates.ToolTipText = "Ready-made texts and pictures put on the canvas as components, wired into Content, to change as you like.";
+            ReportTemplates.Fill(templates.DropDownItems, this);
+        }
 
         /// <summary>The PDF opened in the program the computer opens PDFs with.</summary>
         internal void OpenReport()
@@ -438,25 +458,24 @@ namespace Alpaca4d.Gh
     /// </summary>
     internal sealed class ReportComponentAttributes : GH_ComponentAttributes
     {
-        private RectangleF _button;
+        private RectangleF _templates, _open;
 
         public ReportComponentAttributes(ReportComponent owner) : base(owner) { }
 
         private ReportComponent Report => (ReportComponent)Owner;
 
         /// <summary>Its text, and 4 px above and below: deeper than a menu's header, to read as a button.</summary>
-        private int BarHeight => TextRenderer.MeasureText(Caption, Alpaca4d.UIWidgets.WidgetServer.Instance.MenuHeaderFont).Height + 8;
-
-        private string Caption => Report.ButtonText;
+        private static int BarHeight => TextRenderer.MeasureText(ReportComponent.OpenText, Alpaca4d.UIWidgets.WidgetServer.Instance.MenuHeaderFont).Height + 8;
 
         protected override void Layout()
         {
             base.Layout();
             var bounds = GH_Convert.ToRectangle(Bounds);
             int bar = BarHeight;
-            bounds.Height += bar + 5;
+            bounds.Height += 2 * bar + 8;
             Bounds = bounds;
-            _button = new RectangleF(bounds.X + 3, bounds.Bottom - bar - 3, bounds.Width - 6, bar);
+            _templates = new RectangleF(bounds.X + 3, bounds.Bottom - 2 * bar - 6, bounds.Width - 6, bar);
+            _open = new RectangleF(bounds.X + 3, bounds.Bottom - bar - 3, bounds.Width - 6, bar);
         }
 
         protected override void Render(GH_Canvas canvas, Graphics graphics, GH_CanvasChannel channel)
@@ -464,34 +483,60 @@ namespace Alpaca4d.Gh
             base.Render(canvas, graphics, channel);
             if (channel != GH_CanvasChannel.Objects) return;
 
-            bool ready = Report.ReportToOpen != null;
-            var rectangle = GH_Convert.ToRectangle(_button);
-            using (var capsule = GH_Capsule.CreateTextCapsule(rectangle, rectangle, GH_Palette.Black, Caption,
+            Bar(graphics, _templates, ReportComponent.TemplatesText, Owner.Locked);
+            Bar(graphics, _open, ReportComponent.OpenText, Report.ReportToOpen == null || Owner.Locked);
+        }
+
+        private static void Bar(Graphics graphics, RectangleF bar, string text, bool faded)
+        {
+            var rectangle = GH_Convert.ToRectangle(bar);
+            using (var capsule = GH_Capsule.CreateTextCapsule(rectangle, rectangle, GH_Palette.Black, text,
                        Alpaca4d.UIWidgets.WidgetServer.Instance.MenuHeaderFont, 0, 2, 5))
-                capsule.Render(graphics, false, !ready || Owner.Locked, false);
+                capsule.Render(graphics, false, faded, false);
         }
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            if (e.Button == MouseButtons.Left && _button.Contains(e.CanvasLocation) && !Owner.Locked)
+            if (e.Button == MouseButtons.Left && !Owner.Locked)
             {
-                Report.OpenReport();
-                return GH_ObjectResponse.Handled;
+                if (_open.Contains(e.CanvasLocation))
+                {
+                    Report.OpenReport();
+                    return GH_ObjectResponse.Handled;
+                }
+                if (_templates.Contains(e.CanvasLocation))
+                {
+                    // The list of templates, dropped down from under the bar.
+                    var menu = new ToolStripDropDownMenu();
+                    ReportTemplates.Fill(menu.Items, Report);
+                    var under = sender.Viewport.ProjectPoint(new PointF(_templates.Left, _templates.Bottom));
+                    menu.Show(sender, new Point((int)under.X, (int)under.Y));
+                    return GH_ObjectResponse.Handled;
+                }
             }
             return base.RespondToMouseDown(sender, e);
         }
 
-        public override bool IsTooltipRegion(PointF canvasPoint) => _button.Contains(canvasPoint) || base.IsTooltipRegion(canvasPoint);
+        public override bool IsTooltipRegion(PointF canvasPoint) =>
+            _templates.Contains(canvasPoint) || _open.Contains(canvasPoint) || base.IsTooltipRegion(canvasPoint);
 
         public override void SetupTooltip(PointF canvasPoint, GH_TooltipDisplayEventArgs e)
         {
-            if (!_button.Contains(canvasPoint))
+            if (_templates.Contains(canvasPoint))
+            {
+                e.Title = ReportComponent.TemplatesText;
+                e.Text = "Ready-made reports and chapters, put on the canvas as components and wired into Content: " +
+                         "a panel for each text, to type over, and Report Views with their tables ticked. Change them as you like.";
+                e.Description = "Content already wired keeps its place: the template goes after it, into the Merge that feeds Content when one does.";
+                return;
+            }
+            if (!_open.Contains(canvasPoint))
             {
                 base.SetupTooltip(canvasPoint, e);
                 return;
             }
             var path = Report.ReportToOpen;
-            e.Title = Caption;
+            e.Title = ReportComponent.OpenText;
             e.Text = path != null ? "Opens the report in the program that opens PDFs." : "There is no report yet: set Run to True to write it.";
             e.Description = path ?? "";
         }

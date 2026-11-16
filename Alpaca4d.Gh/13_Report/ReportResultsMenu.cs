@@ -137,6 +137,13 @@ namespace Alpaca4d.Gh
             UpdateVisibility();
         }
 
+        /// <summary>Whether the pictures draw the model deformed, as its box does; set by a template.</summary>
+        internal bool Deformed
+        {
+            get => _ckDeformed[0];
+            set => _ckDeformed[0] = value;
+        }
+
         /// <summary>A result's box and its frame: the component, the units, what it alone has, its table.</summary>
         private Result Make(ResultFamily family, int place, string id)
         {

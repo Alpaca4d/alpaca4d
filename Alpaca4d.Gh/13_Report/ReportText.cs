@@ -63,6 +63,13 @@ namespace Alpaca4d.Gh
             _ddStyle.ValueChanged += (s, e) => ExpireSolution(true);
         }
 
+        /// <summary>The style picked by its name in the menu, as a template sets it.</summary>
+        internal void SetStyle(string style)
+        {
+            int index = Array.IndexOf(Styles, style);
+            if (_ddStyle != null && index >= 0) _ddStyle.Value = index;
+        }
+
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var texts = new List<string>();

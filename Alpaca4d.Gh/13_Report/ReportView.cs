@@ -47,6 +47,9 @@ namespace Alpaca4d.Gh
 
         public override string UnitMenuName => "Topic";
 
+        /// <summary>One of its topics, to set its menus from code, as a template does.</summary>
+        internal T Topic<T>() where T : ReportTopic => _topics.OfType<T>().First();
+
         protected override string DefaultEvaluationUnit => StaticTopic.Name;
 
         protected override void RegisterInputParams(GH_InputParamManager pManager) { }
@@ -363,6 +366,14 @@ namespace Alpaca4d.Gh
 
         public override void OnComponentLoaded() => UpdateTables();
 
+        /// <summary>A table ticked by its name in the catalogue, as a click on its box does: a template's.</summary>
+        internal void TickTable(string name)
+        {
+            foreach (var (table, tick, _, _) in _tables)
+                if (table == name) tick[0] = true;
+            UpdateTables();
+        }
+
         /// <summary>What a topic adds to each of its tables, so that it follows the picture: footfall's, sorted by what is drawn.</summary>
         protected virtual void Amend(JObject table) { }
 
@@ -503,6 +514,8 @@ namespace Alpaca4d.Gh
         public override string display_name() => "Static analysis";
 
         private ReportResultsMenu _results;
+
+        internal ReportResultsMenu Results => _results;
 
         /// <summary>Each picture's own: the result and the component it draws, in its unit.</summary>
         protected override string DefaultCaption => "{result}: {component} [{unit}]";
