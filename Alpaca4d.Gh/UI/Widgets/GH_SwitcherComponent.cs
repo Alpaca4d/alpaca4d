@@ -288,7 +288,11 @@ namespace Alpaca4d.UIWidgets
         public override bool Read(GH_IReader reader)
         {
             bool flag = true;
-            SetReadState();
+            // A file saved by a component this one took the GUID of before it was a switcher - Concrete01,
+            // Steel01, ReinforcingSteel - has no unit in it: the default one stays, and its inputs are read
+            // into it by their place, values and wires with them. Without it, it opened with no inputs at all.
+            if (reader.ChunkExists("ActiveUnit") || reader.ChunkExists("EvalUnits"))
+                SetReadState();
             flag &= base.Read(reader);
             string text = null;
             if (reader.ChunkExists("ActiveUnit"))
