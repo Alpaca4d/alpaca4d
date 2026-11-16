@@ -9,6 +9,22 @@ it. The pictures, which need Rhino's view, were checked by writing the report of
 `Tools/Examples/Report/ReportFrame.gh` in a live Rhino 8, from the report components: Report Page, Title
 Block, Text, Table, Result Table, View and Page Break, through a Merge.
 
+The templates, which place real components on a canvas, are checked in a live Rhino 8 with its
+script server started:
+
+    ./templates.sh
+
+It builds a two-storey frame analysed three ways from the real components, puts a Report after it,
+and goes through the Templates menu: **For the models given** offers the chapters of a frame with a
+static, a vibration and a buckling analysis; it places a column a chapter, left of the Report, none
+overlapping, each text a panel wired into its Report Text, all through a Merge into Content; each
+Report View laid out as one placed by hand, its menus on it and no input left at the canvas' origin
+(a Static analysis view, the topic it starts on, was stretched out to there); a chapter more goes
+into that Merge's last input; undo takes each away and redo brings it back; each static picture -
+displacement, reactions, beam, shell and solid forces - comes with its table; the report written from
+it has its 15 pictures and an empty Log; and after it, with Run off, the Template output follows a
+chapter more, as Content says now, and the whole reports are named apart from the chapters.
+
 ## What is checked here
 
 * **Wrapping.** Every line fits its width, no word is lost, a line break is kept, and a word too
