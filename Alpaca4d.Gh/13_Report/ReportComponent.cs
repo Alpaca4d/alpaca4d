@@ -159,7 +159,12 @@ namespace Alpaca4d.Gh
 
             if (!run)
             {
-                if (_written != null) Hand(DA, _written);
+                // The file and the Log of the last run, as it wrote them; the template as Content says now.
+                if (_written != null)
+                {
+                    Hand(DA, _written);
+                    DA.SetData(TemplateOutput, template);
+                }
                 else AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                     ReportToOpen != null ? "Set Run to True to write the report again, or click Open report to read the one written before."
                                          : "Set Run to True to write the report, then click Open report to read it.");
