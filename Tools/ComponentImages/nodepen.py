@@ -312,10 +312,11 @@ def node_svg(component, icon_dir, names=False, open_all=False):
     label_cx = PAD + in_col + PAD + label_w / 2
     label_min = len(nick) * 15 if names else ICON + 8
     ports_h = PAD * 2 + max(MIN_H, len(inputs) * PORT_H, len(outputs) * PORT_H, label_min)
-    button = component.get("button") or ""
+    # The buttons the component draws under itself, a line of "button" each, top to bottom.
+    buttons = [b for b in (component.get("button") or "").split("\n") if b]
     menus_h = sum(menu_height(m, o) + MENU_GAP for m, o in zip(menus, opened)) + (PAD + 2 if menus else 0)
-    if button:
-        menus_h += MENU_GAP + MENU_HEADER + PAD + 2
+    if buttons:
+        menus_h += len(buttons) * (MENU_GAP + MENU_HEADER) + PAD + 2
     height = ports_h + menus_h
     if menus:
         width = max(width, max(menu_width(m) for m in menus) + 2 * PAD)
@@ -378,13 +379,14 @@ def node_svg(component, icon_dir, names=False, open_all=False):
         out.append(f'<text font-family="Overpass, sans-serif" font-weight="800" font-size="{LABEL_FONT}" fill="{DARK}">'
                    f'<textPath href="#{path_id}" startOffset="50%" text-anchor="middle">{html.escape(nick.upper())}</textPath></text>')
 
-    # A button the component draws under itself, as a dark bar.
-    if button:
+    # The buttons the component draws under itself, as dark bars.
+    if buttons:
         out.append(f'<line x1="{ox}" y1="{oy + ports_h}" x2="{ox + width}" y2="{oy + ports_h}" stroke="{DARK}" stroke-width="2"/>')
-        by = oy + ports_h + MENU_GAP
-        out.append(f'<rect x="{ox + PAD + 2}" y="{by}" width="{width - 2 * PAD - 4}" height="{MENU_HEADER}" rx="6" ry="6" fill="{DARK}" stroke="{DARK}" stroke-width="2"/>')
-        out.append(f'<text x="{ox + width / 2}" y="{by + MENU_HEADER / 2 + MENU_FONT * 0.36}" font-family="Overpass, sans-serif" font-weight="800" '
-                   f'font-size="{MENU_FONT}" letter-spacing="0.6" fill="{LIGHT}" text-anchor="middle">{html.escape(button.upper())}</text>')
+        for k, button in enumerate(buttons):
+            by = oy + ports_h + MENU_GAP + k * (MENU_GAP + MENU_HEADER)
+            out.append(f'<rect x="{ox + PAD + 2}" y="{by}" width="{width - 2 * PAD - 4}" height="{MENU_HEADER}" rx="6" ry="6" fill="{DARK}" stroke="{DARK}" stroke-width="2"/>')
+            out.append(f'<text x="{ox + width / 2}" y="{by + MENU_HEADER / 2 + MENU_FONT * 0.36}" font-family="Overpass, sans-serif" font-weight="800" '
+                       f'font-size="{MENU_FONT}" letter-spacing="0.6" fill="{LIGHT}" text-anchor="middle">{html.escape(button.upper())}</text>')
 
     # Menus, under a line across the body.
     if menus:

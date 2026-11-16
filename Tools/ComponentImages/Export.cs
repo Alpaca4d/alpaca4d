@@ -190,10 +190,15 @@ class Export
         }
     }
 
-    /// <summary>The caption of a button a component draws under itself, such as Explorer Inputs' Fly.</summary>
+    /// <summary>
+    /// The caption of a button a component draws under itself, such as Explorer Inputs' Fly - or of
+    /// each, a line apiece top to bottom, for one with more, as the Report's Templates and Open report.
+    /// </summary>
     static string ButtonOf(GH_Component c)
     {
-        return c.GetType().GetProperty("ButtonText", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)?.GetValue(c) as string ?? "";
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        if (c.GetType().GetProperty("ButtonTexts", flags)?.GetValue(c) is string[] texts) return string.Join("\n", texts);
+        return c.GetType().GetProperty("ButtonText", flags)?.GetValue(c) as string ?? "";
     }
 
     // An object in the toolbar that is neither a component nor a parameter, such as Non-Linear
