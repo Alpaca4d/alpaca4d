@@ -452,7 +452,22 @@ static class ReportCheck
               reactions != null && reactions.Caption == "Support reactions" && reactions.Header.SequenceEqual(new[] { "Support", "Fx [kN]", "Fy [kN]", "Fz [kN]" })
               && reactions.Rows.Count == 3 && reactions.Rows[2][0] == "Sum" && reactions.Rows[2][3] == "40" && reactions.Bold.Contains(2),
               reactions == null ? "" : string.Join(" / ", reactions.Rows.Select(r => string.Join("|", r))));
-        Check("result tables: nothing logged", log.Count == 0, string.Join(" | ", log));
+        Check("result tables: beam forces left out of a model with no beams, and said so",
+              log.Count == 1 && log[0].Contains("beam forces left out") && !recorder.Asked[0].Figure["results"].Any(r => (string)r["result"] == "Beam forces"),
+              string.Join(" | ", log));
+
+        // ── A picture of results the model cannot have ─────────────────────────────────────────
+        log.Clear();
+        recorder = new Recorder();
+        report = ReportBuilder.Build(@"{ ""content"": [ { ""heading"": ""Shells"" },
+            { ""figure"": { ""model"": ""static"", ""results"": [ { ""result"": ""Shell forces"", ""component"": ""Mxx"", ""table"": true } ] } },
+            { ""figures"": [ { ""model"": ""static"", ""result"": ""Brick stresses"" }, { ""model"": ""static"", ""result"": ""Displacement"" } ] } ] }",
+            new[] { staticModel }, recorder, null, log);
+        var lacking = report.Blocks.Where(b => !(b is CoverBlock)).ToList();
+        Check("left out: a picture of shell forces of a frame - no picture, no table, no placeholder",
+              lacking.Count == 2 && lacking[0] is HeadingBlock && lacking[1] is FigureRowBlock row && row.Figures.Count == 1 && recorder.Asked.Count == 1,
+              string.Join(", ", lacking.Select(b => b.GetType().Name)));
+        Check("left out: each said so in the Log", log.Count == 2 && log[0].Contains("shells") && log[1].Contains("solid elements"), string.Join(" | ", log));
 
         // In a repeat, one set of tables - of the last pass - after all the pictures.
         recorder = new Recorder();
@@ -473,7 +488,9 @@ static class ReportCheck
         // ── The default template ───────────────────────────────────────────────────────────────
         var standard = JObject.Parse(ReportBuilder.DefaultTemplate(new[] { vibration, buckling }));
         var headings = standard["content"].Select(b => (string)b["heading"]).Where(h => h != null).ToList();
-        Check("default: the model, vibration and buckling", headings.SequenceEqual(new[] { "The model", "Natural vibration", "Linear buckling" }), string.Join(", ", headings));
+        Check("default: the model, vibration and buckling, and what it was made with",
+              headings.SequenceEqual(new[] { "The model", "Natural vibration", "Linear buckling", "About this calculation" }), string.Join(", ", headings));
+        Check("default: contents first", (string)standard["content"][0]["contents"] == "Contents");
         recorder = new Recorder();
         log.Clear();
         report = ReportBuilder.Build(standard.ToString(), new[] { vibration, buckling }, recorder, null, log);
@@ -483,7 +500,222 @@ static class ReportCheck
         Check("default: three vibration and two buckling modes drawn",
             recorder.Asked.Count(a => Mode(a.Figure) && a.Model == vibration) == 3 && recorder.Asked.Count(a => Mode(a.Figure) && a.Model == buckling) == 2);
 
+        Contents();
+        Combinations();
+        LoadTables();
+        Word();
+
         Console.WriteLine($"\n{passed} passed, {failed} failed");
         return failed == 0 ? 0 : 1;
+    }
+
+    // ── The table of contents ──────────────────────────────────────────────────────────────
+
+    static void Contents()
+    {
+        var doc = new ReportDocument { Cover = false };
+        doc.Blocks.Add(new ContentsBlock { Title = "Contents", Depth = 2 });
+        doc.Blocks.Add(new HeadingBlock { Level = 1, Text = "The model", Number = "1" });
+        doc.Blocks.Add(new ParagraphBlock { Text = "Text." });
+        doc.Blocks.Add(new PageBreakBlock());
+        doc.Blocks.Add(new HeadingBlock { Level = 1, Text = "Static analysis", Number = "2" });
+        doc.Blocks.Add(new HeadingBlock { Level = 2, Text = "Member forces", Number = "2.1" });
+        doc.Blocks.Add(new HeadingBlock { Level = 3, Text = "Too deep to list", Number = "2.1.1" });
+        doc.Blocks.Add(new PageBreakBlock());
+        doc.Blocks.Add(new HeadingBlock { Level = 1, Text = "Conclusions", Number = "3" });
+        var pages = ReportLayout.Lay(doc);
+        var first = pages.Pages[0].Items.OfType<TextItem>().ToList();
+        double right = doc.PageWidth - doc.MarginRight;
+        var numbers = first.Where(t => t.Align == TextAlign.Right && Math.Abs(t.X - right) < 0.01 && !t.Text.StartsWith("Page")).Select(t => t.Text).ToList();
+        Check("contents: the headings down to its depth, each with its page", numbers.SequenceEqual(new[] { "1", "2", "2", "3" }), string.Join(",", numbers));
+        Check("contents: its title, then the numbers and texts",
+              first.Any(t => t.Text == "Contents" && t.Bold) && first.Any(t => t.Text == "2.1") && first.Any(t => t.Text == "Member forces") && !first.Any(t => t.Text == "Too deep to list"));
+        Check("contents: the headings on their pages", pages.Pages.Count == 3);
+
+        var log = new List<string>();
+        var built = ReportBuilder.Build(@"{ ""content"": [ { ""contents"": true, ""depth"": 1 }, { ""heading"": ""A"" } ] }", new[] { new Model() }, null, null, log);
+        var block = built.Blocks.OfType<ContentsBlock>().SingleOrDefault();
+        Check("contents: from a template, true for Contents", block != null && block.Title == "Contents" && block.Depth == 1);
+    }
+
+    // ── Load combinations ──────────────────────────────────────────────────────────────────
+
+    static Alpaca4d.Loads.LoadPattern Pattern(string name, double factor, params Alpaca4d.Generic.ILoad[] loads) =>
+        new Alpaca4d.Loads.LoadPattern(Alpaca4d.Loads.PatternType.Plain, Alpaca4d.TimeSeries.Constant.Default(), loads.ToList(), factor) { Name = name };
+
+    static void Combinations()
+    {
+        string problem;
+        var c = Alpaca4d.Loads.LoadCombination.Parse("ULS 1", "1.35 G + 1.5*Q + -0.9 Wind -X + g", Alpaca4d.Loads.CombinationKind.ULS, out problem);
+        Check("combination: read from its formula",
+              c != null && c.Terms.Count == 3 && c.Terms[0].Equals(("G", 2.35)) && c.Terms[1].Equals(("Q", 1.5)) && c.Terms[2].Equals(("Wind -X", -0.9)),
+              c == null ? problem : string.Join("; ", c.Terms));
+        Check("combination: written back", c != null && c.Formula == "2.35 G + 1.5 Q + -0.9 Wind -X", c?.Formula);
+        Check("combination: a factor with no pattern is refused",
+              Alpaca4d.Loads.LoadCombination.Parse("", "1.35 G + 1.5", Alpaca4d.Loads.CombinationKind.ULS, out problem) == null && problem.Contains("\"1.5\""), problem);
+        Check("combination: no name, the formula", Alpaca4d.Loads.LoadCombination.Parse(" ", "G + 1.5 Q", Alpaca4d.Loads.CombinationKind.SLSCharacteristic, out _).Name == "G + 1.5 Q");
+
+        var model = new Model { Tcl = new List<string> { "model basic -ndm 3 -ndf 6", "node 1 0 0 0" }, LoadPatternTclStart = 2 };
+        model.LoadPatterns = new List<Alpaca4d.Loads.LoadPattern> { Pattern("G", 1.0), Pattern("Q", 1.0), Pattern("W", 1.0) };
+        model.Tcl.Add("pattern G"); model.Tcl.Add("pattern Q"); model.Tcl.Add("pattern W");
+        var uls = Alpaca4d.Loads.LoadCombination.Parse("ULS 1", "1.35 g + 1.5 Q", Alpaca4d.Loads.CombinationKind.ULS, out _);
+        var combined = uls.Apply(model, out problem);
+        Check("combination: the model with its patterns alone, scaled",
+              combined != null && combined.LoadPatterns.Count == 2 && combined.LoadPatterns[0].Name == "G" && combined.LoadPatterns[0].Factor == 1.35 && combined.LoadPatterns[1].Factor == 1.5,
+              problem);
+        Check("combination: its deck the model's up to the patterns, then the two",
+              combined != null && combined.Tcl.Count == 4 && combined.Tcl[1] == "node 1 0 0 0" && combined.Tcl[2].Contains("-fact 1.35") && combined.Tcl[3].Contains("-fact 1.5"),
+              combined == null ? "" : string.Join(" | ", combined.Tcl.Skip(2)));
+        Check("combination: knows what it is, and the model it came from",
+              combined?.Combination?.Name == "ULS 1" && combined.Combination.Source == model && combined.Combination.IsUltimate);
+        Check("combination: the model given unchanged", model.LoadPatterns.Count == 3 && model.Tcl.Count == 5 && model.Combination == null);
+        var wrong = Alpaca4d.Loads.LoadCombination.Parse("", "1.5 Snow", Alpaca4d.Loads.CombinationKind.ULS, out _).Apply(model, out problem);
+        Check("combination: a name no pattern has, and the names there are", wrong == null && problem.Contains("Snow") && problem.Contains("G, Q, W"), problem);
+        Check("combination: an analysed model is refused", uls.Apply(new Model { IsAnalysed = true, LoadPatternTclStart = 0 }, out problem) == null && problem.Contains("analysed"), problem);
+
+        // The tables of them.
+        var sls = Alpaca4d.Loads.LoadCombination.Parse("SLS 1", "G + Q", Alpaca4d.Loads.CombinationKind.SLSCharacteristic, out _).Apply(model, out _);
+        var set = new ModelSet(new[] { combined, sls, combined });
+        var table = ReportTables.Make("loads.combinations", set, null, null, out problem);
+        Check("combination table: each once, its type and formula",
+              table != null && table.Rows.Count == 2 && table.Rows[0].SequenceEqual(new[] { "ULS 1", "ULS", "1.35 G + 1.5 Q" }) && table.Rows[1][1] == "SLS characteristic",
+              table == null ? problem : string.Join(" / ", table.Rows.Select(r => string.Join("|", r))));
+        Check("combination table: none given, why", ReportTables.Make("loads.combinations", new ModelSet(new[] { model }), null, null, out problem) == null && problem.Contains("Load Combination"), problem);
+
+        // The type, as Load Combination's Type input takes it.
+        Alpaca4d.Loads.CombinationKind kind;
+        Check("type: empty is ULS", Alpaca4d.Loads.LoadCombination.TryKind("  ", out kind, out _) && kind == Alpaca4d.Loads.CombinationKind.ULS);
+        Check("type: whatever its case, spaces and hyphens",
+              Alpaca4d.Loads.LoadCombination.TryKind("sls-quasi-permanent", out kind, out _) && kind == Alpaca4d.Loads.CombinationKind.SLSQuasiPermanent
+              && Alpaca4d.Loads.LoadCombination.TryKind("SLS characteristic", out kind, out _) && kind == Alpaca4d.Loads.CombinationKind.SLSCharacteristic
+              && Alpaca4d.Loads.LoadCombination.TryKind("seismic", out kind, out _) && kind == Alpaca4d.Loads.CombinationKind.Seismic);
+        Check("type: SLS alone is three, and says so", !Alpaca4d.Loads.LoadCombination.TryKind("SLS", out _, out problem) && problem.Contains("quasi-permanent"), problem);
+        Check("type: anything else lists the types", !Alpaca4d.Loads.LoadCombination.TryKind("Wind", out _, out problem) && problem.Contains("SLS frequent"), problem);
+
+        // Added to the model, in one go or a chain.
+        var gq = Alpaca4d.Loads.LoadCombination.Parse("SLS 1", "g + q", Alpaca4d.Loads.CombinationKind.SLSCharacteristic, out _);
+        var with = Alpaca4d.Loads.LoadCombination.AddTo(model, new[] { uls, gq }, out problem);
+        Check("add: the model with both, named as its patterns are",
+              with != null && with.Combinations.Count == 2 && with.Combinations[1].Formula == "G + Q" && with.Combinations[0].Name == "ULS 1" && model.Combinations.Count == 0,
+              problem);
+        var chained = Alpaca4d.Loads.LoadCombination.AddTo(with, new[] { Alpaca4d.Loads.LoadCombination.Parse("", "G + 0.3 Q", Alpaca4d.Loads.CombinationKind.SLSQuasiPermanent, out _) }, out problem);
+        Check("add: a chain adds to what the model has", chained != null && chained.Combinations.Count == 3 && chained.Combinations[2].Name == "G + 0.3 Q" && with.Combinations.Count == 2, problem);
+        Check("add: a name taken is refused", Alpaca4d.Loads.LoadCombination.AddTo(with, new[] { uls }, out problem) == null && problem.Contains("ULS 1"), problem);
+        Check("add: a pattern it has not, led by the combination's name",
+              Alpaca4d.Loads.LoadCombination.AddTo(model, new[] { Alpaca4d.Loads.LoadCombination.Parse("ULS 9", "1.5 Snow", Alpaca4d.Loads.CombinationKind.ULS, out _) }, out problem) == null
+              && problem.StartsWith("ULS 9:") && problem.Contains("G, Q, W"), problem);
+
+        // Each combination's model, as Run Analysis solves it: its patterns alone, scaled, under fresh tags.
+        var each = chained.Combinations.Select(x => x.Apply(chained, out problem)).ToList();
+        Check("each: its patterns, scaled, and the combination it is",
+              each.All(m => m != null) && each[2].Combination.Name == "G + 0.3 Q" && each[2].Combination.Source == chained && each[0].LoadPatterns.Count == 2
+              && each[2].Tcl.Skip(each[2].LoadPatternTclStart).Any(l => l.Contains("-fact 0.3")) && each[2].Combinations.Count == 3,
+              problem);
+
+        // One model holding them, each picked by its name or place.
+        each[0].IsAnalysed = true; each[2].IsAnalysed = true;
+        each[1].CombinationFailure = "it did not converge";
+        var handed = each[0].ShallowCopy();
+        handed.CombinationResults = each;
+        Check("pick: empty is the first that solved", handed.OfCombination(null, out _) == each[0]);
+        Check("pick: by name, whatever its case, and by place", handed.OfCombination("g + 0.3 q", out _) == each[2] && handed.OfCombination("2", out _) == each[2]);
+        Check("pick: one with no results says why", handed.OfCombination("SLS 1", out problem) == null && problem.Contains("did not converge"), problem);
+        Check("pick: a name it has not lists the names", handed.OfCombination("ULS 5", out problem) == null && problem.Contains("ULS 1, SLS 1, G + 0.3 Q"), problem);
+        Check("pick: a model without combinations is itself, and refuses a name",
+              model.OfCombination("", out _) == model && model.OfCombination("ULS 1", out problem) == null, problem);
+        var held = new ModelSet(new[] { handed });
+        Check("report: a model holding combinations counts as each", held.All.Count == 3 && ModelSet.KindOf(held.All[1]) == "failed" && held.Find("static", out _) == each[0]);
+        var listed = ReportTables.Make("loads.combinations", held, null, null, out problem);
+        Check("report: the table of combinations lists all three", listed != null && listed.Rows.Count == 3, problem);
+        var analysed = ReportTables.Make("report.analyses", held, null, null, out problem);
+        Check("report: the one with no results says so", analysed != null && analysed.Rows[1][1].Contains("did not converge"),
+              analysed == null ? problem : string.Join(" / ", analysed.Rows.Select(r => string.Join("|", r))));
+    }
+
+    static void LoadTables()
+    {
+        string problem;
+        var down = new Alpaca4d.Loads.PointLoad(1, new Rhino.Geometry.Vector3d(0, 0, -10), new Rhino.Geometry.Vector3d(), Alpaca4d.TimeSeries.Constant.Default());
+        var side = new Alpaca4d.Loads.PointLoad(2, new Rhino.Geometry.Vector3d(4, 0, 0), new Rhino.Geometry.Vector3d(), Alpaca4d.TimeSeries.Constant.Default());
+        var model = new Model { LoadPatterns = new List<Alpaca4d.Loads.LoadPattern> { Pattern("G", 1.5, down, down), Pattern(null, 1.0, side) } };
+        var table = ReportTables.Make("loads.patterns", new ModelSet(new[] { model }), null, null, out problem);
+        Check("load patterns: each with its loads and the force they add up to, its factor on",
+              table != null && table.Rows.Count == 3 && table.Rows[0].SequenceEqual(new[] { "G", "1.50", "2 point", "0.00", "0.00", "-30.00" })
+              && table.Rows[1][0] == "Pattern 2" && table.Rows[1][3] == "4.00",
+              table == null ? problem : string.Join(" / ", table.Rows.Select(r => string.Join("|", r))));
+        Check("load patterns: the total, bold", table != null && table.Rows[2][0] == "Total" && table.Rows[2][5] == "-30.00" && table.Bold.Contains(2));
+        var some = ReportTables.Make("loads.patterns", new ModelSet(new[] { model }), null, null, new[] { "Fz" }, out problem);
+        Check("load patterns: columns and the total as ticked", some != null && some.Header.Count == 2 && some.Rows.Count == 2, some == null ? problem : string.Join("|", some.Header));
+
+        var about = ReportTables.Make("report.about", new ModelSet(new[] { model, new Model { IsAnalysed = true, SolverVersion = "OpenSees 3.8.0" } }), null, null, out problem);
+        var labels = about?.Rows.Select(r => r[0]).ToList() ?? new List<string>();
+        Check("about: software, solver, units, models and when",
+              labels.SequenceEqual(new[] { "Software", "Solver", "Units", "Models", "Written" }) && about.Rows[0][1].StartsWith("Alpaca4d 0.") && about.Rows[1][1] == "OpenSees 3.8.0"
+              && about.Rows[3][1].StartsWith("2 given"),
+              about == null ? problem : string.Join(" / ", about.Rows.Select(r => string.Join("|", r))));
+        var analyses = ReportTables.Make("report.analyses", new ModelSet(new[] { model, new Model { IsAnalysed = true } }), null, null, out problem);
+        Check("analyses: a row a model, what it is", analyses != null && analyses.Rows.Count == 2 && analyses.Rows[0][1] == "Not analysed" && analyses.Rows[1][1] == "Static",
+              analyses == null ? problem : string.Join(" / ", analyses.Rows.Select(r => string.Join("|", r))));
+        var fewer = ReportTables.Make("report.about", new ModelSet(new[] { model }), null, null, new[] { "Software", "Solver" }, out problem);
+        Check("about: rows as ticked", fewer != null && fewer.Rows.Count == 2, fewer == null ? problem : string.Join(",", fewer.Rows.Select(r => r[0])));
+    }
+
+    // ── Word ───────────────────────────────────────────────────────────────────────────────
+
+    static void Word()
+    {
+        string folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "alpaca-docx-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+        System.IO.Directory.CreateDirectory(folder);
+        string picture = System.IO.Path.Combine(folder, "figure-01.png");
+        // A one-pixel PNG, as its bytes: no GDI+ needed.
+        System.IO.File.WriteAllBytes(picture, Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+
+        var doc = new ReportDocument { Title = "Footbridge & ramp", Subtitle = "Checks" };
+        doc.Details.Add(new KeyValuePair<string, string>("Date", "2026-11-16"));
+        doc.Blocks.Add(new ContentsBlock());
+        doc.Blocks.Add(new HeadingBlock { Level = 1, Text = "The model", Number = "1" });
+        doc.Blocks.Add(new ParagraphBlock { Text = "Two lines:\nthe second <here>." });
+        doc.Blocks.Add(new TableBlock { Caption = "Revisions", Numbered = false, Header = { "Revision", "Date" }, Rows = { new List<string> { "A", "2026-11-16" } } });
+        doc.Blocks.Add(new TableBlock { Caption = "Support reactions", Header = { "Node", "Fz [kN]" }, Align = { TextAlign.Right, TextAlign.Right }, Rows = { new List<string> { "1", "10.00" }, new List<string> { "Sum", "10.00" } }, Bold = { 1 }, Note = "In the global axes." });
+        doc.Blocks.Add(new HeadingBlock { Level = 2, Text = "Displacement", Number = "1.1" });
+        doc.Blocks.Add(new FigureBlock { ImagePath = picture, PixelWidth = 40, PixelHeight = 20, Caption = "Displacement",
+            Legend = new FigureLegend { Title = "Uz [mm]", Values = { 0, 1, 2 }, Colours = { Color.Blue, Color.Green, Color.Red } } });
+        doc.Blocks.Add(new FigureRowBlock { Columns = 2, Figures = { new FigureBlock { ImagePath = picture, PixelWidth = 40, PixelHeight = 20, Caption = "Mode 1" } } });
+        doc.Blocks.Add(new PageBreakBlock());
+
+        string path = System.IO.Path.Combine(folder, "report.docx");
+        ReportDocx.Write(doc, path);
+        using (var zip = System.IO.Compression.ZipFile.OpenRead(path))
+        {
+            var names = zip.Entries.Select(e => e.FullName).ToList();
+            Check("word: the parts of a Word document, and the pictures",
+                  new[] { "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml", "word/_rels/document.xml.rels", "word/header1.xml", "word/footer1.xml", "word/media/image1.png", "word/media/image2.png" }.All(names.Contains),
+                  string.Join(", ", names));
+            Func<string, string> Read = name => { using (var r = new System.IO.StreamReader(zip.GetEntry(name).Open())) return r.ReadToEnd(); };
+            bool wellFormed = true; string why = "";
+            foreach (var name in names.Where(n => n.EndsWith(".xml") || n.EndsWith(".rels")))
+            {
+                try { System.Xml.Linq.XDocument.Parse(Read(name)); }
+                catch (Exception ex) { wellFormed = false; why += name + ": " + ex.Message + " "; }
+            }
+            Check("word: every part is well-formed XML", wellFormed, why);
+            var body = Read("word/document.xml");
+            Check("word: headings in Word's styles, the numbers the report gave them",
+                  body.Contains("w:val=\"Heading1\"") && body.Contains("1   The model") && body.Contains("w:val=\"Heading2\""));
+            Check("word: a contents field, and its headings until Word fills it", body.Contains("TOC \\o \"1-2\"") && Read("word/settings.xml").Contains("updateFields"));
+            Check("word: tables numbered as in the PDF, the revisions not", body.Contains(">Table 1  <") && !body.Contains("Table 2") && body.Contains(">Revisions<"));
+            Check("word: text escaped, line breaks kept", body.Contains("&lt;here&gt;") && body.Contains("<w:br/>"));
+            Check("word: figures numbered, in a row of two", body.Contains(">Figure 1  <") && body.Contains(">Figure 2  <") && body.Contains("r:embed=\"rIdImage2\""));
+            Check("word: the page as the report's, and a page number", body.Contains("w:w=\"11906\"") && Read("word/footer1.xml").Contains("NUMPAGES"));
+        }
+
+        // What another program makes of it: macOS's own converter reads Word documents.
+        if (System.IO.File.Exists("/usr/bin/textutil"))
+        {
+            var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/usr/bin/textutil", $"-convert txt -stdout \"{path}\"") { RedirectStandardOutput = true, UseShellExecute = false });
+            string text = p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+            Check("word: another program reads it", p.ExitCode == 0 && text.Contains("Footbridge & ramp") && text.Contains("Support reactions") && text.Contains("10.00"), text.Length > 300 ? text.Substring(0, 300) : text);
+        }
     }
 }

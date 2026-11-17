@@ -16,5 +16,5 @@ cp "$COREDIR"/*.dll "$RHINO" "$work/"
   NETSTD=${NETSTD:-$(ls /Library/Frameworks/Mono.framework/Versions/Current/lib/mono/4.5/Facades/netstandard.dll 2>/dev/null | head -1)}
   NETSTD_REF=""
   [ -n "$NETSTD" ] && NETSTD_REF="-r:$NETSTD"
-  mcs -nologo -target:exe -out:ReportCheck.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:Newtonsoft.Json.dll -r:System.Drawing.dll $NETSTD_REF ReportCheck.cs
+  mcs -nologo -target:exe -out:ReportCheck.exe -r:Alpaca4d.Core.dll -r:RhinoCommon.dll -r:Newtonsoft.Json.dll -r:System.Drawing.dll -r:System.IO.Compression.dll -r:System.IO.Compression.FileSystem.dll -r:System.Xml.Linq.dll -r:System.Xml.dll $NETSTD_REF ReportCheck.cs
   mono ReportCheck.exe )

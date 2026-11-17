@@ -14,18 +14,43 @@ script server started:
 
     ./templates.sh
 
-It builds a two-storey frame analysed three ways from the real components, puts a Report after it,
-and goes through the Templates menu: **For the models given** offers the chapters of a frame with a
-static, a vibration and a buckling analysis; it places a column a chapter, left of the Report, none
-overlapping, each text a panel wired into its Report Text, all through a Merge into Content; each
-Report View laid out as one placed by hand, its menus on it and no input left at the canvas' origin
-(a Static analysis view, the topic it starts on, was stretched out to there); a chapter more goes
-into that Merge's last input; undo takes each away and redo brings it back; each static picture -
-displacement, reactions, beam, shell and solid forces - comes with its table; the report written from
-it has its 15 pictures and an empty Log; and after it, with Run off, the Template output follows a
-chapter more, as Content says now, and the whole reports are named apart from the chapters.
+It builds a two-storey steel frame from the real components, its loads in two named patterns, G and
+Q, analysed four ways: static, natural vibration, linear buckling, and two load combinations - ULS 1,
+1.35 G + 1.5 Q, its Type left empty, and SLS 1, G + Q - added by two Load Combinations one after the
+other and solved by one Run Analysis, which hands on one model holding both, each with a results file
+of its own. It puts a Report after it and goes
+through the Templates menu: **For the models given** offers the chapters of that frame, loads, design
+checks and the stamp among them; it places a column a chapter, left of the Report, none overlapping,
+each text a panel wired into its Report Text or the Report Revisions, all through a Merge into
+Content, the tables as Report Result Tables set to them; each Report View laid out as one placed by
+hand, its menus on it and no input left at the canvas' origin (a Static analysis view, the topic it
+starts on, was stretched out to there); a chapter more goes into that Merge's last input; undo takes
+each away and redo brings it back - when the installed plugin is as new as this build, as redo makes
+the objects through Grasshopper's component server; each static picture - displacement, reactions,
+beam, shell and solid forces - comes with its table; the report written from it has its 15 pictures
+and an empty Log; with Run off, the Template output follows a chapter more, as Content says now, and
+the whole reports are named apart from the chapters. The new tables' numbers are checked against
+each other: the load patterns add up to the static model's reactions, ULS 1's reactions are 1.35 G +
+1.5 Q and SLS 1's G + Q, and the steel check takes each section's worst member over ULS 1 alone.
+Last, the same report is written to Word, with an empty Log.
 
 ## What is checked here
+
+* **Pictures of results the model does not have.** Shell forces of a frame, brick stresses with no
+  solids: left out, with their tables and no placeholder, and each said in the Log; a picture of
+  other results besides draws those alone.
+* **The table of contents.** The headings down to its depth, each with the page it starts on, the
+  numbers written once the headings are laid out.
+* **Load combinations.** Read from their formula - factors, `*`, a pattern by any case, a negative
+  factor, a pattern twice - and applied: the model's deck up to its patterns, then those named at
+  their factors, the model given unchanged; a name no pattern has, or an analysed model, refused.
+  Their type read whatever its case, "SLS" alone refused; added to a model, in one go or a chain, a
+  name taken refused; one picked from the model that holds them by its name or place, one with no
+  results saying why; the Report counting such a model as the results of each.
+* **The tables of loads, combinations and the calculation**, and a revisions table set apart from
+  the numbered ones.
+* **Word.** Every part of the .docx is well-formed XML, the headings are in Word's styles, the
+  contents a field, the tables and figures numbered as in the PDF, and macOS's own converter reads it.
 
 * **Wrapping.** Every line fits its width, no word is lost, a line break is kept, and a word too
   long for a line is broken.
