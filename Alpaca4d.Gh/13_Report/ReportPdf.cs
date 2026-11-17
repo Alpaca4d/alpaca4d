@@ -82,6 +82,7 @@ namespace Alpaca4d.Gh
 
                     foreach (var text in page.Items.OfType<TextItem>())
                     {
+                        if (string.IsNullOrEmpty(text.Text)) continue;
                         var at = P(pages, text.X, text.Y);
                         pdf.DrawText(index, text.Text, at.X, at.Y, (float)text.Size, text.Bold ? bold : regular,
                             text.Colour, Color.Transparent, 0f, 0f, Horizontal(text.Align), TextVerticalAlignment.Bottom);

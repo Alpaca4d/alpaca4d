@@ -67,7 +67,8 @@ namespace Alpaca4d.Gh
             // One list, whatever tree a Merge hands it: a part is not lost to a second solution.
             pManager[pManager.ParamCount - 1].DataMapping = GH_DataMapping.Flatten;
             pManager.AddTextParameter("File", "File",
-                "Where to write the PDF. Left empty, beside the Grasshopper file, named after it; a folder, in it. " +
+                "Where to write the report: a .pdf, or a .docx for Word - the same content, its headings in Word's Heading styles, " +
+                "to paste into a report of your own or change. Left empty, a PDF beside the Grasshopper file, named after it; a folder, in it. " +
                 "The pictures go in a folder beside it.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Run", "Run", "True to write the report: a Button, or a Toggle to write it again whenever the models change.", GH_ParamAccess.item, false);
@@ -141,7 +142,7 @@ namespace Alpaca4d.Gh
 
             var document = OnPingDocument();
             string folder = document != null && document.IsFilePathDefined ? Path.GetDirectoryName(document.FilePath) : null;
-            _target = PdfPath(file, document);
+            _target = ReportPath(file, document);
 
             string template;
             try
@@ -293,8 +294,11 @@ namespace Alpaca4d.Gh
             if (json["table"] != null && json["table"].Type == JTokenType.String && json["of"] == null) json["of"] = model;
         }
 
-        /// <summary>Where the PDF goes: as File says, or beside the Grasshopper file and named after it.</summary>
-        private static string PdfPath(string file, GH_Document document)
+        /// <summary>Whether the report goes to Word: File ends in .docx.</summary>
+        internal static bool IsWord(string file) => string.Equals(Path.GetExtension(file ?? ""), ".docx", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Where the report goes - a PDF, or a Word document - as File says, or beside the Grasshopper file and named after it.</summary>
+        private static string ReportPath(string file, GH_Document document)
         {
             string ghFolder = document != null && document.IsFilePathDefined ? Path.GetDirectoryName(document.FilePath) : null;
             string name = document != null && document.IsFilePathDefined ? Path.GetFileNameWithoutExtension(document.FilePath) + " report" : "Alpaca4d report";
@@ -307,7 +311,8 @@ namespace Alpaca4d.Gh
                 return Path.Combine(file, name + ".pdf");
             if (!Path.IsPathRooted(file) && ghFolder != null)
                 file = Path.Combine(ghFolder, file);
-            return string.Equals(Path.GetExtension(file), ".pdf", StringComparison.OrdinalIgnoreCase) ? file : file + ".pdf";
+            string extension = Path.GetExtension(file);
+            return string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase) || IsWord(file) ? file : file + ".pdf";
         }
 
         /// <summary>
@@ -350,9 +355,18 @@ namespace Alpaca4d.Gh
                     written.Pictures.AddRange(figures.Pictures);
                 }
 
-                var pages = ReportLayout.Lay(report);
-                written.Pages = pages.Pages.Count;
-                ReportPdf.Write(pages, job.File);
+                if (IsWord(job.File))
+                {
+                    // Word lays out the pages itself.
+                    ReportDocx.Write(report, job.File);
+                    written.Pages = 0;
+                }
+                else
+                {
+                    var pages = ReportLayout.Lay(report);
+                    written.Pages = pages.Pages.Count;
+                    ReportPdf.Write(pages, job.File);
+                }
             }
             catch (IOException ex)
             {
@@ -383,8 +397,10 @@ namespace Alpaca4d.Gh
             if (written.Log.Count > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
                     $"{written.Log.Count} thing{(written.Log.Count == 1 ? "" : "s")} could not be made as asked: see Log.");
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                $"{written.Pages} page{(written.Pages == 1 ? "" : "s")} and {written.Pictures.Count} picture{(written.Pictures.Count == 1 ? "" : "s")} written to {written.File}. Click Open report to read it.");
+            string pictures = $"{written.Pictures.Count} picture{(written.Pictures.Count == 1 ? "" : "s")}";
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, IsWord(written.File)
+                ? $"A Word document with {pictures} written to {written.File}. Click Open report to read it."
+                : $"{written.Pages} page{(written.Pages == 1 ? "" : "s")} and {pictures} written to {written.File}. Click Open report to read it.");
         }
 
         // ── Open report ────────────────────────────────────────────────────────────────────────
@@ -537,7 +553,7 @@ namespace Alpaca4d.Gh
             }
             var path = Report.ReportToOpen;
             e.Title = ReportComponent.OpenText;
-            e.Text = path != null ? "Opens the report in the program that opens PDFs." : "There is no report yet: set Run to True to write it.";
+            e.Text = path != null ? (ReportComponent.IsWord(path) ? "Opens the report in the program that opens Word documents." : "Opens the report in the program that opens PDFs.") : "There is no report yet: set Run to True to write it.";
             e.Description = path ?? "";
         }
     }

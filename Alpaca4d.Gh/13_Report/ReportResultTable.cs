@@ -22,7 +22,8 @@ namespace Alpaca4d.Gh
           : base("Report Result Table (Alpaca4d)", "ResultTable",
             "One of the tables Alpaca4d makes of a model, picked from the menu: the model's summary, sections, materials and supports; a static " +
             "analysis's displacements and reactions; a natural vibration analysis's frequencies and participating masses; a buckling analysis's " +
-            "load factors; a footfall analysis's worst response factors. It holds no model: the Report makes it of its own model of that kind, from its AlpacaModel input.",
+            "load factors; a footfall analysis's worst response factors; the load patterns and combinations, the results of each combination, " +
+            "the steel members checked to EN 1993-1-1 over the ultimate combinations, and what the calculation was made with. It holds no model: the Report makes it of its own model of that kind, from its AlpacaModel input.",
             "Alpaca4d", "13_Report")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
@@ -41,6 +42,14 @@ namespace Alpaca4d.Gh
             ("Participating mass", "vibration.massRatios", "vibration"),
             ("Buckling factors", "buckling.factors", "buckling"),
             ("Footfall response", "footfall.response", "footfall"),
+            // New tables go last: a file keeps the table by its place in this list.
+            ("Load patterns", "loads.patterns", null),
+            ("Load combinations", "loads.combinations", null),
+            ("Results by combination", "static.combinations", "static"),
+            ("Steel check by section", "design.utilisation", "static"),
+            ("Steel check by member", "design.members", "static"),
+            ("About the calculation", "report.about", null),
+            ("Analyses", "report.analyses", null),
         };
 
         private MenuDropDown _ddTable;
@@ -102,6 +111,15 @@ namespace Alpaca4d.Gh
                 UpdateVisibility();
                 ExpireSolution(true);
             };
+            UpdateVisibility();
+        }
+
+        /// <summary>The table picked by the name a template gives it, as a template sets it.</summary>
+        internal void SetTable(string name)
+        {
+            int index = Array.FindIndex(Tables, t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (_ddTable == null || index < 0) return;
+            _ddTable.Value = index;
             UpdateVisibility();
         }
 

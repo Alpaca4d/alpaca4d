@@ -24,14 +24,16 @@ namespace Alpaca4d.Gh
             "Heading, Subheading and Sub-subheading - a chapter, a section in it and a part of that, numbered by the report as they come: 1, 1.1, 1.1.1. " +
             "Type the text alone: the number is the report's;\n" +
             "Paragraph - each text a paragraph of its own;\n" +
-            "Note - small grey type.\n" +
+            "Note - small grey type;\n" +
+            "Contents - the table of contents: the headings and subheadings with their numbers and pages, under the text as its title, Contents when there is none.\n" +
             "Any text may hold placeholders, such as {model.mass:N0}, {vibration.frequency[1]:F2} or {buckling.factor[1]:F2}.",
             "Alpaca4d", "13_Report")
         {
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
         }
 
-        private static readonly string[] Styles = { "Title", "Heading", "Subheading", "Sub-subheading", "Paragraph", "Note" };
+        // A new style goes last: a file keeps the style by its place in this list.
+        private static readonly string[] Styles = { "Title", "Heading", "Subheading", "Sub-subheading", "Paragraph", "Note", "Contents" };
 
         private static readonly int ParagraphStyle = Array.IndexOf(Styles, "Paragraph");
 
@@ -39,7 +41,8 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
-            pManager.AddTextParameter("Text", "Text", "The text: a paragraph each, or for a Title the title and then the subtitle.", GH_ParamAccess.list);
+            pManager.AddTextParameter("Text", "Text", "The text: a paragraph each, or for a Title the title and then the subtitle; for Contents its title, Contents when left empty.", GH_ParamAccess.list);
+            pManager[0].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -73,13 +76,21 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var texts = new List<string>();
-            if (!DA.GetDataList(0, texts)) return;
+            string style = Styles[Math.Max(0, Math.Min(Styles.Length - 1, _ddStyle?.Value ?? ParagraphStyle))];
+            if (!DA.GetDataList(0, texts) && style != "Contents")
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Give it the text.");
+                return;
+            }
             texts = texts.Select(t => t ?? "").ToList();
 
-            string style = Styles[Math.Max(0, Math.Min(Styles.Length - 1, _ddStyle?.Value ?? ParagraphStyle))];
             JObject json;
             switch (style)
             {
+                case "Contents":
+                    string title = string.Join(" ", texts).Trim();
+                    json = new JObject { ["contents"] = title.Length > 0 ? title : "Contents" };
+                    break;
                 case "Title":
                     json = new JObject { ["title"] = texts.FirstOrDefault() ?? "", ["subtitle"] = string.Join("\n", texts.Skip(1)) };
                     break;

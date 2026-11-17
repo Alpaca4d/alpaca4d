@@ -50,6 +50,15 @@ namespace Alpaca4d.Gh
 
         internal sealed class BreakPart : Part { }
 
+        /// <summary>One of the tables Alpaca4d makes, by its name: a Report Result Table set to it.</summary>
+        internal sealed class TablePart : Part
+        {
+            public string Table;
+        }
+
+        /// <summary>The report's revisions: a Report Revisions with a panel for each column, its first issue filled in.</summary>
+        internal sealed class RevisionsPart : Part { }
+
         /// <summary>A chapter: a group of its own on the canvas, its parts through a Merge.</summary>
         internal sealed class Chapter
         {
@@ -80,15 +89,59 @@ namespace Alpaca4d.Gh
                 Parts.Add(new BreakPart());
                 return this;
             }
+
+            /// <summary>One of Alpaca4d's tables; none for null, as a chapter leaves out one the models do not have.</summary>
+            public Chapter Table(string table)
+            {
+                if (table != null) Parts.Add(new TablePart { Table = table });
+                return this;
+            }
+
+            public Chapter Revisions()
+            {
+                Parts.Add(new RevisionsPart());
+                return this;
+            }
         }
 
         // ------------------------------------------------------------------ the chapters
 
-        internal static Chapter TitlePage() => new Chapter("Title page", "The report's title and subtitle, and what it is for. A page break after it.")
+        internal static Chapter TitlePage() => new Chapter("Title page",
+                "The report's title and subtitle, what it is for and its revisions; then the table of contents on a page of its own.")
             .Text("Title", "Structural analysis report", "The project - the structure")
             .Text("Paragraph",
                   "This report sets out the model of the structure and the results of its analyses, made in Grasshopper with Alpaca4d and OpenSees.")
+            .Revisions()
+            .Break()
+            .Text("Contents", "Contents")
             .Break();
+
+        internal static Chapter Loads() => Loads(true);
+
+        /// <param name="combinations">The table of the load combinations: only when combinations are given, which it lists.</param>
+        internal static Chapter Loads(bool combinations) => new Chapter("Loads",
+                combinations ? "The load patterns, each with the force it adds up to, and the load combinations, from Load Combination."
+                             : "The load patterns, each with the force it adds up to.")
+            .Text("Heading", "Loads")
+            .Text("Paragraph", combinations
+                ? "The loads are grouped in load patterns, and the patterns combined as the table of combinations sets out. Describe here where each load comes from."
+                : "The loads are grouped in load patterns. Describe here where each load comes from.")
+            .Table("loads.patterns")
+            .Table(combinations ? "loads.combinations" : null);
+
+        internal static Chapter DesignChecks() => new Chapter("Design checks",
+                "The steel members checked to EN 1993-1-1 over the ultimate combinations: each section's worst member, its governing check and utilisation.")
+            .Text("Heading", "Design checks")
+            .Text("Paragraph",
+                  "The steel members are checked to EN 1993-1-1 at their worst over the ultimate combinations, each held at its ends. " +
+                  "Where a member is braced otherwise, check it with Utilisation and its own buckling lengths.")
+            .Table("design.utilisation");
+
+        internal static Chapter About() => new Chapter("About this calculation",
+                "What the report was made with: Alpaca4d and OpenSees, the units, each model and how it was solved, and when.")
+            .Text("Heading", "About this calculation")
+            .Table("report.about")
+            .Table("report.analyses");
 
         internal static Chapter TheModel() => TheModel(true);
 
@@ -108,9 +161,17 @@ namespace Alpaca4d.Gh
                 topic.TickTable("model.supports");
             });
 
-        internal static Chapter StaticAnalysis() => new Chapter("Static analysis", "The static analysis: the displacement, then the reactions at the supports, each with its table.")
+        internal static Chapter StaticAnalysis() => StaticAnalysis(false);
+
+        /// <param name="combinations">The table of the results of each combination, or static model, given: only when there are more than one.</param>
+        internal static Chapter StaticAnalysis(bool combinations) => new Chapter("Static analysis",
+                combinations ? "The static analysis: the results of each combination, then the displacement and the reactions of the first, each with its table."
+                             : "The static analysis: the displacement, then the reactions at the supports, each with its table.")
             .Text("Heading", "Static analysis")
-            .Text("Paragraph", "Under the loads of the analysis, the structure moves {static.maxDisplacement:F1} mm at most, at node {static.maxNode}.")
+            .Table(combinations ? "static.combinations" : null)
+            .Text("Paragraph", combinations
+                ? "The pictures that follow are of the first of them: under its loads, the structure moves {static.maxDisplacement:F1} mm at most, at node {static.maxNode}."
+                : "Under the loads of the analysis, the structure moves {static.maxDisplacement:F1} mm at most, at node {static.maxNode}.")
             .Text("Subheading", "Displacement")
             .View(StaticTopic.Name, null, view => Results(view, menu =>
             {
@@ -187,17 +248,17 @@ namespace Alpaca4d.Gh
         /// <summary>The chapters offered one at a time, in the order a report has them; null for a line between them.</summary>
         internal static readonly Func<Chapter>[] Chapters =
         {
-            TitlePage, TheModel, null, StaticAnalysis, MemberForces, ShellForces, SolidStresses, null,
-            NaturalVibration, Stability, Footfall, Pushover, null, Conclusions
+            TitlePage, TheModel, Loads, null, StaticAnalysis, MemberForces, ShellForces, SolidStresses, DesignChecks, null,
+            NaturalVibration, Stability, Footfall, Pushover, null, Conclusions, About
         };
 
         /// <summary>Whole reports, by their name in the menu: the chapters each is made of.</summary>
         internal static readonly (string Name, string Tooltip, Func<Chapter>[] Chapters)[] Reports =
         {
-            ("Static", "A report of a static analysis: title page, the model, the displacement and reactions, the member forces, conclusions.",
-                new Func<Chapter>[] { TitlePage, TheModel, StaticAnalysis, MemberForces, Conclusions }),
-            ("Static and dynamic", "Title page, the model, the static analysis with the member forces, natural vibration, stability, conclusions.",
-                new Func<Chapter>[] { TitlePage, TheModel, StaticAnalysis, MemberForces, NaturalVibration, Stability, Conclusions }),
+            ("Static", "A report of a static analysis: title page, the model, the loads, the displacement and reactions, the member forces, conclusions, and what it was made with.",
+                new Func<Chapter>[] { TitlePage, TheModel, Loads, StaticAnalysis, MemberForces, Conclusions, About }),
+            ("Static and dynamic", "Title page, the model, the loads, the static analysis with the member forces, natural vibration, stability, conclusions, and what it was made with.",
+                new Func<Chapter>[] { TitlePage, TheModel, Loads, StaticAnalysis, MemberForces, NaturalVibration, Stability, Conclusions, About }),
         };
 
         /// <summary>
@@ -206,25 +267,40 @@ namespace Alpaca4d.Gh
         /// </summary>
         internal static List<Chapter> Fitted(IEnumerable<Alpaca4d.Model> models)
         {
-            var all = (models ?? Enumerable.Empty<Alpaca4d.Model>()).Where(m => m != null).ToList();
+            // A model that holds load combinations counts as the results of each.
+            var all = Alpaca4d.Model.Expand(models).Where(m => m != null && m.CombinationFailure == null).ToList();
             bool Has(string kind) => all.Any(m => Alpaca4d.Report.ModelSet.KindOf(m) == kind);
             var built = all.FirstOrDefault();
 
             var chapters = new List<Chapter> { TitlePage(), TheModel(HasBeams(all)) };
+            if (HasLoads(all)) chapters.Add(Loads(HasCombinations(all)));
             if (Has("static"))
             {
-                chapters.Add(StaticAnalysis());
+                chapters.Add(StaticAnalysis(all.Count(m => Alpaca4d.Report.ModelSet.KindOf(m) == "static" && !m.IsTransient) > 1));
                 if (built?.Beams.Count > 0) chapters.Add(MemberForces());
                 if (built?.Shells.Count > 0) chapters.Add(ShellForces());
                 if (built?.Bricks.Count > 0) chapters.Add(SolidStresses());
+                if (HasSteel(all)) chapters.Add(DesignChecks());
             }
             if (Has("vibration")) chapters.Add(NaturalVibration());
             if (Has("buckling")) chapters.Add(Stability());
             if (Has("footfall")) chapters.Add(Footfall());
             if (Has("pushover")) chapters.Add(Pushover());
             chapters.Add(Conclusions());
+            chapters.Add(About());
             return chapters;
         }
+
+        /// <summary>Whether any model has load patterns to list - its own, or the ones its combination was made from.</summary>
+        private static bool HasLoads(IEnumerable<Alpaca4d.Model> models) =>
+            models.Any(m => (m?.Combination?.Source ?? m)?.LoadPatterns?.Count > 0);
+
+        private static bool HasCombinations(IEnumerable<Alpaca4d.Model> models) => Alpaca4d.Model.Expand(models).Any(m => m?.Combination != null);
+
+        /// <summary>Whether a static model has a steel beam with a grade to check.</summary>
+        private static bool HasSteel(IEnumerable<Alpaca4d.Model> models) =>
+            models.Any(m => m != null && Alpaca4d.Report.ModelSet.KindOf(m) == "static" &&
+                            m.Beams.Any(b => b.Section?.Material is Alpaca4d.Generic.IUniaxialMaterial material && Alpaca4d.Material.DesignGrades.Of(material) != null));
 
         /// <summary>Whether any of the models has beams: the table of sections lists theirs, and says so of a model with none.</summary>
         private static bool HasBeams(IEnumerable<Alpaca4d.Model> models) => models.Any(m => m?.Beams?.Count > 0);
@@ -275,7 +351,12 @@ namespace Alpaca4d.Gh
             var models = report.LastModels;
             // The model's chapter with the beams' sections only when the models given have beams; any, before there are models.
             bool beams = models.Count == 0 || HasBeams(models);
-            Func<Chapter> Fit(Func<Chapter> make) => make.Method.Name == nameof(TheModel) ? () => TheModel(beams) : make;
+            // The loads' table of combinations only when combinations are given, or before there are models.
+            bool combinations = models.Count == 0 || HasCombinations(models);
+            Func<Chapter> Fit(Func<Chapter> make) =>
+                make.Method.Name == nameof(TheModel) ? () => TheModel(beams)
+                : make.Method.Name == nameof(Loads) ? () => Loads(combinations)
+                : make;
             var fitted = Item(items, "For the models given",
                 models.Count > 0
                     ? "The model, then a chapter for each analysis wired into AlpacaModel, and the forces of the elements it has: " +
@@ -417,7 +498,26 @@ namespace Alpaca4d.Gh
 
             doc.UndoServer.PushUndoRecord(record);
             report.ExpireSolution(true);
-            Grasshopper.Instances.ActiveCanvas?.Refresh();
+
+            var canvas = Grasshopper.Instances.ActiveCanvas;
+            if (canvas?.Document == doc)
+                Show(canvas.Viewport, new RectangleF(box.X + shift.Width, box.Y + shift.Height, box.Width, box.Height));
+            canvas?.Refresh();
+        }
+
+        /// <summary>
+        /// The canvas moved, at the zoom it has, to what was just placed when that is out of sight -
+        /// below what was there, on a full canvas - so that the click is not taken for one that did
+        /// nothing: to its middle, or to its top left when it is bigger than the view.
+        /// </summary>
+        internal static void Show(Grasshopper.GUI.Canvas.GH_Viewport viewport, RectangleF placed)
+        {
+            var seen = viewport.VisibleRegion;
+            if (seen.Contains(placed)) return;
+            float x = placed.Width + 2 * Gap <= seen.Width ? placed.X + placed.Width / 2 : placed.X - Gap + seen.Width / 2;
+            float y = placed.Height + 2 * Gap <= seen.Height ? placed.Y + placed.Height / 2 : placed.Y - Gap + seen.Height / 2;
+            viewport.MidPoint = new PointF(x, y);
+            viewport.ComputeProjection();
         }
 
         /// <summary>A chapter's components, in a column from <paramref name="left"/>: each text's panel left of its Report Text, all through a Merge at the right.</summary>
@@ -461,6 +561,40 @@ namespace Alpaca4d.Gh
                         into.Add(component);
                         parts.Add(component.Params.Output[0]);
                         y += component.Attributes.Bounds.Height + Gap;
+                        break;
+                    }
+                    case TablePart table:
+                    {
+                        var component = new ReportResultTable();
+                        component.CreateAttributes();
+                        component.SetTable(table.Table);
+                        Layout(component);
+                        Move(component, column, y);
+                        into.Add(component);
+                        parts.Add(component.Params.Output[0]);
+                        y += component.Attributes.Bounds.Height + Gap;
+                        break;
+                    }
+                    case RevisionsPart _:
+                    {
+                        // A panel for each column, one under another, the first issue filled in: today, by and checked by whom to type.
+                        var component = new ReportRevisions();
+                        component.CreateAttributes();
+                        Layout(component);
+                        var texts = new[] { "A", DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), "First issue", "Your initials", "Checker's initials" };
+                        float top = y;
+                        for (int i = 0; i < texts.Length && i < component.Params.Input.Count; i++)
+                        {
+                            var panel = Panel(component.Params.Input[i].Name, new[] { texts[i] });
+                            Move(panel, left, top);
+                            component.Params.Input[i].AddSource(panel);
+                            into.Add(panel);
+                            top += panel.Attributes.Bounds.Height + 6f;
+                        }
+                        Move(component, column, y + Math.Max(0f, (top - y - component.Attributes.Bounds.Height) / 2f));
+                        into.Add(component);
+                        parts.Add(component.Params.Output[0]);
+                        y = Math.Max(top, y + component.Attributes.Bounds.Height) + Gap;
                         break;
                     }
                     case BreakPart _:
