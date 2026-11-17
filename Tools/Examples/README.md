@@ -81,6 +81,8 @@ script too:
     ./make.sh Structures/ReciprocalVault.py     # a reciprocal vault of plywood planks pressed down until it gives way
     ./make.sh Structures/HighTensionTower.py    # a steel lattice pylon under its wires and the wind
     ./make.sh Structures/MultiStoreyBuilding.py # a concrete frame of five storeys with slabs, and its modes
+    ./make.sh Structures/SteelOffice.py         # a steel office under seven EN 1990 load combinations, and its report
+                                                #   (the report's chapters only when built in Rhino: see SteelOffice.py)
     ./make.sh Structures/FootfallStair.py       # footfall on a U-shaped steel stair with two landings (SCI P354)
     STAIR=helical ./make.sh Structures/FootfallStair.py FootfallHelicalStair.gh     # a helical stair, all shells, curved parapets
     STAIR=straight ./make.sh Structures/FootfallStair.py FootfallStraightStair.gh   # 36 steps in a line, held only at its ends
