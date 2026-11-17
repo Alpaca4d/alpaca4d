@@ -130,6 +130,22 @@ namespace Alpaca4d.Gh
             if (!LicenseGate.AllowsModel(this, model))
                 return;
 
+            // Load combinations, from Load Combination: each solved in turn, as a static analysis, in one run.
+            bool combining = model.Combinations != null && model.Combinations.Count > 0;
+            if (combining && settings == null)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "The model has load combinations, and they need Analysis Settings: connect them, and untick \"Do not use settings\" in the right-click menu.");
+                return;
+            }
+            if (combining && settings.Analysis?.Type != Analysis.AnalysisType.Static)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "The model has load combinations, which are solved as static analyses: pick Static in Analysis Settings. " +
+                    "For a time history, analyse the model Assemble Model hands on, without them.");
+                return;
+            }
+
 
 
             // create a shallow copy
@@ -207,6 +223,12 @@ namespace Alpaca4d.Gh
                         $"The convergence test ({settings.Test.Type}) looks only at how far an iteration moves. With one-way bars or " +
                         "supports a first iteration that barely moves can pass it while a support is still pulling, and the results " +
                         "are wrong. Pick NormUnbalance or NormDispAndUnbalance in the Test component.");
+            }
+
+            if (combining)
+            {
+                SolveCombinations(DA, model, settings, files);
+                return;
             }
 
             if(settings != null)
@@ -301,6 +323,135 @@ namespace Alpaca4d.Gh
 
             DA.SetData(ModelOutput, analysisModel);
             DA.SetData(LogOutput, log);
+        }
+
+        /// <summary>
+        /// The model's load combinations solved one after another, an OpenSees run each: the model with
+        /// only the combination's patterns on, scaled (<see cref="Alpaca4d.Loads.LoadCombination.Apply"/>),
+        /// its recorders and the analysis. A run each, so that each results file starts at its first
+        /// step, as the result components read it, and a run that stops on an error stops for its
+        /// combination alone. What comes out is one model, which holds every combination's results and
+        /// reads as the first that solved. A combination that does not solve has no results, and says
+        /// why; the others keep theirs. Only when none solved is there no model.
+        /// </summary>
+        private void SolveCombinations(IGH_DataAccess DA, Model model, Settings settings, AnalysisFiles files)
+        {
+            var combinations = model.Combinations;
+            bool userRecorders = model.Recorders != null && model.Recorders.Count > 0;
+            if (userRecorders)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    "Each load combination writes its own copy of the recorders from Assemble Model, its name added to the file name: recorder_ULS_1.mpco.");
+
+            var parts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var results = new List<Model>();
+            var log = new System.Text.StringBuilder();
+            string analysis = settings.WriteTcl();
+            for (int k = 0; k < combinations.Count; k++)
+            {
+                var combination = combinations[k];
+                // A file each, named after its combination: recorder_ULS_1.mpco.
+                string part = FilePart(combination.Name, k, parts);
+                var one = combination.Apply(model, out string problem);
+                if (one == null)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"{combination.Name}: {problem}.");
+                    return;
+                }
+                one.Recorders = userRecorders
+                    ? model.Recorders.Select(item => ForCombination(ForThisRun(item, files), part)).ToList()
+                    : new List<IRecorder> { Alpaca4d.Recorder.MpcoStatic(files.OwnFile("recorder_" + part, ".mpco"), model) };
+                if (k == 0)
+                {
+                    var shared = one.Recorders
+                        .Where(item => !string.IsNullOrEmpty(item.FileName))
+                        .GroupBy(item => System.IO.Path.GetFullPath(item.FileName), StringComparer.OrdinalIgnoreCase)
+                        .FirstOrDefault(group => group.Count() > 1);
+                    if (shared != null)
+                    {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                            $"{shared.Count()} recorders write to {shared.First().FileName}. Give each one a FileName of its own.");
+                        return;
+                    }
+                }
+
+                one.Tcl = new List<string>(one.Tcl);
+                foreach (var item in one.Recorders)
+                    one.Tcl.Add(item.WriteTcl());
+                one.Tcl.Add(analysis);
+                one.Tcl.Add("wipe");
+                one.FileName = files.OwnFile("AlpacaModel_" + part, ".tcl");
+                one.Settings = settings;
+                one.IsStatic = true;
+                one.BeforeAnalysis = model;
+                one.Serialise();
+
+                string output, error;
+                int exitCode;
+                try
+                {
+                    (output, error, exitCode) = one.RunOpenSees();
+                }
+                catch (Exception ex)
+                {
+                    // OpenSees not found, or stopped at its timeout: the same for every combination.
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ex.Message);
+                    return;
+                }
+                string runLog = string.IsNullOrEmpty(error) ? output : error + "\n" + output;
+                log.AppendLine($"──── {combination.Name}: {combination.Formula} ────").AppendLine(runLog).AppendLine();
+
+                string failure = Alpaca4d.Element.TenNodeTetrahedron.SolverTooOld(runLog) ?? AnalysisOutcome.Failure(output, error, exitCode);
+                one.CombinationFailure = failure == null ? null
+                    : exitCode != 0 ? "OpenSees stopped on an error - read the log output"
+                    : failure.Contains("converge") ? "it did not converge"
+                    : failure;
+                one.IsAnalysed = one.CombinationFailure == null;
+                if (one.IsAnalysed && (settings.SystemEquation?.WithoutExpectedWarnings(error) ?? error).Contains("WARNING"))
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Warning in {combination.Name}! Double check the log!");
+                results.Add(one);
+            }
+            DA.SetData(LogOutput, log.ToString().TrimEnd());
+
+            var solved = results.Where(one => one.CombinationFailure == null).ToList();
+            var failed = results.Where(one => one.CombinationFailure != null).ToList();
+            if (solved.Count == 0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    $"No load combination has results: {failed[0].Combination.Name}, {failed[0].CombinationFailure}. Read the log output to find out why.");
+                return;
+            }
+            if (failed.Count > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"{string.Join("; ", failed.Select(one => $"{one.Combination.Name}: {one.CombinationFailure}"))} - no results for " +
+                    $"{(failed.Count == 1 ? "it" : "them")}. {solved.Count} of {results.Count} load combinations solved.");
+
+            var handed = solved[0].ShallowCopy();
+            handed.CombinationResults = results;
+            handed.Combinations = model.Combinations;
+            DA.SetData(ModelOutput, handed);
+        }
+
+        /// <summary>A combination's part of a file name: its name, letters and digits kept and the rest "_" - ULS_1 - or its place when that is taken.</summary>
+        private static string FilePart(string name, int place, HashSet<string> taken)
+        {
+            var kept = new string((name ?? "").Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray()).Trim('_');
+            if (kept.Length == 0 || kept.Length > 40 || !taken.Add(kept))
+            {
+                kept = "combination" + place.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                taken.Add(kept);
+            }
+            return kept;
+        }
+
+        /// <summary>A recorder writing to a file of a combination's own: its name with the combination's part added.</summary>
+        private static IRecorder ForCombination(IRecorder recorder, string part)
+        {
+            if (!(recorder is Recorder mpco) || string.IsNullOrEmpty(mpco.FileName))
+                return recorder;
+            string path = mpco.FileName;
+            string named = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path) ?? "",
+                $"{System.IO.Path.GetFileNameWithoutExtension(path)}_{part}{System.IO.Path.GetExtension(path)}");
+            return new Recorder(named, mpco.NodeResults, mpco.ElementResults);
         }
 
         /// <summary>A copy of one of the user's recorders, writing to this run's file.</summary>

@@ -244,6 +244,9 @@ namespace Alpaca4d.Gh
         /// <summary>Where LoadPattern sits among the inputs: last, as it is drawn in the Loads menu.</summary>
         private const int LoadPatternInput = 5;
 
+        /// <summary>Where Combination sits among the inputs: after LoadPattern, so that older files keep theirs where they were.</summary>
+        private const int CombinationInput = 6;
+
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The model to draw: from Assemble to see it alone, or from Run Analysis or another analysis to see its results as well. " +
@@ -258,6 +261,10 @@ namespace Alpaca4d.Gh
                 "beam forces left out as they have no gradient. A result given none fits what is drawn, which is what makes two steps impossible to compare - set it to compare them.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("LoadPattern", "LP", LoadPatternDescription, GH_ParamAccess.item);
+            pManager[pManager.ParamCount - 1].Optional = true;
+            pManager.AddTextParameter("Combination", "Combination",
+                "Which load combination to draw, of a model that holds them, from Run Analysis: its name - ULS 2 - or its place from 0. " +
+                "Left empty, the first that solved. Its loads are drawn as it applies them, each pattern scaled.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -921,6 +928,21 @@ namespace Alpaca4d.Gh
             Clear();
 
             if (!DA.GetData(0, ref _model) || _model == null) return;
+            var given = _model;
+
+            // A model that holds load combinations is drawn as one of them: the one named, or the first.
+            string combination = null;
+            if (Params.Input.Count > CombinationInput)
+                DA.GetData(CombinationInput, ref combination);
+            _model = given.OfCombination(combination, out string notThere);
+            if (_model == null)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, char.ToUpperInvariant(notThere[0]) + notThere.Substring(1) + ".");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(combination) && given.CombinationResults?.Count > 1)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    $"Draws {_model.Combination?.Name}, the first of the model's {given.CombinationResults.Count} load combinations: name another in Combination.");
 
             // Free up to the element limit an analysis has, so that what may be analysed without a
             // license may be seen too. Refused mid-animation, the timer would go on re-solving twenty
@@ -933,7 +955,7 @@ namespace Alpaca4d.Gh
                 return;
             }
 
-            DA.SetData(0, _model);
+            DA.SetData(0, given);
 
             FitScaleRange();
 

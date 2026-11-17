@@ -35,7 +35,7 @@ namespace Alpaca4d.Gh
 
         private static readonly List<string> Directions = new List<string> { "X", "Y", "Z" };
 
-        private const int ModelInput = 0, PointInput = 1, DirectionInput = 2, TargetInput = 3, StepsInput = 4, LoadsInput = 5, PDeltaInput = 6;
+        private const int ModelInput = 0, PointInput = 1, DirectionInput = 2, TargetInput = 3, StepsInput = 4, LoadsInput = 5, PDeltaInput = 6, CombinationInput = 7;
         private const int ModelOutput = 0, DisplacementOutput = 1, ShearOutput = 2, FactorOutput = 3, StepOutput = 4,
                           HingesOutput = 5, HingePointsOutput = 6, YieldsAtOutput = 7, LogOutput = 8, DuctilityOutput = 9;
 
@@ -66,8 +66,12 @@ namespace Alpaca4d.Gh
                 "Gives every beam with a Linear transformation a PDelta one for the push, so the loads held on the columns push " +
                 "them further as the frame sways, and the curve comes down past its peak. Corotational beams are left as they are.",
                 GH_ParamAccess.item, true);
+            pManager.AddTextParameter("Combination", "Combination",
+                CombinationChoice.Description("pushes the model"),
+                GH_ParamAccess.item);
             pManager[StepsInput].Optional = true;
             pManager[PDeltaInput].Optional = true;
+            pManager[CombinationInput].Optional = true;
             pManager[DirectionInput].Optional = true;
             pManager[LoadsInput].Optional = true;
         }
@@ -181,6 +185,14 @@ namespace Alpaca4d.Gh
                     "Connect Pushover Analysis to the AlpacaModel output of Assemble Model.");
                 return;
             }
+
+            // A model with load combinations holds the loads of the one named, the seismic one say, G + ψ2 Q.
+            string combination = null;
+            if (Params.Input.Count > CombinationInput)
+                DA.GetData(CombinationInput, ref combination);
+            model = CombinationChoice.Apply(this, model, combination, "push the model");
+            if (model == null)
+                return;
 
             if (model.LoadPatterns.Any(pattern => pattern.PatternType == Alpaca4d.Loads.PatternType.UniformExcitation))
             {

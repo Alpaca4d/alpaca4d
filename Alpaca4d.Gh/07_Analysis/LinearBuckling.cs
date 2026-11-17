@@ -35,7 +35,7 @@ namespace Alpaca4d.Gh
             this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
         }
 
-        private const int ModelInput = 0, ModesInput = 1, DivisionsInput = 2;
+        private const int ModelInput = 0, ModesInput = 1, DivisionsInput = 2, CombinationInput = 3;
         private const int ModelOutput = 0, FactorsOutput = 1, LogOutput = 2;
 
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
@@ -55,8 +55,12 @@ namespace Alpaca4d.Gh
                 "8 give 1.3 %, and twice the elements a quarter of the error. The sway of a frame needs none. The " +
                 "split model is the one handed on; the one connected is not changed.",
                 GH_ParamAccess.item, 1);
+            pManager.AddTextParameter("Combination", "Combination",
+                CombinationChoice.Description("buckles the model"),
+                GH_ParamAccess.item);
             pManager[ModesInput].Optional = true;
             pManager[DivisionsInput].Optional = true;
+            pManager[CombinationInput].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -108,6 +112,14 @@ namespace Alpaca4d.Gh
                     "Connect the Linear Buckling Analysis to the AlpacaModel output of Assemble Model.");
                 return;
             }
+
+            // A model with load combinations is buckled under the one named, not all its patterns at once.
+            string combination = null;
+            if (Params.Input.Count > CombinationInput)
+                DA.GetData(CombinationInput, ref combination);
+            model = CombinationChoice.Apply(this, model, combination, "buckle the model");
+            if (model == null)
+                return;
 
             if (!LicenseGate.AllowsModel(this, model))
                 return;

@@ -259,6 +259,10 @@ namespace Alpaca4d.Gh
             double gammaM0 = 1.0, gammaM1 = 1.0;
 
             if (!DA.GetData(ModelInput, ref model)) return;
+            if (model?.Combinations?.Count > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"The model has {model.Combinations.Count} load combinations, which Section Optimiser does not solve yet: it sizes the members " +
+                    "under every load pattern at once, at its full size. Factor the patterns for the combination to size for, or connect the model Assemble Model hands on.");
             DA.GetDataList(GroupsInput, groupItems);
             var filter = ElementFilterInput.Read(DA, FilterInput, this);
             DA.GetData(MaxUtilisationInput, ref maxUtilisation);
