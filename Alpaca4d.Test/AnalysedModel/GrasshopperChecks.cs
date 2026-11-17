@@ -47,6 +47,7 @@ public static class GrasshopperCheck
             AfterSectionOptimiser();
             OneAfterTheOther();
             NothingToGoBackTo();
+            Combinations();
         }
         catch (Exception e)
         {
@@ -202,6 +203,81 @@ public static class GrasshopperCheck
         Set(buckling, "Buckling Modes", new GH_Integer(2));
         Set(buckling, "Divisions", new GH_Integer(4));
         return buckling;
+    }
+
+    static List<string> Said(GH_Component c, GH_RuntimeMessageLevel level) => c.RuntimeMessages(level).ToList();
+
+    /// <summary>
+    /// Linear Buckling and Pushover take the loads the user gives: without combinations, every
+    /// pattern together, with a remark naming them; with combinations, the one named and no other -
+    /// left empty, an error listing them.
+    /// </summary>
+    static void Combinations()
+    {
+        Section("The column with a second pattern, W: Linear Buckling and Pushover with and without load combinations");
+        var doc = new Doc("combinations");
+        var column = new Column(doc);
+        Set(column.Pattern, "Name", new GH_String("P"));
+        var wind = doc.Add<Alpaca4d.Gh.PointLoad>();
+        Set(wind, "Point", new GH_Point(Head));
+        Set(wind, "Force", new GH_Vector(new Vector3d(5, 0, 0)));
+        var windPattern = doc.Add<Alpaca4d.Gh.PatternBase>("PlainPattern (Alpaca4d)");
+        Wire(doc.Add<Alpaca4d.Gh.LinearTimeSeries>(), "TimeSeries", windPattern, "TimeSeries");
+        In(windPattern, "Loads").AddSource(wind.Params.Output[0]);
+        Set(windPattern, "Name", new GH_String("W"));
+
+        var section = Ipe200(doc);
+        var alone = column.Assemble(doc, section);              // P only
+        var both = column.Assemble(doc, section);
+        In(both, "LoadPatterns").AddSource(windPattern.Params.Output[0]);
+
+        var combined = doc.Add<Alpaca4d.Gh.LoadCombinationComponent>();
+        Wire(both, "AlpacaModel", combined, "AlpacaModel");
+        Set(combined, "Name", new GH_String("ULS 1"), new GH_String("ULS 2"));
+        Set(combined, "Combination", new GH_String("1.5 P + W"), new GH_String("P"));
+
+        var bucklingAlone = Buckling(doc, alone);
+        var bucklingBoth = Buckling(doc, both);
+        var bucklingEmpty = Buckling(doc, combined);
+        var bucklingNamed = Buckling(doc, combined);
+        Set(bucklingNamed, "Combination", new GH_String("ULS 2"));
+        var bucklingPlace = Buckling(doc, combined);
+        Set(bucklingPlace, "Combination", new GH_String("1"));
+        var bucklingWrong = Buckling(doc, combined);
+        Set(bucklingWrong, "Combination", new GH_String("SLS 1"));
+
+        var pushEmpty = doc.Add<Alpaca4d.Gh.PushoverAnalysis>();
+        Wire(combined, "AlpacaModel", pushEmpty, "AlpacaModel");
+        Set(pushEmpty, "Control Point", new GH_Point(Head));
+        Set(pushEmpty, "Target", new GH_Number(0.01));
+        Set(pushEmpty, "Steps", new GH_Integer(5));
+        doc.Solve();
+
+        var remarks = Said(bucklingBoth, GH_RuntimeMessageLevel.Remark);
+        report.AppendLine($"  without combinations, two patterns: {string.Join(" | ", remarks)}");
+        Check(remarks.Any(r => r.Contains("P and W act together")) && Said(bucklingBoth, GH_RuntimeMessageLevel.Error).Count == 0,
+              "without combinations both patterns act, and a remark names them");
+        Check(!Said(bucklingAlone, GH_RuntimeMessageLevel.Remark).Any(r => r.Contains("act together")), "one pattern alone gets no such remark");
+
+        var empty = Said(bucklingEmpty, GH_RuntimeMessageLevel.Error);
+        report.AppendLine($"  with combinations, none named: {string.Join(" | ", empty)}");
+        Check(empty.Count == 1 && empty[0].Contains("ULS 1, ULS 2") && Numbers(bucklingEmpty, "Load Factors").Count == 0,
+              "with combinations and none named, Linear Buckling stops with an error listing them");
+
+        var b0 = Numbers(bucklingAlone, "Load Factors");
+        var b1 = Numbers(bucklingNamed, "Load Factors");
+        var b2 = Numbers(bucklingPlace, "Load Factors");
+        report.AppendLine($"  load factors {Show(b0)} for P alone, {Show(b1)} for ULS 2 = P, {Show(b2)} for place 1");
+        Check(Said(bucklingNamed, GH_RuntimeMessageLevel.Error).Count == 0 && Same(b0, b1, 1e-6), "ULS 2, which is P alone, buckles as P alone does");
+        Check(Same(b1, b2, 1e-9), "and its place, 1, picks it too");
+
+        var wrong = Said(bucklingWrong, GH_RuntimeMessageLevel.Error);
+        Check(wrong.Count == 1 && wrong[0].Contains("no load combination \"SLS 1\""), "a name the model has not is an error: " + string.Join(" | ", wrong));
+
+        var pushed = Said(pushEmpty, GH_RuntimeMessageLevel.Error);
+        report.AppendLine($"  Pushover, none named: {string.Join(" | ", pushed)}");
+        Check(pushed.Count == 1 && pushed[0].Contains("name the one to push the model under") && pushed[0].Contains("ULS 1, ULS 2"),
+              "Pushover with combinations and none named stops too, with the same list");
     }
 
     // ---------------------------------------------------------------- the checks
