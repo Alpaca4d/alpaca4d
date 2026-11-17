@@ -209,6 +209,88 @@ namespace Alpaca4d
         /// </summary>
         public FootfallResponse Footfall { get; set; }
 
+        /// <summary>
+        /// The load combinations to analyse the model under, from Load Combination: Run Analysis solves
+        /// each, in one OpenSees run, in place of all the patterns at once. Empty for a model whose
+        /// patterns all act together, as given.
+        /// </summary>
+        public List<Alpaca4d.Loads.LoadCombination> Combinations { get; set; } = new List<Alpaca4d.Loads.LoadCombination>();
+
+        /// <summary>
+        /// The load combination this model is the results of - its patterns those the combination
+        /// names, scaled - when Run Analysis solved it as one of <see cref="Combinations"/>; null for a
+        /// model with all its patterns acting as given.
+        /// </summary>
+        public Alpaca4d.Loads.LoadCombination Combination { get; set; }
+
+        /// <summary>
+        /// Every combination's results, a model each, in the order of <see cref="Combinations"/>: set
+        /// by Run Analysis on the model it hands on, which reads as the first of them that solved.
+        /// Null for a model analysed without combinations. See <see cref="OfCombination"/>.
+        /// </summary>
+        public List<Model> CombinationResults { get; set; }
+
+        /// <summary>Why the combination this model is the results of has none - it did not converge - or null.</summary>
+        public string CombinationFailure { get; set; }
+
+        /// <summary>
+        /// The results of one of its combinations, by its name - whatever its case - or by its place
+        /// from 0. Itself, when it holds no combinations and none is asked for. Null, and why, when it
+        /// has no such combination, or that one did not solve.
+        /// </summary>
+        public Model OfCombination(string nameOrPlace, out string problem)
+        {
+            problem = null;
+            string asked = (nameOrPlace ?? "").Trim();
+            if (CombinationResults == null || CombinationResults.Count == 0)
+            {
+                if (asked.Length == 0) return this;
+                problem = IsAnalysed
+                    ? $"the model holds no load combinations to pick \"{asked}\" from: add them with Load Combination before Run Analysis"
+                    : $"the model is not analysed: \"{asked}\" has no results until Run Analysis solves it";
+                return null;
+            }
+
+            Model found = asked.Length == 0
+                ? CombinationResults.FirstOrDefault(m => m.CombinationFailure == null) ?? CombinationResults[0]
+                : CombinationResults.FirstOrDefault(m => string.Equals(m.Combination?.Name?.Trim(), asked, StringComparison.OrdinalIgnoreCase));
+            if (found == null && int.TryParse(asked, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int place))
+            {
+                if (place < 0 || place >= CombinationResults.Count)
+                {
+                    problem = $"there is no combination {place}: the model has {CombinationResults.Count}, numbered from 0";
+                    return null;
+                }
+                found = CombinationResults[place];
+            }
+            if (found == null)
+            {
+                problem = $"the model has no combination called \"{asked}\": it has {string.Join(", ", CombinationResults.Select(m => m.Combination?.Name))}";
+                return null;
+            }
+            if (found.CombinationFailure != null)
+            {
+                problem = $"{found.Combination?.Name} has no results: {found.CombinationFailure}";
+                return null;
+            }
+            return found;
+        }
+
+        /// <summary>The models given, each that holds combinations as the results of each, in order: what a report or a table goes through.</summary>
+        public static IEnumerable<Model> Expand(IEnumerable<Model> models)
+        {
+            foreach (var model in models ?? Enumerable.Empty<Model>())
+            {
+                if (model?.CombinationResults != null && model.CombinationResults.Count > 0)
+                    foreach (var one in model.CombinationResults) yield return one;
+                else if (model != null)
+                    yield return model;
+            }
+        }
+
+        /// <summary>The solver the model was last solved with, as its banner names it: "OpenSees 3.8.0". Null before a run, or when it said nothing.</summary>
+        public string SolverVersion { get; set; }
+
         /// <summary>The load factors of the buckling modes, lowest first, when <see cref="IsBuckling"/>.</summary>
         public List<double> BucklingFactors { get; set; } = new List<double>();
 
@@ -632,6 +714,8 @@ namespace Alpaca4d
                 Mass = this.Mass,
                 MassFromLoads = this.MassFromLoads,
                 Tollerance = this.Tollerance,
+                // By the patterns' names, which the new patterns keep.
+                Combinations = this.Combinations,
             };
             model.Assemble();
             return model;
@@ -919,6 +1003,10 @@ namespace Alpaca4d
                 // read off that.
                 string error = errorBuilder.ToString().Trim();
                 int exitCode = process.ExitCode == 0 && StoppedOnTclError(error) ? 1 : process.ExitCode;
+
+                // The solver as it names itself in its banner - "Version 3.8.0 64-Bit" - for the report to say what it was solved with.
+                var version = System.Text.RegularExpressions.Regex.Match(error + "\n" + outputBuilder.ToString(), @"Version\s+(\d+(?:\.\d+)+)");
+                if (version.Success) this.SolverVersion = "OpenSees " + version.Groups[1].Value;
 
                 this.IsAnalysed = true;
                 return (outputBuilder.ToString().Trim(), error, exitCode);
@@ -1641,7 +1729,7 @@ namespace Alpaca4d
             return gravityPointLoad;
         }
 
-        private void addLoadPattern(List<LoadPattern> loadPatterns)
+        internal void addLoadPattern(List<LoadPattern> loadPatterns)
         {
             foreach (var loadPattern in loadPatterns)
             {

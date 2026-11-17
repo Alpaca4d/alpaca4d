@@ -73,7 +73,8 @@ namespace Alpaca4d.Loads
             
             if (PatternType == PatternType.Plain)
             {
-                sb.Append($"pattern {PatternType} {Id} {TimeSeries.Id} -fact {Factor} {{\n");
+                // The factor whatever the machine's locale: 1.35, not 1,35, which OpenSees cannot read.
+                sb.Append($"pattern {PatternType} {Id} {TimeSeries.Id} -fact {Factor.ToString("R", System.Globalization.CultureInfo.InvariantCulture)} {{\n");
                 foreach (var load in Load)
                 {
                     sb.Append(load.WriteTcl());
@@ -83,7 +84,7 @@ namespace Alpaca4d.Loads
 
             if (PatternType == PatternType.UniformExcitation)
             {
-                sb.Append($"pattern {PatternType} {Id} {(int)Dof} -accel {TimeSeries.Id} -vel0 {Velocity} -fact {Factor}");
+                sb.Append($"pattern {PatternType} {Id} {(int)Dof} -accel {TimeSeries.Id} -vel0 {Velocity.ToString("R", System.Globalization.CultureInfo.InvariantCulture)} -fact {Factor.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}");
             }
 
             return sb.ToString();
