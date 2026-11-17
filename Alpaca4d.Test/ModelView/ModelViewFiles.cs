@@ -163,8 +163,8 @@ class ModelViewFilesTest
                   "Displacement, Beam forces, Beam stresses, Shell forces, Shell stresses, Brick stresses, Reactions",
                   "Results has a checkbox for each result, in View Results' order");
             Check(results.All(r => !Member<MenuCheckBox>(r, "Tick").Active), "and none is ticked, for the model alone");
-            Check(string.Join(", ", view.Params.Input.Select(p => p.Name)) == "AlpacaModel, Step, ElementId, Colors, Range, LoadPattern",
-                  "inputs: View Results' five in their order, then LoadPattern");
+            Check(string.Join(", ", view.Params.Input.Select(p => p.Name)) == "AlpacaModel, Step, ElementId, Colors, Range, LoadPattern, Combination",
+                  "inputs: View Results' five in their order, then LoadPattern and Combination");
             Check(view.Params.Input[4].Access == GH_ParamAccess.list, "Range takes a list, one per result");
             Check(string.Join(", ", view.Params.Output.Select(p => p.Name)) == "AlpacaModel, Geometry, Info, Values, Colors",
                   "outputs: the model through, the geometry drawn, and View Results' three");
@@ -227,7 +227,14 @@ class ModelViewFilesTest
             Visible(view, false, Component(view, "Shell stresses"), "_ddLayer");
 
             Click(view, "Reactions", true);
-            Visible(view, true, "_ddReaction", "_slArrowScale");
+            Check(Field<MenuDropDown>(view, "_ddReactionShape").Value == 0, "reactions drawn as dots to start with");
+            Visible(view, true, "_ddReactionShape", "_slArrowScale");
+            Visible(view, false, "_ddReaction");
+            Field<MenuDropDown>(view, "_ddReactionShape").Value = 1;
+            update.Invoke(view, null);
+            Visible(view, true, "_ddReaction");
+            Field<MenuDropDown>(view, "_ddReactionShape").Value = 0;
+            update.Invoke(view, null);
 
             foreach (var name in new[] { "Beam forces", "Shell forces", "Reactions" })
                 Click(view, name, false);
@@ -347,7 +354,7 @@ class ModelViewFilesTest
             {
                 "_ckWires", "_ckValues", "_slTextSize", "_ckNodeIds", "_ckElementIds", "_ckSectionNames", "_ckLocalAxes",
                 "_slAxesSize", "_ckReleases", "_slReleaseSize", "_ckShowLoads", "_ckShowLoadValues", "_slLoadScale",
-                "_ckShowSupports", "_slSupportScale"
+                "_ckShowSupports", "_slSupportScale", "_ckExtremes", "_slHingeSize"
             };
 
             foreach (var pair in new[] { Tuple.Create("new", Make<Alpaca4d.Gh.ModelView>()), Tuple.Create("opened", SaveAndOpen(Make<Alpaca4d.Gh.ModelView>())) })

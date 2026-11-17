@@ -17,7 +17,8 @@ The real component, built as Grasshopper builds it:
   Range takes a list, one per result.
 * Each choice shows only the controls it uses - no result its Colour by, each result ticked its own
   Component and the Unit of the component, *Beam forces* its diagram scale, *Shell stresses* its
-  Layer, *Reactions* its style and arrow scale. Two results ticked show both; ticking *Shell forces*
+  Layer, *Reactions* what it is drawn as - dots to start with - and the scale, and the arrows' style only
+  when they are drawn as arrows. Two results ticked show both; ticking *Shell forces*
   unticks *Shell stresses*, which colour the same faces. `ShowResult`, for scripts, ticks one alone.
 * *Beam forces* picks its forces in a row of checkboxes, N Vy Vz T My Mz, N to start with; the
   force unit and the moment unit each show while one of their kind is ticked.
