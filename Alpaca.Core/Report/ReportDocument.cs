@@ -107,6 +107,17 @@ namespace Alpaca4d.Report
         public bool Numbered = true;
     }
 
+    /// <summary>
+    /// The table of contents: the report's headings down to <see cref="Depth"/>, each with its number
+    /// and the page it starts on, under a title of its own that is neither numbered nor listed.
+    /// </summary>
+    public sealed class ContentsBlock : ReportBlock
+    {
+        public string Title = "Contents";
+        /// <summary>The deepest heading listed: 1 the chapters, 2 their sections too, 3 every heading.</summary>
+        public int Depth = 2;
+    }
+
     /// <summary>Running text. A line break in it starts a new line.</summary>
     public sealed class ParagraphBlock : ReportBlock
     {
@@ -133,6 +144,9 @@ namespace Alpaca4d.Report
 
         /// <summary>A line of small print under the table, or empty.</summary>
         public string Note = "";
+
+        /// <summary>Whether it is numbered and counted, "Table 2": not the report's own revisions.</summary>
+        public bool Numbered = true;
     }
 
     /// <summary>

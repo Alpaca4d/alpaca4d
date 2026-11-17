@@ -44,15 +44,18 @@ namespace Alpaca4d.Report
     {
         public readonly IReadOnlyList<Model> All;
 
+        /// <summary>The models given; one that holds load combinations, as the results of each of them.</summary>
         public ModelSet(IEnumerable<Model> models)
         {
-            All = (models ?? Enumerable.Empty<Model>()).Where(m => m != null).ToList();
+            All = Model.Expand(models).ToList();
         }
 
         /// <summary>The kinds a template can name a model by, and what else it may call them.</summary>
         public static readonly string[] Kinds = { "model", "static", "vibration", "buckling", "pushover", "footfall" };
 
+        /// <summary>What a model is, for a template to name it by; "failed" for a combination that did not solve, which no template names.</summary>
         public static string KindOf(Model model) =>
+            model.CombinationFailure != null ? "failed" :
             model.Footfall != null ? "footfall" : model.IsBuckling ? "buckling" : model.IsModal ? "vibration" : model.IsPushover ? "pushover" : model.IsAnalysed ? "static" : "model";
 
         private static string Kind(string name)
@@ -97,7 +100,7 @@ namespace Alpaca4d.Report
             }
 
             if (kind == "model")
-                return All.FirstOrDefault(m => !m.IsAnalysed) ?? All[0].Unanalysed() ?? All[0];
+                return All.FirstOrDefault(m => KindOf(m) == "model") ?? All[0].Unanalysed() ?? All[0];
 
             var found = All.FirstOrDefault(m => KindOf(m) == kind);
             if (found == null)
@@ -165,8 +168,14 @@ namespace Alpaca4d.Report
             var set = new ModelSet(models);
             bool Has(string kind) => set.All.Any(m => ModelSet.KindOf(m) == kind);
 
+            bool Steel(Model m) => m.Beams.Any(b => b.Section?.Material is Alpaca4d.Generic.IUniaxialMaterial material && Alpaca4d.Material.DesignGrades.Of(material) != null);
+            var statics = set.All.Where(m => ModelSet.KindOf(m) == "static" && !m.IsTransient).ToList();
+            bool combinations = set.All.Any(m => m.Combination != null);
+            var built = set.Find("model", out _);
+
             var content = new JArray
             {
+                new JObject { ["contents"] = "Contents" },
                 new JObject { ["heading"] = "The model" },
                 new JObject { ["text"] = "The model has {model.nodes} nodes and {model.elements} elements, and weighs {model.mass:N0} kg." },
                 new JObject { ["table"] = "model.summary" },
@@ -175,9 +184,17 @@ namespace Alpaca4d.Report
                 new JObject { ["figure"] = new JObject { ["model"] = "model", ["colourBy"] = "Section", ["supports"] = true, ["loads"] = true, ["caption"] = "The model, coloured by section, with its supports and loads" } },
             };
 
+            if ((built?.Combination?.Source ?? built)?.LoadPatterns?.Count > 0 || combinations)
+            {
+                content.Add(new JObject { ["heading"] = "Loads" });
+                content.Add(new JObject { ["table"] = "loads.patterns" });
+                if (combinations) content.Add(new JObject { ["table"] = "loads.combinations" });
+            }
+
             if (Has("static"))
             {
                 content.Add(new JObject { ["heading"] = "Static analysis" });
+                if (statics.Count > 1) content.Add(new JObject { ["table"] = "static.combinations" });
                 content.Add(new JObject { ["text"] = "The largest displacement is {static.maxDisplacement:F2} mm, at node {static.maxNode}." });
                 content.Add(new JObject { ["figure"] = new JObject { ["model"] = "static", ["result"] = "Displacement", ["component"] = "Magnitude", ["unit"] = "mm", ["caption"] = "Displacement" } });
                 content.Add(new JObject { ["table"] = "static.displacements" });
@@ -208,6 +225,17 @@ namespace Alpaca4d.Report
                     ["content"] = new JArray { new JObject { ["figure"] = new JObject { ["result"] = "Displacement", ["legend"] = false, ["caption"] = "Mode {mode}: αcr = {buckling.factor[mode]:F2}" } } }
                 });
             }
+
+            if (statics.Any(Steel))
+            {
+                content.Add(new JObject { ["heading"] = "Design checks" });
+                content.Add(new JObject { ["text"] = "The steel members are checked to EN 1993-1-1 at their worst over the ultimate combinations." });
+                content.Add(new JObject { ["table"] = "design.utilisation" });
+            }
+
+            content.Add(new JObject { ["heading"] = "About this calculation" });
+            content.Add(new JObject { ["table"] = "report.about" });
+            content.Add(new JObject { ["table"] = "report.analyses" });
 
             var root = new JObject
             {
@@ -465,6 +493,17 @@ namespace Alpaca4d.Report
             if (block["subsubheading"] != null)
                 return new[] { Heading(block, "subsubheading", 3, vars) };
 
+            // The table of contents: "contents": its title, or true for "Contents"; "depth": 1 to 3.
+            if (block["contents"] != null)
+            {
+                var title = block["contents"];
+                return new[] { new ContentsBlock
+                {
+                    Title = title.Type == JTokenType.Boolean ? ((bool)title ? "Contents" : "") : Fill((string)title, vars),
+                    Depth = (int?)block["depth"] ?? 2
+                } };
+            }
+
             if (block["text"] != null)
             {
                 var text = block["text"];
@@ -481,7 +520,9 @@ namespace Alpaca4d.Report
 
             if (block["figure"] != null)
             {
-                var made = new List<ReportBlock> { Figure(block, vars, defaultModel, out var drawn) };
+                var figure = Figure(block, vars, defaultModel, out var drawn);
+                var made = new List<ReportBlock>();
+                if (figure != null) made.Add(figure);
                 if (drawn != null && WantsTables(drawn.Settings) && Writes(vars))
                     made.AddRange(ResultTables(drawn.Model, drawn.Settings));
                 return made;
@@ -490,7 +531,7 @@ namespace Alpaca4d.Report
             if (block["figures"] is JArray many)
             {
                 int columns = (int?)block["columns"] ?? many.Count;
-                var figures = many.OfType<JObject>().Select(f => Figure(new JObject { ["figure"] = f }, vars, defaultModel)).ToList();
+                var figures = many.OfType<JObject>().Select(f => Figure(new JObject { ["figure"] = f }, vars, defaultModel)).Where(f => f != null).ToList();
                 return Grid(figures, columns);
             }
 
@@ -516,7 +557,7 @@ namespace Alpaca4d.Report
 
             var shown = block["columns"] is JArray picked ? picked.Select(c => (string)c).ToList() : null;
             string by = block["by"] != null ? Fill((string)block["by"], vars) : null;
-            var table = ReportTables.Make(name, _models, key, Modes(block["modes"], null), shown, by, out string problem);
+            var table = ReportTables.Make(name, _models, key, Modes(block["modes"], null), shown, by, block, out string problem);
             if (table == null) return Missing($"Table \"{name}\"", problem);
 
             if (block["caption"] != null) table.Caption = Fill((string)block["caption"], vars);
@@ -543,7 +584,8 @@ namespace Alpaca4d.Report
             var table = new TableBlock
             {
                 Caption = Fill((string)own["caption"] ?? "", vars),
-                Note = Fill((string)own["note"] ?? "", vars)
+                Note = Fill((string)own["note"] ?? "", vars),
+                Numbered = (bool?)own["numbered"] ?? true
             };
             var aligns = (own["align"] as JArray ?? new JArray()).Select(a => ((string)a ?? "").Trim().ToLowerInvariant()).ToList();
             for (int c = 0; c < columns; c++)
@@ -591,6 +633,26 @@ namespace Alpaca4d.Report
             var modelKey = settings["model"] != null ? Value(settings["model"], vars) : defaultModel;
             var model = _models.Find(modelKey, out string problem);
             if (model == null) return Missing(what, problem);
+
+            // A result the model has no elements for - the shell forces of a frame - is left out of the
+            // picture, and said so in the Log; a picture of nothing else is left out whole, with no
+            // empty picture or table of dashes in its place.
+            var results = settings["results"] as JArray;
+            var entries = results != null ? results.OfType<JObject>().ToList()
+                        : settings["result"] != null ? new List<JObject> { settings } : new List<JObject>();
+            var lacking = entries.Select(e => (Entry: e, Name: (string)e["result"], Why: ReportTables.Lacks(model, (string)e["result"])))
+                                 .Where(x => x.Why != null).ToList();
+            if (lacking.Count > 0 && lacking.Count == entries.Count)
+            {
+                Note($"{what} left out: {string.Join("; ", lacking.Select(x => $"{x.Why}, so no {x.Name.ToLowerInvariant()} to draw"))}.");
+                _figures--;
+                return null;
+            }
+            foreach (var x in lacking)
+            {
+                results.Remove(x.Entry);
+                Note($"{what}: {x.Name.ToLowerInvariant()} left out of it: {x.Why}.");
+            }
 
             int step;
             if (settings["mode"] != null)

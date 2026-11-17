@@ -28,6 +28,13 @@ namespace Alpaca4d.Report
             ("vibration.massRatios", "Each mode's participating mass along X, Y and Z, as a percentage, and its running total."),
             ("buckling.factors", "Each buckling mode's load factor."),
             ("footfall.response", "The nodes that respond most to footfall, worst first: their response factor R, its steady-state and transient parts, their accelerations and the pace that gives R."),
+            ("loads.patterns", "Each load pattern: its factor, its loads, and the force they add up to along X, Y and Z, with the total of all of them."),
+            ("loads.combinations", "Each load combination given, from Load Combination: its type and its patterns with their factors."),
+            ("static.combinations", "Each combination analysed - or each static model given - with its largest displacement and the sum of its reactions."),
+            ("design.utilisation", "The steel members checked to EN 1993-1-1 over the ultimate combinations: each section's worst member, its governing check and its utilisation."),
+            ("design.members", "Every steel member checked to EN 1993-1-1 over the ultimate combinations, worst first: its section, grade, class, governing check and utilisation."),
+            ("report.about", "What the report was made with: Alpaca4d and OpenSees, the units, how many models, and when it was written."),
+            ("report.analyses", "Each model given and how it was solved: its analysis and combination, and OpenSees' integrator, steps, algorithm, test and solver."),
         };
 
         /// <summary>
@@ -46,12 +53,24 @@ namespace Alpaca4d.Report
             ["vibration.modes"] = new[] { "Eigenvalue", "Angular frequency", "Frequency", "Period" },
             ["vibration.massRatios"] = new[] { "Ux", "Uy", "Uz", "Sum Ux", "Sum Uy", "Sum Uz", "Note below" },
             ["buckling.factors"] = new[] { "Note below" },
+            ["loads.patterns"] = new[] { "Factor", "Loads", "Fx", "Fy", "Fz", "Total", "Note below" },
+            ["loads.combinations"] = new[] { "Type", "Combination" },
+            ["static.combinations"] = new[] { "Type", "Largest displacement", "Node", "Sum Fx", "Sum Fy", "Sum Fz", "Note below" },
+            ["design.utilisation"] = new[] { "Grade", "Members", "Element", "Governing", "Combination", "Result", "Note below" },
+            ["design.members"] = new[] { "Section", "Grade", "Class", "Governing", "Combination", "Result", "Note below" },
+            ["report.about"] = new[] { "Software", "Solver", "Units", "Models", "Written" },
+            ["report.analyses"] = new[] { "Combination", "Integrator", "Steps", "Algorithm", "Test", "System", "Note below" },
             ["footfall.response"] = new[] { "Response factor R", "Steady-state R", "Transient R", "Steady-state acceleration", "Transient acceleration", "Pace", "Note below" },
         };
 
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
-        private static string F(double value, int decimals) => value.ToString("F" + decimals, Invariant);
+        /// <summary>A number to so many decimals, a negative one that rounds to nothing written 0, not -0.</summary>
+        private static string F(double value, int decimals)
+        {
+            double rounded = Math.Round(value, decimals);
+            return (rounded == 0.0 ? 0.0 : value).ToString("F" + decimals, Invariant);
+        }
 
         /// <summary>
         /// The table <paramref name="name"/> names, out of the model of its kind - or the one
@@ -74,27 +93,57 @@ namespace Alpaca4d.Report
         /// <see cref="FootfallResponse.Quantities"/>, R when it is null. That column comes first after
         /// the node, and stays whatever <paramref name="shown"/> says.
         /// </summary>
-        public static TableBlock Make(string name, ModelSet models, object model, IList<int> modes, ICollection<string> shown, string by, out string problem)
+        public static TableBlock Make(string name, ModelSet models, object model, IList<int> modes, ICollection<string> shown, string by, out string problem) =>
+            Make(name, models, model, modes, shown, by, null, out problem);
+
+        /// <summary>
+        /// As <see cref="Make(string, ModelSet, object, IList{int}, ICollection{string}, string, out string)"/>,
+        /// with what a table may be told besides: for the design tables, "gammaM0", "gammaM1" and
+        /// "fabrication" (Rolled or Welded) - EN 1993-1-1's recommended 1.0, 1.0 and Rolled when left out.
+        /// </summary>
+        public static TableBlock Make(string name, ModelSet models, object model, IList<int> modes, ICollection<string> shown, string by,
+                                      Newtonsoft.Json.Linq.JObject options, out string problem)
         {
-            var table = Whole(name, models, model, modes, by, out problem);
+            var table = Whole(name, models, model, modes, by, options, out problem);
             if (table != null && shown != null)
                 Filter((name ?? "").Trim(), table, new HashSet<string>(shown, StringComparer.OrdinalIgnoreCase));
             return table;
         }
 
-        private static TableBlock Whole(string name, ModelSet models, object model, IList<int> modes, string by, out string problem)
+        private static TableBlock Whole(string name, ModelSet models, object model, IList<int> modes, string by,
+                                        Newtonsoft.Json.Linq.JObject options, out string problem)
         {
             problem = null;
             string key = (name ?? "").Trim().ToLowerInvariant();
             string kind = key.Contains(".") ? key.Substring(0, key.IndexOf('.')) : key;
 
-            var source = models.Find(model ?? kind, out problem);
+            try
+            {
+                // The tables of all the models given at once: the combinations, and the members checked over them.
+                switch (key)
+                {
+                    case "loads.combinations": return Combinations(models, out problem);
+                    case "static.combinations": return CombinationResults(models, out problem);
+                    case "design.utilisation": return Design(models, options, true, out problem);
+                    case "design.members": return Design(models, options, false, out problem);
+                    case "report.about": return About(models, out problem);
+                    case "report.analyses": return Analyses(models, out problem);
+                }
+            }
+            catch (Exception ex)
+            {
+                problem = $"{name} could not be read: {ex.Message}";
+                return null;
+            }
+
+            var source = models.Find(model ?? (kind == "loads" ? "model" : kind), out problem);
             if (source == null) return null;
 
             try
             {
                 switch (key)
                 {
+                    case "loads.patterns": return Patterns(source, out problem);
                     case "model.summary": return Summary(source, models);
                     case "model.sections": return Sections(source, out problem);
                     case "model.materials": return Materials(source, out problem);
@@ -166,6 +215,29 @@ namespace Alpaca4d.Report
                     break;
                 case "vibration.massratios":
                     Columns(("Ux", 1), ("Uy", 2), ("Uz", 3), ("Sum Ux", 4), ("Sum Uy", 5), ("Sum Uz", 6));
+                    break;
+                case "loads.patterns":
+                    Columns(("Factor", 1), ("Loads", 2), ("Fx", 3), ("Fy", 4), ("Fz", 5));
+                    if (Off("Total") && table.Bold.Count > 0) rows.Add(table.Bold.Max());
+                    break;
+                case "loads.combinations":
+                    Columns(("Type", 1), ("Combination", 2));
+                    break;
+                case "static.combinations":
+                    Columns(("Type", 1), ("Largest displacement", 2), ("Node", 3), ("Sum Fx", 4), ("Sum Fy", 5), ("Sum Fz", 6));
+                    break;
+                case "design.utilisation":
+                    Columns(("Grade", 1), ("Members", 2), ("Element", 3), ("Governing", 4), ("Combination", 6), ("Result", 7));
+                    break;
+                case "design.members":
+                    Columns(("Section", 1), ("Grade", 2), ("Class", 3), ("Governing", 4), ("Combination", 6), ("Result", 7));
+                    break;
+                case "report.about":
+                    for (int r = 0; r < table.Rows.Count; r++)
+                        if (Off(table.Rows[r][0])) rows.Add(r);
+                    break;
+                case "report.analyses":
+                    Columns(("Combination", 2), ("Integrator", 3), ("Steps", 4), ("Algorithm", 5), ("Test", 6), ("System", 7));
                     break;
                 case "footfall.response":
                     // By the header, as the column sorted by comes first: it stays.
@@ -357,6 +429,20 @@ namespace Alpaca4d.Report
         /// <summary>The step a static model's results are read at: its last, where the loads are all on.</summary>
         public static int LastStep(Model model) => Math.Max(0, Read.StepCount(model) - 1);
 
+        /// <summary>
+        /// Why <paramref name="model"/> can have none of a result Model View draws, by the result's
+        /// name - "the model has no shells" for "Shell forces" - or null when it can: a beam result
+        /// needs beams, a shell result shells, a brick result solid elements.
+        /// </summary>
+        public static string Lacks(Model model, string result)
+        {
+            string name = (result ?? "").ToLowerInvariant();
+            if (name.Contains("beam") && (model.Beams?.Count ?? 0) == 0) return "the model has no beams";
+            if (name.Contains("shell") && (model.Shells?.Count ?? 0) == 0) return "the model has no shells";
+            if ((name.Contains("brick") || name.Contains("solid")) && (model.Bricks?.Count ?? 0) == 0) return "the model has no solid elements";
+            return null;
+        }
+
         private static TableBlock Displacements(Model model, out string problem)
         {
             problem = null;
@@ -450,6 +536,377 @@ namespace Alpaca4d.Report
             return table;
         }
 
+        // ── Loads and combinations ─────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Each load pattern of the model as it was assembled - the one a combination was made from,
+        /// for a combination - with its factor, what loads it has, and the force they add up to, its
+        /// factor on: the total of all of them is what the supports carry when they act together.
+        /// </summary>
+        private static TableBlock Patterns(Model model, out string problem)
+        {
+            problem = null;
+            var source = model.Combination?.Source ?? model;
+            var patterns = source.LoadPatterns ?? new List<Alpaca4d.Loads.LoadPattern>();
+            if (patterns.Count == 0) { problem = "the model has no load patterns"; return null; }
+
+            string force = Units.Force.ToString();
+            var table = new TableBlock
+            {
+                Caption = "Load patterns",
+                Header = new List<string> { "Pattern", "Factor", "Loads", $"Fx [{force}]", $"Fy [{force}]", $"Fz [{force}]" },
+                Align = new List<TextAlign> { TextAlign.Left, TextAlign.Right, TextAlign.Left, TextAlign.Right, TextAlign.Right, TextAlign.Right },
+            };
+
+            var total = new Rhino.Geometry.Vector3d();
+            int unsummed = 0;
+            for (int i = 0; i < patterns.Count; i++)
+            {
+                var pattern = patterns[i];
+                string name = string.IsNullOrWhiteSpace(pattern.Name) ? $"Pattern {i + 1}" : pattern.Name.Trim();
+                if (pattern.PatternType != Alpaca4d.Loads.PatternType.Plain)
+                {
+                    table.Rows.Add(new List<string> { name, F(pattern.Factor, 2), "Ground motion", "", "", "" });
+                    continue;
+                }
+                var sum = Resultant(source, pattern.Load ?? new List<ILoad>(), ref unsummed) * pattern.Factor;
+                total += sum;
+                table.Rows.Add(new List<string> { name, F(pattern.Factor, 2), Kinds(pattern.Load), F(sum.X, 2), F(sum.Y, 2), F(sum.Z, 2) });
+            }
+            table.Bold.Add(table.Rows.Count);
+            table.Rows.Add(new List<string> { "Total", "", "", F(total.X, 2), F(total.Y, 2), F(total.Z, 2) });
+
+            table.Note = "The forces each pattern's loads add up to, in the global axes, its factor on; self-weight from the sections' density." +
+                         (unsummed > 0 ? $" {unsummed} loads in the shells' own axes are not in the sums." : "");
+            return table;
+        }
+
+        /// <summary>What a pattern's loads are: "4 point, 12 line, self-weight".</summary>
+        private static string Kinds(IEnumerable<ILoad> loads)
+        {
+            var list = (loads ?? Enumerable.Empty<ILoad>()).Where(l => l != null).ToList();
+            var parts = new List<string>();
+            void Count(int n, string what) { if (n > 0) parts.Add($"{n} {what}"); }
+            Count(list.Count(l => l is Alpaca4d.Loads.PointLoad), "point");
+            Count(list.Count(l => l is Alpaca4d.Loads.LineLoad), "line");
+            Count(list.Count(l => l is Alpaca4d.Loads.MeshLoad), "area");
+            if (list.Any(l => l is Alpaca4d.Loads.Gravity)) parts.Add("self-weight");
+            int other = list.Count(l => !(l is Alpaca4d.Loads.PointLoad || l is Alpaca4d.Loads.LineLoad || l is Alpaca4d.Loads.MeshLoad || l is Alpaca4d.Loads.Gravity));
+            Count(other, "other");
+            return parts.Count == 0 ? "none" : string.Join(", ", parts);
+        }
+
+        /// <summary>
+        /// The force <paramref name="loads"/> add up to, as Assemble puts them on the model: a line load
+        /// on each beam its filter names, times the beam's length; an area load on each shell, times its
+        /// area; self-weight as the model's sections weigh. A load on a shell in its own axes is counted
+        /// in <paramref name="unsummed"/> instead.
+        /// </summary>
+        private static Rhino.Geometry.Vector3d Resultant(Model model, IEnumerable<ILoad> loads, ref int unsummed)
+        {
+            var sum = new Rhino.Geometry.Vector3d();
+            foreach (var load in loads)
+            {
+                switch (load)
+                {
+                    case Alpaca4d.Loads.PointLoad point:
+                        sum += point.Force;
+                        break;
+                    case Alpaca4d.Loads.LineLoad line:
+                        foreach (var beam in line.Element != null ? new List<IBeam> { line.Element } : line.AppliedTo(model.Beams))
+                        {
+                            if (beam?.Curve == null) continue;
+                            double length = beam.Curve.PointAtStart.DistanceTo(beam.Curve.PointAtEnd);
+                            var w = line.GlobalForce;
+                            if (line.IsLocal && beam.GeomTransf != null)
+                            {
+                                // Back from the axes GlobalToLocal turns a force into.
+                                var plane = new Rhino.Geometry.Plane(Rhino.Geometry.Point3d.Origin, beam.GeomTransf.LocalZ, beam.GeomTransf.LocalY);
+                                w = plane.PointAt(line.LocalForce.X, line.LocalForce.Y, line.LocalForce.Z) - Rhino.Geometry.Point3d.Origin;
+                            }
+                            sum += w * length;
+                        }
+                        break;
+                    case Alpaca4d.Loads.MeshLoad mesh:
+                        foreach (var shell in mesh.Element != null ? new List<IShell> { mesh.Element } : mesh.AppliedTo(model.Shells))
+                        {
+                            if (mesh.IsLocal) { unsummed++; break; }
+                            sum += mesh.GlobalForce * Alpaca4d.Utils.MeshArea(shell.Mesh);
+                        }
+                        break;
+                    case Alpaca4d.Loads.Gravity gravity:
+                        sum += Resultant(model, model.CreateGravityLoad(gravity), ref unsummed);
+                        break;
+                }
+            }
+            return sum;
+        }
+
+        /// <summary>The load combinations among the models given, each once, in the order given.</summary>
+        private static List<Alpaca4d.Loads.LoadCombination> CombinationsOf(ModelSet models) =>
+            models.All.Where(m => m.Combination != null).Select(m => m.Combination)
+                  .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
+
+        private static TableBlock Combinations(ModelSet models, out string problem)
+        {
+            problem = null;
+            var combinations = CombinationsOf(models);
+            if (combinations.Count == 0) { problem = "the AlpacaModels hold no load combinations: add them with Load Combination, and analyse the model"; return null; }
+
+            var table = new TableBlock
+            {
+                Caption = "Load combinations",
+                Header = new List<string> { "Combination", "Type", "Load patterns and factors" },
+                Align = new List<TextAlign> { TextAlign.Left, TextAlign.Left, TextAlign.Left },
+            };
+            foreach (var c in combinations)
+                table.Rows.Add(new List<string> { c.Name, Alpaca4d.Loads.LoadCombination.NameOf(c.Kind), c.Formula });
+            return table;
+        }
+
+        /// <summary>The static models given, each a load case or a combination: not a pushover, nor a time history.</summary>
+        private static List<Model> StaticModels(ModelSet models) =>
+            models.All.Where(m => ModelSet.KindOf(m) == "static" && !m.IsTransient).ToList();
+
+        /// <summary>What a static model is called in a table: its combination's name, or its place among the models given.</summary>
+        private static string Called(ModelSet models, Model model) =>
+            model.Combination?.Name ?? $"Model {IndexOf(models, model)}";
+
+        private static int IndexOf(ModelSet models, Model model)
+        {
+            for (int i = 0; i < models.All.Count; i++)
+                if (ReferenceEquals(models.All[i], model)) return i;
+            return -1;
+        }
+
+        private static TableBlock CombinationResults(ModelSet models, out string problem)
+        {
+            problem = null;
+            var statics = StaticModels(models);
+            if (statics.Count == 0) { problem = "none of the AlpacaModels is a static model: connect the ones Run Analysis hands on"; return null; }
+            // In the order given, with the combinations that did not solve in their place.
+            var rows = models.All.Where(m => statics.Contains(m) || m.CombinationFailure != null).ToList();
+
+            string force = Units.Force.ToString();
+            var table = new TableBlock
+            {
+                Caption = statics.Any(m => m.Combination != null) ? "Results by combination" : "Results by model",
+                Header = new List<string> { "Combination", "Type", "Largest |U| [mm]", "Node", $"Sum Fx [{force}]", $"Sum Fy [{force}]", $"Sum Fz [{force}]" },
+                Align = new List<TextAlign> { TextAlign.Left, TextAlign.Left, TextAlign.Right, TextAlign.Right, TextAlign.Right, TextAlign.Right, TextAlign.Right },
+                Note = "The largest displacement of any node, and the sums of the support reactions in the global axes."
+            };
+            foreach (var model in rows)
+            {
+                if (model.CombinationFailure != null)
+                {
+                    table.Rows.Add(new List<string> { Called(models, model), Alpaca4d.Loads.LoadCombination.NameOf(model.Combination.Kind), "-", "", "-", "-", "-" });
+                    table.Note += $" {Called(models, model)} has no results: {model.CombinationFailure}.";
+                    continue;
+                }
+                var (mm, node) = LargestDisplacement(model);
+                var sum = new Rhino.Geometry.Vector3d();
+                if (model.Supports.Count > 0)
+                {
+                    var nodes = model.Supports.Select(s => s.AuxiliaryNodeId ?? s.Id).ToList();
+                    foreach (var f in Read.NodalOutput(model, LastStep(model), ResultType.REACTION_FORCE, nodes)) sum += f;
+                }
+                table.Rows.Add(new List<string>
+                {
+                    Called(models, model), model.Combination != null ? Alpaca4d.Loads.LoadCombination.NameOf(model.Combination.Kind) : "",
+                    F(mm, 2), node.ToString(Invariant), F(sum.X, 2), F(sum.Y, 2), F(sum.Z, 2)
+                });
+            }
+            return table;
+        }
+
+        // ── Design checks ──────────────────────────────────────────────────────────────────────
+
+        /// <summary>A member at its worst: how it was checked and in which model.</summary>
+        private sealed class Worst
+        {
+            public int Beam;
+            public Alpaca4d.Design.MemberUtilisation Check;
+            public Model Model;
+        }
+
+        /// <summary>
+        /// The steel members checked to EN 1993-1-1 over the ultimate combinations given - ULS,
+        /// accidental, seismic - or, with no combination given, over every static model: each member
+        /// at its worst. <paramref name="sections"/> keeps each section's worst member alone.
+        /// </summary>
+        private static TableBlock Design(ModelSet models, Newtonsoft.Json.Linq.JObject options, bool sections, out string problem)
+        {
+            problem = null;
+            var statics = StaticModels(models);
+            if (statics.Count == 0) { problem = "none of the AlpacaModels is a static model: connect the ones Run Analysis hands on"; return null; }
+            var ultimate = statics.Where(m => m.Combination != null && m.Combination.IsUltimate).ToList();
+            var unsolved = models.All.Where(m => m.CombinationFailure != null && m.Combination.IsUltimate).ToList();
+            var over = ultimate.Count > 0 ? ultimate : statics.Where(m => m.Combination == null).ToList();
+            if (over.Count == 0) { problem = "none of the combinations is an ultimate one - ULS, accidental or seismic - to check the members against"; return null; }
+            if (over.All(m => m.Beams.Count == 0)) { problem = "the model has no beams to check"; return null; }
+
+            var settings = new Alpaca4d.Design.DesignSettings { Report = false };
+            if (options != null)
+            {
+                if (options["gammaM0"] != null) settings.GammaM0 = (double)options["gammaM0"];
+                if (options["gammaM1"] != null) settings.GammaM1 = (double)options["gammaM1"];
+                if (string.Equals((string)options["fabrication"], "Welded", StringComparison.OrdinalIgnoreCase))
+                    settings.Fabrication = Alpaca4d.Design.Fabrication.Welded;
+            }
+
+            var worst = new Dictionary<int, Worst>();
+            var notChecked = new Dictionary<int, string>();
+            foreach (var model in over)
+            {
+                var members = model.Beams.Select(b => new Alpaca4d.Design.SteelMember(b.Curve != null ? b.Curve.PointAtStart.DistanceTo(b.Curve.PointAtEnd) : 0.0)).ToList();
+                var checks = Alpaca4d.Design.Utilisations.Of(model, LastStep(model), members, settings);
+                for (int i = 0; i < checks.Count; i++)
+                {
+                    var check = checks[i];
+                    if (!check.Checked || check.Max == null) { if (!worst.ContainsKey(i)) notChecked[i] = check.Type; continue; }
+                    notChecked.Remove(i);
+                    if (!worst.TryGetValue(i, out var was) || check.Max > was.Check.Max)
+                        worst[i] = new Worst { Beam = i, Check = check, Model = model };
+                }
+            }
+            if (worst.Count == 0)
+            {
+                problem = "none of the beams is steel with a grade to check: give each a steel material, S235 to S460, as Material Library Elastic names them";
+                return null;
+            }
+
+            var beams = over[0].Beams;
+            string Id(int i) => beams[i].Id?.ToString(Invariant) ?? (i + 1).ToString(Invariant);
+            string Section(int i) => beams[i].Section?.SectionName ?? "";
+            string Grade(int i) => Alpaca4d.Material.DesignGrades.Of(beams[i].Section?.Material)?.Name ?? beams[i].Section?.Material?.MatName ?? "";
+            // Not OK while an ultimate combination has no results: the members are not proven under it.
+            string Result(double u) => u > 1.0 ? "Fails" : unsolved.Count > 0 ? "Incomplete" : "OK";
+            // The check, as EN 1993-1-1 names it.
+            string Clause(string check)
+            {
+                switch (check)
+                {
+                    case "Axial": return "Axial, 6.2.3-4";
+                    case "ShearY": return "Shear y, 6.2.6";
+                    case "ShearZ": return "Shear z, 6.2.6";
+                    case "Torsion": return "Torsion, 6.2.7";
+                    case "BendingY": return "Bending y, 6.2.5";
+                    case "BendingZ": return "Bending z, 6.2.5";
+                    case "Combined": return "Combined, 6.2.9";
+                    case "BucklingY": return "Buckling y, 6.3.1";
+                    case "BucklingZ": return "Buckling z, 6.3.1";
+                    case "LTB": return "Lateral-torsional, 6.3.2";
+                    case "InteractionY": return "Interaction y, 6.3.3";
+                    case "InteractionZ": return "Interaction z, 6.3.3";
+                    default: return check;
+                }
+            }
+
+            var rows = worst.Values.OrderByDescending(w => w.Check.Max).ToList();
+            var table = new TableBlock
+            {
+                Caption = sections ? "Steel members: the worst of each section" : "Steel members",
+                Align = new List<TextAlign> { TextAlign.Left, TextAlign.Left, TextAlign.Left, TextAlign.Right, TextAlign.Left, TextAlign.Right, TextAlign.Left, TextAlign.Left }
+            };
+            if (sections)
+            {
+                table.Header = new List<string> { "Section", "Grade", "Members", "Element", "Governing", "Utilisation", "Combination", "Result" };
+                table.Align[2] = TextAlign.Right;
+                foreach (var group in rows.GroupBy(w => Section(w.Beam)).OrderByDescending(g => g.First().Check.Max))
+                {
+                    var w = group.First();
+                    double u = w.Check.Max.Value;
+                    table.Rows.Add(new List<string> { group.Key, Grade(w.Beam), group.Count().ToString(Invariant), Id(w.Beam), Clause(w.Check.Governing), F(u, 2), Called(models, w.Model), Result(u) });
+                }
+            }
+            else
+            {
+                table.Header = new List<string> { "Element", "Section", "Grade", "Class", "Governing", "Utilisation", "Combination", "Result" };
+                table.Align[0] = TextAlign.Right;
+                table.Align[3] = TextAlign.Right;
+                foreach (var w in rows)
+                {
+                    double u = w.Check.Max.Value;
+                    table.Rows.Add(new List<string> { Id(w.Beam), Section(w.Beam), Grade(w.Beam), w.Check.Class?.ToString(Invariant) ?? "", Clause(w.Check.Governing), F(u, 2), Called(models, w.Model), Result(u) });
+                }
+            }
+
+            int fails = rows.Count(w => w.Check.Max > 1.0);
+            var note = new List<string>
+            {
+                unsolved.Count > 0 ? $"The check is incomplete: {string.Join(", ", unsolved.Select(m => m.Combination.Name))} {(unsolved.Count == 1 ? "has" : "have")} no results ({unsolved[0].CombinationFailure})." : "",
+                fails == 0 ? (unsolved.Count > 0 ? $"No member fails under the other combinations." : $"All {rows.Count} steel members pass.") : $"{fails} of {rows.Count} steel members fail.",
+                $"EN 1993-1-1, γM0 = {F(settings.GammaM0, 2)}, γM1 = {F(settings.GammaM1, 2)}, {settings.Fabrication.ToString().ToLowerInvariant()} sections;",
+                "each member held at its ends - buckling lengths node to node, loads at the shear centre, no sway - as Utilisation takes it unless told otherwise.",
+                ultimate.Count > 0 ? $"Over {string.Join(", ", ultimate.Select(m => m.Combination.Name))}." : over.Count > 1 ? $"Over the {over.Count} static models given." : ""
+            };
+            if (notChecked.Count > 0) note.Add($"{notChecked.Count} members are not steel with a grade, and are not checked.");
+            table.Note = string.Join(" ", note.Where(n => n.Length > 0));
+            return table;
+        }
+
+        // ── What the report was made with ──────────────────────────────────────────────────────
+
+        private static TableBlock About(ModelSet models, out string problem)
+        {
+            problem = null;
+            var version = typeof(Model).Assembly.GetName().Version;
+            var table = new TableBlock
+            {
+                Caption = "About this calculation",
+                Header = new List<string> { "", "" },
+                Align = new List<TextAlign> { TextAlign.Left, TextAlign.Left },
+            };
+            table.Rows.Add(new List<string> { "Software", $"Alpaca4d {version.Major}.{version.Minor}.{Math.Max(0, version.Build)}" });
+            var solver = models.All.Select(m => m.SolverVersion).FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            table.Rows.Add(new List<string> { "Solver", solver ?? "OpenSees" });
+            table.Rows.Add(new List<string> { "Units", $"Forces in {Units.Force}, lengths in {Units.Length}, stresses in MPa, displacements in mm" });
+            table.Rows.Add(new List<string> { "Models", $"{models.All.Count} given; how each was solved is in the table of analyses" });
+            table.Rows.Add(new List<string> { "Written", DateTime.Now.ToString("yyyy-MM-dd HH:mm", Invariant) });
+            return table;
+        }
+
+        /// <summary>
+        /// Each model given and how it was solved: what analysis, of which combination, and what
+        /// OpenSees was asked to do - its integrator, steps, algorithm, convergence test and solver.
+        /// </summary>
+        private static TableBlock Analyses(ModelSet models, out string problem)
+        {
+            problem = null;
+            if (models.All.Count == 0) { problem = "no AlpacaModel was given"; return null; }
+            var table = new TableBlock
+            {
+                Caption = "The analyses",
+                Header = new List<string> { "Model", "Analysis", "Combination", "Integrator", "Steps", "Algorithm", "Test", "System" },
+                Align = new List<TextAlign> { TextAlign.Right, TextAlign.Left, TextAlign.Left, TextAlign.Left, TextAlign.Right, TextAlign.Left, TextAlign.Left, TextAlign.Left },
+                Note = "By the names OpenSees gives its commands. Natural vibration and linear buckling solve their eigenvalues on their own."
+            };
+            for (int i = 0; i < models.All.Count; i++)
+            {
+                var model = models.All[i];
+                string analysis;
+                switch (ModelSet.KindOf(model))
+                {
+                    case "model": analysis = "Not analysed"; break;
+                    case "failed": analysis = "Static, no results: " + model.CombinationFailure; break;
+                    case "vibration": analysis = $"Natural vibration, {model.NumberOfModes} modes"; break;
+                    case "buckling": analysis = $"Linear buckling, {model.BucklingFactors?.Count ?? 0} modes"; break;
+                    case "pushover": analysis = "Pushover"; break;
+                    case "footfall": analysis = "Footfall, SCI P354"; break;
+                    default: analysis = model.IsTransient ? "Time history" : "Static"; break;
+                }
+                var s = model.Settings;
+                string Of(object type) => type?.ToString() ?? "";
+                table.Rows.Add(new List<string>
+                {
+                    i.ToString(Invariant), analysis, model.Combination?.Name ?? "",
+                    Of(s?.Integrator?.Type), s?.AnalysisStep != null ? s.AnalysisStep.NumIncr.ToString(Invariant) : "",
+                    Of(s?.Algorithm?.Type), Of(s?.Test?.Type), Of(s?.SystemEquation?.Type)
+                });
+            }
+            return table;
+        }
+
         // ── The tables of what a picture draws ─────────────────────────────────────────────────
 
         /// <summary>
@@ -490,10 +947,13 @@ namespace Alpaca4d.Report
             }
 
             int rows = parts.Max(p => p.Values.Count);
+            // The rounding left in a force that is 0 - 5E-17 beside 0.29 kN - read as the 0 it is.
+            var scales = parts.Select(p => p.Values.Count == 0 ? 0.0 : p.Values.Max(v => Math.Abs(v.Value))).ToList();
             for (int i = 0; i < rows; i++)
             {
                 var row = new List<string> { parts.Select(p => i < p.Values.Count ? p.Values[i].Key : null).FirstOrDefault(k => k != null) ?? "" };
-                row.AddRange(parts.Select(p => i < p.Values.Count ? ReportLayout.FormatValue(p.Values[i].Value) : ""));
+                row.AddRange(parts.Select((p, k) => i >= p.Values.Count ? ""
+                    : ReportLayout.FormatValue(Math.Abs(p.Values[i].Value) <= 1e-9 * scales[k] ? 0.0 : p.Values[i].Value)));
                 table.Rows.Add(row);
             }
 

@@ -240,9 +240,11 @@ namespace Alpaca4d.Report
                     case FigureRowBlock r: layout.Figures(r.Figures, Math.Max(1, r.Columns)); break;
                     case PageBreakBlock _: if (!layout.AtTop) layout.NewPage(); break;
                     case CoverBlock c: layout.Cover(c.Title, c.Subtitle); break;
+                    case ContentsBlock c: layout.Contents(c, doc.Blocks); break;
                 }
             }
 
+            layout.ContentsPages();
             layout.HeadersAndFooters();
             return layout._pages;
         }
@@ -386,6 +388,7 @@ namespace Alpaca4d.Report
             // nothing.
             Ensure(lines.Count * leading + 90.0);
             if (!AtTop) _y += chapter ? 12.0 : part ? 6.0 : 8.0;
+            _headingPages[heading] = _pages.Pages.Count;
 
             if (number.Length > 0)
                 Text(Left, Baseline(_y, size), number, size, true);
@@ -505,9 +508,9 @@ namespace Alpaca4d.Report
             // few rows together.
             double whole = captionHeight + rowHeight * (1 + table.Rows.Count) + noteHeight;
             Ensure(whole <= (Bottom - TopMargin) * 0.5 ? whole : captionHeight + rowHeight * (1 + Math.Min(3, table.Rows.Count)));
-            _tables++;
-            string label = $"Table {_tables}";
-            _y += Caption(label, table.Caption, Left, _y, TextWidth, false) + 4.0;
+            // A table of the report's own - its revisions - goes by its caption alone, bold, and is not counted.
+            string label = table.Numbered ? $"Table {++_tables}" : table.Caption;
+            _y += Caption(label, table.Numbered ? table.Caption : "", Left, _y, TextWidth, false) + 4.0;
 
             void HeaderRow()
             {
@@ -710,6 +713,69 @@ namespace Alpaca4d.Report
             if (a >= 1e5 || a < 1e-3) return value.ToString("0.##E+0", CultureInfo.InvariantCulture);
             int decimals = Math.Max(0, 2 - (int)Math.Floor(Math.Log10(a)));
             return Math.Round(value, decimals).ToString("0." + new string('#', Math.Max(1, decimals)), CultureInfo.InvariantCulture);
+        }
+
+        // ── The table of contents ──────────────────────────────────────────────────────────────
+
+        /// <summary>The page each heading was laid on, from 1, as the footer counts them.</summary>
+        private readonly Dictionary<HeadingBlock, int> _headingPages = new Dictionary<HeadingBlock, int>();
+
+        /// <summary>The page numbers of the contents, written once every heading has its page.</summary>
+        private readonly List<(HeadingBlock Heading, TextItem Page)> _contentsPages = new List<(HeadingBlock, TextItem)>();
+
+        /// <summary>
+        /// The table of contents: a line for each heading down to the depth asked, indented by its
+        /// level, its number, its text, dots and the page it starts on. The headings after it are not
+        /// laid out yet, so its page numbers are left blank and written at the end
+        /// (<see cref="ContentsPages"/>); its lines are as many as the headings, so what follows it
+        /// moves no further whatever they turn out to be.
+        /// </summary>
+        private void Contents(ContentsBlock contents, List<ReportBlock> blocks)
+        {
+            int depth = Math.Max(1, Math.Min(3, contents.Depth));
+            var listed = blocks.OfType<HeadingBlock>().Where(h => h.Level <= depth && !string.IsNullOrWhiteSpace(h.Text)).ToList();
+
+            if (!string.IsNullOrWhiteSpace(contents.Title))
+                Heading(new HeadingBlock { Level = 1, Text = contents.Title, Numbered = false });
+
+            const double size = BodySize, indent = 16.0, pageColumn = 28.0;
+            // The numbers of a level in a column of their own, the text lined up after the widest.
+            var numbers = listed.GroupBy(h => Math.Max(1, h.Level))
+                                .ToDictionary(g => g.Key, g => g.Select(h => TextMetrics.Width(h.Number ?? "", size, h.Level <= 1)).Max());
+            foreach (var heading in listed)
+            {
+                int level = Math.Max(1, heading.Level);
+                bool chapter = level == 1;
+                if (chapter && !AtTop) _y += 4.0;
+                Ensure(BodyLeading);
+                double baseline = Baseline(_y, size);
+
+                double x = Left + (level - 1) * indent;
+                string number = heading.Number ?? "";
+                if (number.Length > 0) Text(x, baseline, number, size, chapter);
+                double textX = x + (numbers[level] > 0 ? numbers[level] + 8.0 : 0.0);
+                string text = TextMetrics.Fit(heading.Text, size, chapter, Right - pageColumn - textX - 8.0);
+                Text(textX, baseline, text, size, chapter);
+
+                // Dots from the text to the page number.
+                double from = textX + TextMetrics.Width(text, size, chapter) + 6.0, to = Right - pageColumn + 4.0;
+                double dot = TextMetrics.Width(". ", size, false);
+                int dots = (int)((to - from) / dot);
+                if (dots > 0) Text(from, baseline, string.Concat(Enumerable.Repeat(". ", dots)).TrimEnd(), size, false, Rule);
+
+                var page = new TextItem { X = Right, Y = baseline, Text = "", Size = size, Bold = chapter, Colour = Ink, Align = TextAlign.Right };
+                _page.Items.Add(page);
+                _contentsPages.Add((heading, page));
+                _y += BodyLeading;
+            }
+            _y += 12.0;
+        }
+
+        /// <summary>The contents' page numbers, now that each heading has its page.</summary>
+        private void ContentsPages()
+        {
+            foreach (var (heading, page) in _contentsPages)
+                page.Text = _headingPages.TryGetValue(heading, out int at) ? at.ToString(CultureInfo.InvariantCulture) : "";
         }
 
         // ── Header and footer ──────────────────────────────────────────────────────────────────
