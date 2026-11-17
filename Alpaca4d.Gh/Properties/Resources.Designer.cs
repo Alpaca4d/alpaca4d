@@ -1589,5 +1589,25 @@ namespace Alpaca4d.Gh.Properties {
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Load_Combination__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Load_Combination__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap Report_Revisions__Alpaca4d_ {
+            get {
+                object obj = ResourceManager.GetObject("Report_Revisions__Alpaca4d_", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
     }
 }
