@@ -271,6 +271,12 @@ namespace Alpaca4d.Gh
             if (!LicenseGate.AllowsModel(this, model))
                 return;
 
+            // P354's mass is what the floor carries in use, not its own weight alone.
+            if ((model.MassFromLoads == null || model.MassFromLoads.Count == 0) && (model.Mass == null || model.Mass.Count == 0))
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    "The modes come from the structure's own weight alone. P354 adds the superimposed dead load and about 10% of the " +
+                    "imposed load: make them mass with Mass from Loads, into Assemble Model. Load combinations add no mass.");
+
             var settings = new FootfallSettings();
 
             string activityText = settings.Activity.ToString();
