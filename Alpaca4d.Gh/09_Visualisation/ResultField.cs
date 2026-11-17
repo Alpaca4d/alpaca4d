@@ -154,7 +154,10 @@ namespace Alpaca4d.Gh
             }
         }
 
-        /// <summary>The ways a reaction can be drawn at a support.</summary>
+        /// <summary>What a reaction is drawn as: a dot at the support, as GSA draws them, or an arrow from it.</summary>
+        public static readonly string[] ReactionShapes = { "Dots", "Arrows" };
+
+        /// <summary>The ways a reaction can be drawn as an arrow at a support.</summary>
         public static readonly string[] ReactionStyles = { "Selected component", "Resultant", "All three" };
 
         /// <summary>

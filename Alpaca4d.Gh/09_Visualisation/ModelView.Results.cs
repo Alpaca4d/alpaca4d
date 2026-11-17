@@ -936,7 +936,8 @@ namespace Alpaca4d.Gh
         }
 
         /// <summary>
-        /// The reaction at every support, drawn the way the Reactions dropdown asks for.
+        /// The reaction at every support, drawn the way the Reactions dropdowns ask for: a dot each
+        /// (<see cref="BuildDots"/>), or arrows.
         ///
         /// The first cut always drew the resultant, whichever component was chosen. On a model with
         /// any horizontal reaction that means picking Fz and getting an arrow pointing off at an
@@ -951,6 +952,12 @@ namespace Alpaca4d.Gh
 
             double largest = _field.Reactions.Select(x => Math.Abs(x.Item3)).DefaultIfEmpty(0.0).Max();
             if (largest <= 0.0) return;
+
+            if (ReactionDots)
+            {
+                BuildDots(largest);
+                return;
+            }
 
             double scale = Reach() / largest * (_slArrowScale?.Value ?? 1.0);
 
@@ -983,6 +990,38 @@ namespace Alpaca4d.Gh
                     int axis = component % 4 - 1;
                     Arrow(plane.Origin, axes[axis] * parts[axis] * scale, parts[axis], moment);
                 }
+            }
+        }
+
+        /// <summary>
+        /// The reactions as GSA draws them: a dot at each support, as big as its reaction and in its
+        /// colour on the legend - the value the Results menu picks, the resultant for Force and Moment,
+        /// a component with its sign, so an uplift reads in its own colour. Each dot is a ball drawn
+        /// flat, which reads as a dot from every side.
+        ///
+        /// Its area goes with the reaction, not its radius: a reaction twice another covers twice the
+        /// paper, as the eye reads a dot, where twice the radius would look four times the load. The
+        /// largest is 0.6 of an arrow's reach across, times the scale; the smallest is kept a tenth of
+        /// that across, so that a support carrying next to nothing still shows where it is.
+        /// </summary>
+        private void BuildDots(double largest)
+        {
+            double biggest = 0.3 * Reach() * (_slArrowScale?.Value ?? 1.0);
+            if (biggest <= 0.0) return;
+
+            foreach (var reaction in _field.Reactions)
+            {
+                double value = reaction.Item3;
+                double radius = biggest * Math.Max(Math.Sqrt(Math.Abs(value) / largest), 0.1);
+                var at = reaction.Item1.Origin;
+
+                var dot = Mesh.CreateFromSphere(new Sphere(at, radius), 24, 16);
+                dot.VertexColors.CreateMonotoneMesh(Colour(value));
+                _dots.Add(dot);
+
+                // Its value, and Max and min, over it on the screen.
+                Candidate(at, value, radius, true);
+                _dotLabels.Add(Tuple.Create(at, value, radius));
             }
         }
 
@@ -1057,12 +1096,12 @@ namespace Alpaca4d.Gh
         /// result being built: what Max and min writes. Every value drawn, not only the one Show values
         /// writes on each element, which is the element's largest in size and may be neither.
         /// </summary>
-        private void Candidate(Point3d at, double value, double lift = 0.0)
+        private void Candidate(Point3d at, double value, double lift = 0.0, bool overDot = false)
         {
             var shown = _current;
             if (shown == null || double.IsNaN(value) || double.IsInfinity(value)) return;
-            if (!shown.Largest.Set || value > shown.Largest.Value) shown.Largest = new Extreme(at, value, lift);
-            if (!shown.Smallest.Set || value < shown.Smallest.Value) shown.Smallest = new Extreme(at, value, lift);
+            if (!shown.Largest.Set || value > shown.Largest.Value) shown.Largest = new Extreme(at, value, lift, overDot);
+            if (!shown.Smallest.Set || value < shown.Smallest.Value) shown.Smallest = new Extreme(at, value, lift, overDot);
         }
 
         /// <summary>A value to write on the model, when Show values is ticked; see <see cref="_labels"/>.</summary>

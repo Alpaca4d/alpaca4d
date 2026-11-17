@@ -80,10 +80,24 @@ namespace Alpaca4d.Gh
         private readonly List<Mesh> _diagrams = new List<Mesh>();
         private readonly List<Tuple<Line, Color>> _arrows = new List<Tuple<Line, Color>>();
 
+        /// <summary>The reactions drawn as dots, a ball each, flat in its colour; see <see cref="BuildDots"/>.</summary>
+        private readonly List<Mesh> _dots = new List<Mesh>();
+        private Mesh _dotsJoined;
+
+        /// <summary>Whether reactions are drawn as dots, as Reactions drawn as says: the first of its items.</summary>
+        private bool ReactionDots => (_ddReactionShape?.Value ?? 0) == 0;
+
         // Every value that can be written on the model, where, and how far it stands off towards the
         // camera so that a value on an extruded beam is not drawn inside the section it belongs to.
         // Kept whether Show values is ticked or not, so ticking it is a redraw and not a solution.
         private readonly List<Tuple<Point3d, double, double>> _labels = new List<Tuple<Point3d, double, double>>();
+
+        /// <summary>
+        /// The values of the reactions drawn as dots: each dot's centre, its value and its radius. Written
+        /// just over the dot on the screen, whichever way the view looks, rather than in front of it,
+        /// where the plate would hide half the dot.
+        /// </summary>
+        private readonly List<Tuple<Point3d, double, double>> _dotLabels = new List<Tuple<Point3d, double, double>>();
 
         // Beams drawn solid. The coloured one has a ring at every colour stop, so its edges are
         // drawn from a second one with a ring at each end only - the stops would bury them in lines.
@@ -155,6 +169,7 @@ namespace Alpaca4d.Gh
         internal MenuDropDown _ddLayer;
         internal MenuDropDown _ddAxes;
         internal MenuDropDown _ddReaction;
+        internal MenuDropDown _ddReactionShape;
         internal MenuSlider _slArrowScale;
 
         internal MenuCheckBox _ckBands;
@@ -191,6 +206,7 @@ namespace Alpaca4d.Gh
         private MenuStaticText _txLayer;
         private MenuStaticText _txAxes;
         private MenuStaticText _txReaction;
+        private MenuStaticText _txReactionShape;
         private MenuStaticText _txArrowScale;
         private MenuStaticText _txColourBy;
         private MenuStaticText _txTextSize;
@@ -326,13 +342,20 @@ namespace Alpaca4d.Gh
                 _ddAxes.AddItem(name, name);
             _txAxes = Caption("Read in which axes");
 
+            // Dots first: what a file saved before there was a choice opens with, and a new Model View too.
+            // 100: the panel's drop-downs are saved by their number, and 0-9 and 10-79 are taken.
+            _ddReactionShape = new MenuDropDown(100, "ReactionShape", "ReactionShape") { VisibleItemCount = 2 };
+            foreach (var name in ResultField.ReactionShapes)
+                _ddReactionShape.AddItem(name, name);
+            _txReactionShape = Caption("Reactions drawn as");
+
             _ddReaction = new MenuDropDown(9, "ReactionStyle", "ReactionStyle") { VisibleItemCount = 3 };
             foreach (var name in ResultField.ReactionStyles)
                 _ddReaction.AddItem(name, name);
-            _txReaction = Caption("Reactions drawn as");
+            _txReaction = Caption("Arrows show");
 
             _slArrowScale = new MenuSlider(2, "ArrowScale", 0.0, 20.0, 1.0, 2);
-            _txArrowScale = Caption("Arrow scale");
+            _txArrowScale = Caption("Dot and arrow scale");
 
             // Each result's checkbox, then what goes with it, shown while it is ticked.
             _results = ResultField.MenuOrder.Select(ResultControlsFor).ToArray();
@@ -358,6 +381,8 @@ namespace Alpaca4d.Gh
                         resultsPanel.AddControl(_ddAxes);
                         break;
                     case ResultFamily.Reaction:
+                        resultsPanel.AddControl(_txReactionShape);
+                        resultsPanel.AddControl(_ddReactionShape);
                         resultsPanel.AddControl(_txReaction);
                         resultsPanel.AddControl(_ddReaction);
                         resultsPanel.AddControl(_txArrowScale);
@@ -553,7 +578,7 @@ namespace Alpaca4d.Gh
 
             foreach (var widget in new GH_Attr_Widget[]
                      {
-                         _ckDeformed, _slDeformScale, _slDiagramScale, _ddLayer, _ddAxes, _ddReaction, _slArrowScale, _ckBands,
+                         _ckDeformed, _slDeformScale, _slDiagramScale, _ddLayer, _ddAxes, _ddReactionShape, _ddReaction, _slArrowScale, _ckBands,
                          _ckExtruded, _ddColourBy, _ckHinges
                      })
                 Rebuild(widget);
@@ -657,7 +682,8 @@ namespace Alpaca4d.Gh
             Show(Ticked(ResultFamily.BeamForce), _txDiagramScale, _slDiagramScale);
             Show(Ticked(ResultFamily.ShellStress), _txLayer, _ddLayer);
             Show(Ticked(ResultFamily.BrickStress), _txAxes, _ddAxes);
-            Show(Ticked(ResultFamily.Reaction), _txReaction, _ddReaction, _txArrowScale, _slArrowScale);
+            Show(Ticked(ResultFamily.Reaction), _txReactionShape, _ddReactionShape, _txArrowScale, _slArrowScale);
+            Show(Ticked(ResultFamily.Reaction) && !ReactionDots, _txReaction, _ddReaction);
 
             // Beam force diagrams are coloured by the force, not by the gradient; and the model by
             // its elements.
@@ -844,18 +870,95 @@ namespace Alpaca4d.Gh
             ExpireSolution(true);
         }
 
+        public override void AddedToDocument(GH_Document document)
+        {
+            base.AddedToDocument(document);
+            DotsOnTop.Enabled = true;
+        }
+
         public override void RemovedFromDocument(GH_Document document)
         {
             StopAnimation();
+            DotsOnTop.Enabled = false;
             base.RemovedFromDocument(document);
         }
 
         public override void DocumentContextChanged(GH_Document document, GH_DocumentContext context)
         {
+            // Closing a document, or bringing another forward, does not remove its components - it only
+            // tells them. The dots' conduit left on would go on drawing over whatever came next.
             if (context == GH_DocumentContext.Close || context == GH_DocumentContext.Unloaded)
+            {
                 StopAnimation();
+                DotsOnTop.Enabled = false;
+            }
+            else if (context == GH_DocumentContext.Loaded)
+                DotsOnTop.Enabled = true;
 
             base.DocumentContextChanged(document, context);
+        }
+
+        /// <summary>
+        /// Draws the reactions' dots after everything else in the viewport, as the Legend draws its
+        /// scale: drawn with the rest, the elements' see-through ghost, which Rhino draws after the
+        /// wires, washed out every dot a beam passed in front of. Made when first asked for.
+        /// </summary>
+        private DotsConduit DotsOnTop => _dotsConduit ?? (_dotsConduit = new DotsConduit(this));
+        private DotsConduit _dotsConduit;
+
+        private sealed class DotsConduit : DisplayConduit
+        {
+            private readonly ModelView _view;
+
+            public DotsConduit(ModelView view) => _view = view;
+
+            protected override void DrawForeground(DrawEventArgs e)
+            {
+                if (_view.ShowsDots()) _view.DrawDots(e.Display, e.Viewport);
+            }
+        }
+
+        /// <summary>
+        /// Whether the dots belong on screen, asked on every redraw: the conduit draws outside
+        /// Grasshopper's own preview, so the preview's own conditions are asked here too.
+        /// </summary>
+        private bool ShowsDots()
+        {
+            if (_dotsJoined == null || _model == null || Hidden || Locked) return false;
+            var document = OnPingDocument();
+            if (document == null || document.PreviewMode == GH_PreviewMode.Disabled) return false;
+            return document.PreviewFilter != GH_PreviewFilter.Selected || (Attributes?.Selected ?? false);
+        }
+
+        /// <summary>
+        /// The reactions' dots, their values and their Max and min, over everything drawn before them:
+        /// in the viewport by <see cref="DotsConduit"/>, and in a picture of the Report by its own
+        /// conduit. Flat, in their colours, with no light on them, so a ball reads as a dot from every side.
+        /// </summary>
+        internal void DrawDots(DisplayPipeline display, RhinoViewport viewport)
+        {
+            if (_dotsJoined == null) return;
+
+            display.EnableDepthTesting(false);
+            display.DrawMeshFalseColors(_dotsJoined);
+
+            double height = _slTextSize?.Value ?? 0.5;
+            var colour = AlpacaSettings.Colour(DisplayItem.Values);
+            bool values = _ckValues?.Active ?? false;
+
+            if (values)
+                foreach (var label in _dotLabels)
+                    ViewportLabels.Draw(display, viewport, label.Item2.ToString("G4"), colour, OverDot(viewport, label.Item1, label.Item3), height,
+                                        0.0, viewport.CameraY);
+
+            // Over the dot, which marks the place already: the plate just touching its top, or a line
+            // higher when the dot's value is written there.
+            if (_ckExtremes?.Active ?? false)
+                foreach (var mark in Extremes().Where(x => x.Item1.OverDot))
+                    ViewportLabels.Draw(display, viewport, $"{mark.Item2} {mark.Item1.Value:G4}", colour, OverDot(viewport, mark.Item1.At, mark.Item1.Lift),
+                                        height, values ? 1.0 : 0.0, viewport.CameraY);
+
+            display.EnableDepthTesting(true);
         }
 
         #endregion
@@ -878,7 +981,9 @@ namespace Alpaca4d.Gh
             _curves.Clear();
             _diagrams.Clear();
             _arrows.Clear();
+            _dots.Clear();
             _labels.Clear();
+            _dotLabels.Clear();
             _beamSolids.Clear();
             _beamEdges.Clear();
             _outlines.Clear();
@@ -886,7 +991,7 @@ namespace Alpaca4d.Gh
             _sections.Clear();
             _shown.Clear();
             _painter.Clear();
-            _shadedJoined = _faceEdgesJoined = _ghostJoined = _diagramsJoined = _beamSolidsJoined = _beamEdgesJoined = null;
+            _shadedJoined = _faceEdgesJoined = _ghostJoined = _diagramsJoined = _beamSolidsJoined = _beamEdgesJoined = _dotsJoined = null;
             _box = BoundingBox.Empty;
             ClearOverlays();
         }
@@ -903,6 +1008,8 @@ namespace Alpaca4d.Gh
             _diagramsJoined = Joined.Of(_diagrams);
             _beamSolidsJoined = Joined.Of(_beamSolids);
             _beamEdgesJoined = Joined.Of(_beamEdges);
+            _dotsJoined = Joined.Of(_dots);
+            _dots.Clear();
             _solidEdges.Join();
             _shaded.Clear();
             _faceEdges.Clear();
@@ -1061,13 +1168,27 @@ namespace Alpaca4d.Gh
             public double Value, Lift;
             public bool Set;
 
-            public Extreme(Point3d at, double value, double lift)
+            /// <summary>Whether it is a dot's, <see cref="Lift"/> its radius: its mark goes over the dot, not in front of it.</summary>
+            public bool OverDot;
+
+            public Extreme(Point3d at, double value, double lift, bool overDot = false)
             {
                 At = at;
                 Value = value;
                 Lift = lift;
                 Set = true;
+                OverDot = overDot;
             }
+        }
+
+        /// <summary>The top of a dot as the view sees it: its centre moved up the screen and towards the camera by its radius.</summary>
+        private static Point3d OverDot(Rhino.Display.RhinoViewport viewport, Point3d centre, double radius)
+        {
+            var up = viewport.CameraY;
+            var direction = viewport.CameraDirection;
+            up.Unitize();
+            direction.Unitize();
+            return centre + up * radius - direction * radius;
         }
 
         /// <summary>The result being built, whose largest and smallest <see cref="Candidate"/> keeps.</summary>
@@ -1383,7 +1504,7 @@ namespace Alpaca4d.Gh
         {
             var geometry = new List<GeometryBase>();
 
-            foreach (var mesh in new[] { _shadedJoined, _beamSolidsJoined, _diagramsJoined })
+            foreach (var mesh in new[] { _shadedJoined, _beamSolidsJoined, _diagramsJoined, _dotsJoined })
                 if (mesh != null) geometry.Add(mesh);
 
             if (_ghostJoined != null)
@@ -1474,6 +1595,9 @@ namespace Alpaca4d.Gh
             foreach (var arrow in _arrows)
                 args.Display.DrawArrow(arrow.Item1, arrow.Item2);
 
+            DrawOverlays(args);
+
+
             if (!model && (_ckValues?.Active ?? false) && _labels.Count > 0)
             {
                 double height = _slTextSize?.Value ?? 0.5;
@@ -1489,8 +1613,6 @@ namespace Alpaca4d.Gh
 
             if (!model && (_ckExtremes?.Active ?? false))
                 DrawExtremes(args);
-
-            DrawOverlays(args);
         }
 
         public override bool IsPreviewCapable => true;
@@ -1509,17 +1631,17 @@ namespace Alpaca4d.Gh
             var box = BoundingBox.Empty;
             if (_model == null) return box;
 
-            foreach (var mesh in new[] { _shadedJoined, _beamSolidsJoined, _ghostJoined, _diagramsJoined })
+            foreach (var mesh in new[] { _shadedJoined, _beamSolidsJoined, _ghostJoined, _diagramsJoined, _dotsJoined })
                 if (mesh != null) box.Union(mesh.GetBoundingBox(false));
             box.Union(_curves.BoundingBox());
             box.Union(_ghostCurves.BoundingBox());
             foreach (var arrow in _arrows) box.Union(arrow.Item1.BoundingBox);
 
             // Labels too, grown by how far they stand off and how tall they are.
-            if (_shown.Count > 0 && (_ckValues?.Active ?? false) && _labels.Count > 0)
+            if (_shown.Count > 0 && (_ckValues?.Active ?? false) && (_labels.Count > 0 || _dotLabels.Count > 0))
             {
-                double reach = _labels.Max(x => x.Item3) + 2.0 * (_slTextSize?.Value ?? 0.5);
-                foreach (var label in _labels)
+                double reach = _labels.Concat(_dotLabels).Max(x => x.Item3) + 2.0 * (_slTextSize?.Value ?? 0.5);
+                foreach (var label in _labels.Concat(_dotLabels))
                     box.Union(new BoundingBox(label.Item1 - new Vector3d(reach, reach, reach),
                                               label.Item1 + new Vector3d(reach, reach, reach)));
             }
@@ -1560,7 +1682,8 @@ namespace Alpaca4d.Gh
             var towardsCamera = -args.Viewport.CameraDirection;
             towardsCamera.Unitize();
 
-            foreach (var mark in Extremes())
+            // A dot's are drawn with the dots, over everything: see DrawDots.
+            foreach (var mark in Extremes().Where(x => !x.Item1.OverDot))
             {
                 var at = mark.Item1.At + towardsCamera * mark.Item1.Lift;
                 args.Display.DrawPoint(at, Rhino.Display.PointStyle.RoundSimple, 4, colour);

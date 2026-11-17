@@ -58,7 +58,7 @@ namespace Alpaca4d.Gh
 
         private readonly MenuCheckBoxGroup _ckDeformed, _ckBands, _ckValues, _ckExtremes, _ckHinges;
         private readonly MenuSlider _slScale, _slDiagram, _slArrow, _slHinge;
-        private readonly MenuCheckBoxGroup _chLayer, _chAxes, _chReaction;
+        private readonly MenuCheckBoxGroup _chLayer, _chAxes, _chReaction, _chReactionShape;
         private readonly MenuGroupBox _bxDeformed, _bxHinges;
         private readonly Func<GH_DocumentObject> _owner;
 
@@ -89,6 +89,8 @@ namespace Alpaca4d.Gh
             _chLayer = ReportWidgets.Choice(ExtraIndex, id + "Layer", Alpaca4d.Result.Read.LayerNames);
             _chAxes = ReportWidgets.Choice(ExtraIndex, id + "Axes", ResultField.StressAxes);
             _chReaction = ReportWidgets.Choice(ExtraIndex, id + "ReactionStyle", ResultField.ReactionStyles, 0, 1);
+            // Its own number in the frame it shares with the arrows' choice; dots first, as Model View has them.
+            _chReactionShape = ReportWidgets.Choice(ExtraIndex + 1, id + "ReactionShape", ResultField.ReactionShapes, 0, 2);
             _slArrow = new MenuSlider(0, id + "ArrowScale", 0.0, 20.0, 1.0, 2);
 
             // Each result: its box, and under it, framed, what goes with it.
@@ -131,7 +133,7 @@ namespace Alpaca4d.Gh
                 foreach (var units in result.Units.Where(x => x != null)) Listen(units);
                 Listen(result.Table);
             }
-            foreach (var widget in new GH_Attr_Widget[] { _ckDeformed, _slScale, _slDiagram, _chLayer, _chAxes, _chReaction, _slArrow, _ckBands, _ckValues, _ckExtremes, _ckHinges, _slHinge })
+            foreach (var widget in new GH_Attr_Widget[] { _ckDeformed, _slScale, _slDiagram, _chLayer, _chAxes, _chReactionShape, _chReaction, _slArrow, _ckBands, _ckValues, _ckExtremes, _ckHinges, _slHinge })
                 Listen(widget);
 
             UpdateVisibility();
@@ -200,8 +202,10 @@ namespace Alpaca4d.Gh
                     break;
                 case ResultFamily.Reaction:
                     box.AddControl(ReportWidgets.Caption("Drawn as"));
+                    box.AddControl(_chReactionShape);
+                    box.AddControl(ReportWidgets.Caption("Arrows show"));
                     box.AddControl(_chReaction);
-                    box.AddControl(ReportWidgets.Caption("Arrow scale"));
+                    box.AddControl(ReportWidgets.Caption("Dot and arrow scale"));
                     box.AddControl(_slArrow);
                     break;
             }
@@ -340,6 +344,7 @@ namespace Alpaca4d.Gh
             if (IsTicked(ResultFamily.BrickStress)) figure["axes"] = _chAxes.Picked;
             if (IsTicked(ResultFamily.Reaction))
             {
+                figure["reactionShape"] = _chReactionShape.Picked;
                 figure["reactionStyle"] = _chReaction.Picked;
                 figure["arrowScale"] = _slArrow.Value;
             }

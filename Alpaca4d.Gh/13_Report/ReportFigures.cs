@@ -570,6 +570,12 @@ namespace Alpaca4d.Gh
                 View.DrawViewportMeshes(args);
                 View.DrawViewportWires(args);
             }
+
+            // The reactions' dots over everything, as Model View draws them in the viewport.
+            protected override void DrawForeground(DrawEventArgs e)
+            {
+                View?.DrawDots(e.Display, e.Viewport);
+            }
         }
 
         /// <summary>What Grasshopper hands a component to draw with, made up for a component it does not know of.</summary>

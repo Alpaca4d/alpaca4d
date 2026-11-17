@@ -30,7 +30,7 @@ namespace Alpaca4d.Gh
             "extruded", "edges", "nodeIds", "elementIds", "sectionNames", "localAxes", "axesSize", "releases", "releaseSize",
             "colourBy", "textSize", "values", "extremes", "isoSurfaces", "hinges", "hingeSize",
             "loads", "loadValues", "loadScale", "supports", "supportScale",
-            "diagramScale", "arrowScale", "layer", "axes", "reactionStyle",
+            "diagramScale", "arrowScale", "layer", "axes", "reactionShape", "reactionStyle",
             "elements", "colours", "range", "loadPattern",
         };
 
@@ -210,6 +210,7 @@ namespace Alpaca4d.Gh
                     case ResultFamily.ShellStress: f["layer"] = Item(view._ddLayer); break;
                     case ResultFamily.BrickStress: f["axes"] = Item(view._ddAxes); break;
                     case ResultFamily.Reaction:
+                        f["reactionShape"] = Item(view._ddReactionShape);
                         f["reactionStyle"] = Item(view._ddReaction);
                         f["arrowScale"] = view._slArrowScale.Value;
                         break;
@@ -260,7 +261,7 @@ namespace Alpaca4d.Gh
 
         private static IEnumerable<(MenuDropDown, string)> Dropdowns(ModelView view) => new[]
         {
-            (view._ddColourBy, "colourBy"), (view._ddLayer, "layer"), (view._ddAxes, "axes"), (view._ddReaction, "reactionStyle"),
+            (view._ddColourBy, "colourBy"), (view._ddLayer, "layer"), (view._ddAxes, "axes"), (view._ddReactionShape, "reactionShape"), (view._ddReaction, "reactionStyle"),
         };
 
         private static void Persist<T>(GH_PersistentParam<T> param, params T[] items) where T : class, IGH_Goo
