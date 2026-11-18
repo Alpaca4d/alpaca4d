@@ -203,6 +203,8 @@ namespace Alpaca4d.Optimisation
                 IsTopologyDesign = true,
             };
             design.Assemble();
+            // The combinations it was designed for, to analyse it for: they name patterns, which the design keeps by name.
+            design.Combinations = new List<LoadCombination>(model.Combinations ?? new List<LoadCombination>());
             return design;
         }
 

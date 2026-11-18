@@ -12,6 +12,12 @@ namespace Alpaca4d.Optimisation
     /// </summary>
     public delegate double[] CellEnergies(double[] moduli);
 
+    /// <summary>
+    /// <see cref="CellEnergies"/> of every load case: one array per case, each with an energy per element. One
+    /// case is the model's loads as they are; several, its load combinations (<see cref="TopologyLoadCases"/>).
+    /// </summary>
+    public delegate double[][] CaseEnergies(double[] moduli);
+
     /// <summary>One iteration of a topology optimisation: the design it analysed and how far it moved.</summary>
     public sealed class TopologyIteration
     {
@@ -35,6 +41,9 @@ namespace Alpaca4d.Optimisation
         /// <summary>Of a run that projects its densities: how sharp the projection was. Null otherwise.</summary>
         public double? Sharpness { get; set; }
 
+        /// <summary>Of a run for several load cases: each case's compliance, in the order of the cases. Null for one.</summary>
+        public double[] CaseCompliances { get; set; }
+
         public override string ToString()
         {
             var text = string.Format(CultureInfo.InvariantCulture,
@@ -44,6 +53,8 @@ namespace Alpaca4d.Optimisation
                 text += ", materials " + string.Join(" ", MaterialVolumes.Select(v => v.ToString("0.000", CultureInfo.InvariantCulture)));
             if (Sharpness.HasValue)
                 text += string.Format(CultureInfo.InvariantCulture, ", sharpness {0:G3}", Sharpness.Value);
+            if (CaseCompliances != null)
+                text += ", cases " + string.Join(" ", CaseCompliances.Select(c => c.ToString("G6", CultureInfo.InvariantCulture)));
             return text;
         }
     }
@@ -107,6 +118,27 @@ namespace Alpaca4d.Optimisation
     /// </summary>
     public static class TopologyOptimiser
     {
+        /// <summary>One load case: <paramref name="analyse"/>'s energies as the only case.</summary>
+        public static CaseEnergies OneCase(CellEnergies analyse) => moduli => new[] { analyse(moduli) };
+
+        /// <summary>
+        /// The energies of <paramref name="cases"/>, each checked to hold one per element, added up element by element;
+        /// the one case's own when there is one.
+        /// </summary>
+        internal static double[] Summed(double[][] cases, int elements)
+        {
+            if (cases == null || cases.Length == 0)
+                throw new InvalidOperationException("The analysis returned no load case.");
+            foreach (var energies in cases)
+                if (energies == null || energies.Length != elements)
+                    throw new InvalidOperationException($"The analysis returned {energies?.Length ?? 0} energies for {elements} elements.");
+            return TopologyAnalysis.Sum(cases);
+        }
+
+        /// <summary>Each case's compliance, for <see cref="TopologyIteration.CaseCompliances"/>: null for one case.</summary>
+        internal static double[] Compliances(double[][] cases) =>
+            cases.Length == 1 ? null : cases.Select(energies => energies.Sum()).ToArray();
+
         /// <param name="cells">The solid elements, design and passive.</param>
         /// <param name="settings">
         /// How to run. MaxIterations counts from the first iteration, those of <paramref name="previous"/>
@@ -128,7 +160,17 @@ namespace Alpaca4d.Optimisation
         /// </param>
         public static TopologyResult Run(IReadOnlyList<SolidCell> cells, TopologySettings settings, CellEnergies analyse,
                                          Func<bool> stop = null, Action<TopologyIteration, double[]> progress = null,
-                                         TopologyResult previous = null, DensityHistory frames = null)
+                                         TopologyResult previous = null, DensityHistory frames = null) =>
+            RunCases(cells, settings, OneCase(analyse), stop, progress, previous, frames);
+
+        /// <summary>
+        /// <see cref="Run"/> for several load cases, which <paramref name="analyse"/> solves each design for: the
+        /// compliance is the sum of theirs, as in the 99 and 88 line codes' extension to several load cases
+        /// (Sigmund 2001; Andreassen et al. 2011, section 5.2), and so is each sensitivity. One case is <see cref="Run"/>'s.
+        /// </summary>
+        public static TopologyResult RunCases(IReadOnlyList<SolidCell> cells, TopologySettings settings, CaseEnergies analyse,
+                                              Func<bool> stop = null, Action<TopologyIteration, double[]> progress = null,
+                                              TopologyResult previous = null, DensityHistory frames = null)
         {
             if (cells == null || cells.Count == 0)
                 throw new ArgumentException("There are no solid elements to optimise.");
@@ -194,9 +236,8 @@ namespace Alpaca4d.Optimisation
                 for (int i = 0; i < n; i++)
                     moduli[i] = cells[i].Passive ? e0[i] : eMin[i] + Math.Pow(physical[i], p) * (e0[i] - eMin[i]);
 
-                var energies = analyse(moduli);
-                if (energies == null || energies.Length != n)
-                    throw new InvalidOperationException($"The analysis returned {energies?.Length ?? 0} energies for {n} elements.");
+                var cases = analyse(moduli);
+                var energies = Summed(cases, n);
                 double analysisSeconds = clock.Elapsed.TotalSeconds;
                 clock.Restart();
 
@@ -216,6 +257,7 @@ namespace Alpaca4d.Optimisation
                     Volume = design.Sum(i => volume[i] * physical[i]) / designVolume,
                     Change = change,
                     AnalysisSeconds = analysisSeconds,
+                    CaseCompliances = Compliances(cases),
                 };
 
                 x = update.x;
