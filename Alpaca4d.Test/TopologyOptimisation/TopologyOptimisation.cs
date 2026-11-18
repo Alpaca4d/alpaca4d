@@ -88,6 +88,22 @@ class TopologyOptimisationTest
             tcl.Add("pattern Plain 1 1 {\n" + string.Concat(loads.Select(l => $"    load {l.node} 0.0 0.0 {N(l.fz)}\n")) + "}\n");
             return tcl;
         }
+
+        /// <summary>
+        /// The deck with load patterns of their own, each one item as Assemble writes it - its series, then the
+        /// pattern on it - from item <paramref name="patternStart"/> on, as <see cref="Alpaca4d.Model.LoadPatternTclStart"/> marks them.
+        /// </summary>
+        public List<string> Tcl(double e, double nu, IEnumerable<(int node, string dofs)> fixes,
+                                IList<(string name, List<(int node, double fz)> loads)> patterns, out int patternStart)
+        {
+            var tcl = Tcl(e, nu, fixes, new List<(int, double)>());
+            tcl.RemoveRange(tcl.Count - 2, 2);
+            patternStart = tcl.Count;
+            for (int p = 0; p < patterns.Count; p++)
+                tcl.Add($"timeSeries Linear {100 + p} -factor 1\npattern Plain {100 + p} {100 + p} -fact 1 {{\n" +
+                        string.Concat(patterns[p].loads.Select(l => $"    load {l.node} 0.0 0.0 {N(l.fz)}\n")) + "}\n");
+            return tcl;
+        }
     }
 
     /// <summary>A topology problem: the grid, its supports and loads, and the settings.</summary>
@@ -100,6 +116,10 @@ class TopologyOptimisationTest
         public TopologySettings Settings = new TopologySettings();
         public Func<int, int, int, bool> Passive;
         public double E = 1.0, Nu = 0.3;
+
+        /// <summary>Load patterns of their own, in place of Loads; with Combinations, solved as load cases, one a combination.</summary>
+        public List<(string name, List<(int node, double fz)> loads)> Patterns;
+        public List<Alpaca4d.Loads.LoadCombination> Combinations;
 
         public double Work(double[] u) => Loads.Sum(l => l.fz * u[3 * (l.node - 1) + 2]);
     }
@@ -188,9 +208,52 @@ class TopologyOptimisationTest
 
     static TopologyAnalysis Start(Problem problem, string openSees, string folder, List<SolidCell> cells)
     {
-        var tcl = problem.Grid.Tcl(problem.E, problem.Nu, problem.Fixes, problem.Loads);
+        List<string> tcl;
+        int cases = 1;
+        if (problem.Patterns == null)
+            tcl = problem.Grid.Tcl(problem.E, problem.Nu, problem.Fixes, problem.Loads);
+        else
+        {
+            tcl = problem.Grid.Tcl(problem.E, problem.Nu, problem.Fixes, problem.Patterns, out int start);
+            if (problem.Combinations != null)
+            {
+                tcl = TopologyLoadCases.Write(tcl, start, problem.Patterns.Select(p => p.name).ToList(), problem.Combinations);
+                cases = problem.Combinations.Count;
+            }
+        }
         return new TopologyAnalysis(openSees, folder, problem.Name, tcl, cells, problem.Grid.Nodes,
-                                    new Alpaca4d.SystemEquation("Auto"), TimeSpan.FromMinutes(10));
+                                    new Alpaca4d.SystemEquation("Auto"), TimeSpan.FromMinutes(10), cases);
+    }
+
+    /// <summary>A combination of the patterns named, each times its factor.</summary>
+    static Alpaca4d.Loads.LoadCombination Combination(string name, params (string pattern, double factor)[] terms) =>
+        new Alpaca4d.Loads.LoadCombination { Name = name, Terms = terms.Select(t => (t.pattern, t.factor)).ToList() };
+
+    /// <summary>
+    /// The 88 line code's example of two load cases (Andreassen et al. 2011, section 5.2, after Sigmund 2001), in
+    /// three dimensions: a square n x n, <paramref name="depth"/> deep, clamped along x = 0 and loaded at its free
+    /// end, up by 1 at every node of the top edge in one case and down by 1 at every node of the bottom edge in the
+    /// other. The paper runs top88(150,150,0.4,3,6,1), a sensitivity filter of radius 6 on a square of 150; here
+    /// top3d's density filter of radius 1.5. Together, in one case, the two loads pull the free end's two corners
+    /// apart and nothing else: they balance each other, so the design need not reach the support.
+    /// </summary>
+    static Problem TwoLoads(int n = 30, int depth = 2, bool together = false)
+    {
+        var grid = new Grid(n, depth, n);
+        var problem = new Problem { Name = together ? "two-loads-together" : "two-loads", Grid = grid };
+        for (int k = 0; k <= n; k++)
+            for (int j = 0; j <= depth; j++)
+                problem.Fixes.Add((grid.Node(0, j, k), "1 1 1"));
+        problem.Patterns = new List<(string, List<(int, double)>)>
+        {
+            ("Up", Enumerable.Range(0, depth + 1).Select(j => (grid.Node(n, j, n), 1.0)).ToList()),
+            ("Down", Enumerable.Range(0, depth + 1).Select(j => (grid.Node(n, j, 0), -1.0)).ToList()),
+        };
+        problem.Combinations = together
+            ? new List<Alpaca4d.Loads.LoadCombination> { Combination("Up and down", ("Up", 1.0), ("Down", 1.0)) }
+            : new List<Alpaca4d.Loads.LoadCombination> { Combination("Up", ("Up", 1.0)), Combination("Down", ("Down", 1.0)) };
+        problem.Settings = new TopologySettings { VolumeFraction = 0.4, Penalty = 3.0, FilterRadius = 1.5, MaxIterations = 200, Tolerance = 0.01 };
+        return problem;
     }
 
     static void Main(string[] args)
@@ -213,6 +276,11 @@ class TopologyOptimisationTest
         DesignAnalysed(openSees, folder);
         GoingOn(openSees, folder);
         Frames(openSees, folder);
+        LoadCaseDecks();
+        LoadCaseEnergies(openSees, folder);
+        OneCombinationChangesNothing(openSees, folder);
+        TwoCasesAgainstTogether(openSees, folder);
+        WorstCase(openSees, folder);
 
         Console.WriteLine(fails == 0 ? "\nAll checks passed." : $"\n{fails} check(s) FAILED.");
         Environment.Exit(fails == 0 ? 0 : 1);
@@ -666,8 +734,274 @@ class TopologyOptimisationTest
         Check(more[20].Zip(rest.Densities, (a, b) => Math.Abs(a - b)).Max() <= 0.5 / 255.0 + 1e-15, "the last frame is the run's last design");
     }
 
+    /// <summary>SIMP's moduli of the physical densities <paramref name="x"/>, of a unit modulus.</summary>
+    static double[] SimpModuli(double[] x, TopologySettings settings) =>
+        x.Select(d => settings.MinStiffness + Math.Pow(d, settings.Penalty) * (1.0 - settings.MinStiffness)).ToArray();
+
+    /// <summary>Whether two runs went the same way, to the last bit: every iteration's numbers and the final densities.</summary>
+    static bool Same(TopologyResult a, TopologyResult b) =>
+        a.History.Count == b.History.Count && a.Densities.SequenceEqual(b.Densities) &&
+        a.History.Zip(b.History, (x, y) => x.Compliance == y.Compliance && x.Volume == y.Volume &&
+                                          (x.Change == y.Change || double.IsNaN(x.Change) && double.IsNaN(y.Change))).All(same => same);
+
+    static void LoadCaseDecks()
+    {
+        Section("Load cases: the deck");
+        var tcl = new List<string>
+        {
+            "wipe\n",
+            "timeSeries Linear 7 -factor 1\npattern Plain 3 7 -fact 1 {\n    load 5 0.0 0.0 -1.0\n}\n",
+            "timeSeries Constant 8 -factor 2\npattern Plain 4 8 -fact 1.5 {\n    load 6 0.0 0.0 1.0\n}\n",
+            "timeSeries Linear 9 -factor 1\npattern Plain 5 9 -fact 1 {\n    load 7 0.0 0.0 1.0\n}\n",
+        };
+        var names = new List<string> { "G", "W", "Q" };
+        var combinations = new List<Alpaca4d.Loads.LoadCombination>
+        {
+            Combination("ULS 1", ("G", 1.35), ("W", 1.5)), Combination("ULS 2", ("g", 1.35), ("w", -1.5)),
+        };
+        var deck = TopologyLoadCases.Write(tcl, 1, names, combinations);
+        Check(deck.Count == 3 && deck[0] == "wipe\n", "the model stays as it is, and Q, in no combination, is left out");
+        Check(deck[1] == "timeSeries Path 7 -time {0 0.5 1 1.5 2} -values {0 1.35 1.35 1.35 1.35} -factor 1\npattern Plain 3 7 -fact 1 {\n    load 5 0.0 0.0 -1.0\n}\n",
+              "G: its factor in each case, on a plateau, its series' factor and the pattern's own kept");
+        Check(deck[2].StartsWith("timeSeries Path 8 -time {0 0.5 1 1.5 2} -values {0 1.5 1.5 -1.5 -1.5} -factor 2\npattern Plain 4 8 -fact 1.5 {"),
+              "W, on a Constant series: 1.5 in ULS 1 and -1.5 in ULS 2, the names matched whatever their case");
+        bool refused = false;
+        try { TopologyLoadCases.Write(new List<string> { "timeSeries Trig 9 0 1 1\npattern Plain 5 9 {\n}\n" }, 0, new List<string> { "G" }, combinations); }
+        catch (ArgumentException ex) { refused = ex.Message.Contains("Linear or Constant"); }
+        Check(refused, "a pattern on another time series is refused when a combination names it");
+        var cells = new Grid(1, 1, 1).Cells(1.0);
+        Check(!TopologyAnalysis.Deck(new[] { "wipe\n" }, cells, 8, new Alpaca4d.SystemEquation("Auto")).Contains("setTime") &&
+              TopologyAnalysis.Deck(new[] { "wipe\n" }, cells, 8, new Alpaca4d.SystemEquation("Auto"), 2).Contains("setTime $case"),
+              "one load case is solved as it always was; several from rest, one after the other");
+    }
+
+    static void LoadCaseEnergies(string openSees, string folder)
+    {
+        Section("Load cases: the energies of each case");
+        var problem = TwoLoads(8, 1);
+        problem.Name = "cases";
+        // A third case of both loads, scaled and one reversed, on a design of many moduli.
+        problem.Combinations.Add(Combination("Mixed", ("Up", 1.35), ("Down", -0.5)));
+        var cells = problem.Grid.Cells(1.0);
+        var moduli = cells.Select((c, i) => 0.2 + 0.08 * ((i * 37) % 11)).ToArray();
+        double[][] cases, again;
+        using (var analysis = Start(problem, openSees, folder, cells))
+        {
+            cases = analysis.CaseEnergies(moduli);
+            var summed = analysis.Energies(moduli);
+            again = analysis.CaseEnergies(moduli);
+            Check(cases.Length == 3 && analysis.CaseDisplacements.Length == 3, "three cases, three sets of energies and displacements");
+            double worst = Enumerable.Range(0, cells.Count).Max(i => Math.Abs(summed[i] - (cases[0][i] + cases[1][i] + cases[2][i])));
+            Check(worst <= 1e-12 * summed.Max(), $"Energies is their sum, element by element ({worst:G3})");
+        }
+        Check(cases.Zip(again, (a, b) => a.SequenceEqual(b)).All(same => same), "solving again gives the same energies to the last bit: each case starts from rest");
+
+        // Each case against its loads analysed alone, in one pattern, as the model's loads always were.
+        var up = problem.Patterns[0].loads;
+        var down = problem.Patterns[1].loads;
+        var alone = new[]
+        {
+            up, down,
+            up.Select(l => (l.node, 1.35 * l.fz)).Concat(down.Select(l => (l.node, -0.5 * l.fz))).ToList(),
+        };
+        for (int k = 0; k < alone.Length; k++)
+        {
+            var single = new Problem { Name = "alone" + k, Grid = problem.Grid, Fixes = problem.Fixes, Loads = alone[k] };
+            double[] energies;
+            using (var analysis = Start(single, openSees, folder, cells))
+                energies = analysis.Energies(moduli);
+            double gap = Enumerable.Range(0, cells.Count).Max(i => Math.Abs(energies[i] - cases[k][i])) / energies.Max();
+            Check(gap < 1e-12, $"case {problem.Combinations[k].Name}: the energies of its loads analysed alone ({gap:G3})");
+        }
+    }
+
+    static void OneCombinationChangesNothing(string openSees, string folder)
+    {
+        Section("Load cases: one pattern, or one combination, gives what the model's loads always gave");
+        // The small cantilever: its load as the decks always had it, as a pattern of its own, and as a combination of that pattern.
+        Func<string, double?, Problem> Make = (name, factor) =>
+        {
+            var p = Cantilever(24, 8, 2);
+            p.Name = name;
+            if (name != "plain")
+            {
+                p.Patterns = new List<(string, List<(int, double)>)> { ("P", p.Loads) };
+                if (factor.HasValue)
+                    p.Combinations = new List<Alpaca4d.Loads.LoadCombination> { Combination("ULS 1", ("P", factor.Value)) };
+            }
+            return p;
+        };
+        var cells = Make("plain", null).Grid.Cells(1.0);
+        Func<LoadCaseObjective, MultiMaterialSettings> Mm = objective =>
+            new MultiMaterialSettings { Moduli = new[] { 1.0, 0.5 }, VolumeFractions = new[] { 0.15, 0.15 }, MaxIterations = 20, LoadCases = objective };
+        var methods = new (string name, Func<CaseEnergies, TopologyResult> run)[]
+        {
+            ("SIMP", a => TopologyOptimiser.RunCases(cells, new TopologySettings { VolumeFraction = 0.3, FilterRadius = 1.5, MaxIterations = 20 }, a)),
+            ("BESO", a => BesoOptimiser.RunCases(cells, new BesoSettings { VolumeFraction = 0.5, FilterRadius = 2.0, MaxIterations = 20 }, a)),
+            ("Multi-Material", a => MultiMaterialOptimiser.RunCases(cells, Mm(LoadCaseObjective.Sum), a)),
+            ("Multi-Material, worst case", a => MultiMaterialOptimiser.RunCases(cells, Mm(LoadCaseObjective.Worst), a)),
+        };
+        Func<Problem, Func<CaseEnergies, TopologyResult>, TopologyResult> Solve = (p, run) =>
+        {
+            using (var analysis = Start(p, openSees, folder, cells))
+                return run(analysis.CaseEnergies);
+        };
+
+        TopologyResult sumOfOne = null;
+        foreach (var method in methods)
+        {
+            string name = method.name;
+            var run = method.run;
+            var plain = Solve(Make("plain", null), run);
+            Check(Same(plain, Solve(Make("pattern", null), run)), $"{name}: the load as a pattern of its own, to the last bit");
+            Check(Same(plain, Solve(Make("combination", 1.0), run)), $"{name}: one combination of it, factor 1, to the last bit");
+            var twice = Solve(Make("twice", 2.0), run);
+            double moved = plain.Densities.Zip(twice.Densities, (x, y) => Math.Abs(x - y)).Max();
+            double ratio = twice.History.Last().Compliance / plain.History.Last().Compliance;
+            Check(moved < 1e-9 && Math.Abs(ratio - 4.0) < 1e-9,
+                  $"{name}: one combination of factor 2 gives the same design ({moved:G3} apart) and four times the compliance ({ratio:R})");
+            Check(plain.History.All(it => it.CaseCompliances == null), $"{name}: one case records no compliances by case");
+            if (name == "Multi-Material")
+                sumOfOne = plain;
+            else if (name == "Multi-Material, worst case")
+                Check(Same(sumOfOne, plain), "with one case, the worst case is the sum: MMA as it always was");
+        }
+    }
+
+    static void TwoCasesAgainstTogether(string openSees, string folder)
+    {
+        Section("Load cases: two cases against both loads at once (Andreassen et al. 2011, section 5.2)");
+        var settings = new TopologySettings { VolumeFraction = 0.4, FilterRadius = 1.5, MaxIterations = 60 };
+        var two = TwoLoads(16, 1);
+        var together = TwoLoads(16, 1, together: true);
+        two.Settings = together.Settings = settings;
+        var cells = two.Grid.Cells(1.0);
+        TopologyResult a, b;
+        using (var analysis = Start(two, openSees, folder, cells))
+            a = TopologyOptimiser.RunCases(cells, settings, analysis.CaseEnergies);
+        using (var analysis = Start(together, openSees, folder, cells))
+            b = TopologyOptimiser.RunCases(cells, settings, analysis.CaseEnergies);
+
+        // Each design under each load alone.
+        Func<TopologyResult, double[]> Each = r =>
+        {
+            using (var analysis = Start(two, openSees, folder, cells))
+                return analysis.CaseEnergies(SimpModuli(r.Densities, settings)).Select(e => e.Sum()).ToArray();
+        };
+        var ca = Each(a);
+        var cb = Each(b);
+        var last = a.History.Last();
+        Check(last.CaseCompliances.Length == 2 && Math.Abs(last.CaseCompliances.Sum() - last.Compliance) < 1e-9 * last.Compliance,
+              "the compliance is the sum of the two cases'");
+        Check(Math.Abs(ca[0] - ca[1]) < 1e-6 * ca.Max(), $"the problem is symmetric, and so are the cases' compliances ({ca[0]:G8}, {ca[1]:G8})");
+        Check(cb.Min() > 100 * ca.Max(),
+              $"the design for both loads at once, which balance each other, is far softer under either alone ({cb[0]:G3} and {cb[1]:G3}, against {ca[0]:G4})");
+    }
+
+    static void WorstCase(string openSees, string folder)
+    {
+        Section("Load cases: Multi-Material, the worst case");
+        Func<LoadCaseObjective, int, MultiMaterialSettings> Settings = (objective, iterations) => new MultiMaterialSettings
+        {
+            Moduli = new[] { 1.0, 0.4 }, VolumeFractions = new[] { 0.2, 0.2 }, MaxIterations = iterations, SharpenEvery = 20, LoadCases = objective,
+        };
+        Func<string, double, double, Problem> Scaled = (name, up, down) =>
+        {
+            var p = TwoLoads(16, 1);
+            p.Name = name;
+            p.Patterns[0] = ("Up", p.Patterns[0].loads.Select(l => (l.node, up * l.fz)).ToList());
+            p.Patterns[1] = ("Down", p.Patterns[1].loads.Select(l => (l.node, down * l.fz)).ToList());
+            return p;
+        };
+        var cells = TwoLoads(16, 1).Grid.Cells(1.0);
+        Func<Problem, MultiMaterialSettings, TopologyResult> Solve = (p, settings) =>
+        {
+            using (var analysis = Start(p, openSees, folder, cells))
+                return MultiMaterialOptimiser.RunCases(cells, settings, analysis.CaseEnergies);
+        };
+
+        // Down twice as strong as up.
+        var uneven = Scaled("uneven", 1.0, 2.0);
+        var sum = Solve(uneven, Settings(LoadCaseObjective.Sum, 120)).History.Last();
+        var worst = Solve(uneven, Settings(LoadCaseObjective.Worst, 120)).History.Last();
+        Check(worst.Compliance == worst.CaseCompliances.Max(), "the compliance of a worst case run is its larger case's");
+        Check(worst.MaterialVolumes.Zip(new[] { 0.2, 0.2 }, (v, f) => Math.Abs(v - f)).Max() < 2e-3,
+              $"the volumes hold ({string.Join(", ", worst.MaterialVolumes.Select(v => v.ToString("0.0000")))})");
+        Check(worst.CaseCompliances.Max() <= 1.01 * sum.CaseCompliances.Max(),
+              $"its worst case is no softer than that of the design for the sum (up {worst.CaseCompliances[0]:G5}, down {worst.CaseCompliances[1]:G5}; " +
+              $"for the sum: up {sum.CaseCompliances[0]:G5}, down {sum.CaseCompliances[1]:G5})");
+
+        // A case a hundredth of the other, on the same nodes: its compliance is always a ten thousandth of the other's,
+        // so the worst case is the other, and the design is that for it alone. (A faint load where that design has no
+        // material would not do: on void, a hundredth of a load is still very soft.)
+        var faintProblem = Scaled("faint", 1.0, 1.0);
+        faintProblem.Patterns[0] = ("Up", faintProblem.Patterns[1].loads.Select(l => (l.node, 0.01 * l.fz)).ToList());
+        var faint = Solve(faintProblem, Settings(LoadCaseObjective.Worst, 120)).History.Last();
+        var downOnly = Scaled("down", 0.0, 1.0);
+        downOnly.Patterns.RemoveAt(0);
+        downOnly.Combinations = null;
+        var alone = Solve(downOnly, Settings(LoadCaseObjective.Sum, 120)).History.Last();
+        double gap = Math.Abs(faint.CaseCompliances[1] - alone.Compliance) / alone.Compliance;
+        Check(gap < 0.03, $"with a hundredth of down as the other case, the worst case is down, as stiff as the design for down alone ({faint.CaseCompliances[1]:G5} vs {alone.Compliance:G5})");
+    }
+
+    /// <summary>
+    /// The two load cases of <see cref="TwoLoads"/>: two-loads (SIMP), two-loads-together (SIMP, both at once) and
+    /// beso-two-loads (BESO), each writing its history and densities for reference.py, and ../TopologyMethods/reference.py
+    /// for BESO; and the design under each load alone.
+    /// </summary>
+    static void BenchCases(string name, string openSees, string folder, int iterations)
+    {
+        bool beso = name.StartsWith("beso-");
+        var problem = TwoLoads(together: name.EndsWith("together"));
+        problem.Name = name;
+        if (iterations > 0)
+            problem.Settings.MaxIterations = iterations;
+        var besoSettings = new BesoSettings { VolumeFraction = 0.4, EvolutionRate = 0.02, FilterRadius = 3.0, MaxIterations = iterations > 0 ? iterations : 300 };
+        var cells = problem.Grid.Cells(problem.E);
+        Console.WriteLine($"{name}: {cells.Count} elements, {problem.Combinations.Count} load case(s), {(beso ? "BESO" : "SIMP")}, {openSees}");
+
+        TopologyResult result;
+        Action<TopologyIteration, double[]> print = (it, x) => { if (it.Iteration % 10 == 0 || it.Iteration == 1) Console.WriteLine("  " + it); };
+        using (var analysis = Start(problem, openSees, folder, cells))
+            result = beso ? BesoOptimiser.RunCases(cells, besoSettings, analysis.CaseEnergies, progress: print)
+                          : TopologyOptimiser.RunCases(cells, problem.Settings, analysis.CaseEnergies, progress: print);
+        Console.WriteLine($"  {result.History.Count} iterations, converged {result.Converged}: {result.History.Last()}");
+
+        var each = TwoLoads();
+        each.Name = name + "-each";
+        var moduli = beso ? result.Densities.Select(x => Math.Pow(x, besoSettings.Penalty)).ToArray() : SimpModuli(result.Densities, problem.Settings);
+        using (var analysis = Start(each, openSees, folder, cells))
+        {
+            var c = analysis.CaseEnergies(moduli).Select(e => e.Sum()).ToArray();
+            Console.WriteLine($"  the design under each load alone: up {N(c[0])}, down {N(c[1])}");
+        }
+
+        var history = new StringBuilder("iteration,compliance,volume,change,cases\n");
+        foreach (var it in result.History)
+            history.AppendLine(string.Join(",", it.Iteration, N(it.Compliance), N(it.Volume), N(it.Change),
+                it.CaseCompliances == null ? "" : string.Join(" ", it.CaseCompliances.Select(N))));
+        File.WriteAllText(Path.Combine(folder, name + "_history.csv"), history.ToString());
+        if (beso)
+            File.WriteAllLines(Path.Combine(folder, name + "_densities.csv"), result.Densities.Select(N));
+        else
+        {
+            var densities = new StringBuilder("i,j,k,density\n");
+            int at = 0;
+            foreach (var c in problem.Grid.Elements())
+                densities.AppendLine($"{c.i},{c.j},{c.k},{N(result.Densities[at++])}");
+            File.WriteAllText(Path.Combine(folder, name + "_densities.csv"), densities.ToString());
+        }
+        Console.WriteLine($"  wrote {name}_history.csv and _densities.csv to {folder}");
+    }
+
     static void Bench(string name, string openSees, string folder, int iterations)
     {
+        if (name.Contains("two-loads"))
+        {
+            BenchCases(name, openSees, folder, iterations);
+            return;
+        }
         var problem = name == "cantilever" ? Cantilever() : name == "simply-supported" ? SimplySupported()
             : name == "cantilever-20k" ? Cantilever(80, 30, 8) : name == "bridge" ? Bridge() : name == "tower" ? Tower()
             : name.StartsWith("bridge-") ? Bridge(int.Parse(name.Substring(7))) : throw new ArgumentException(name);

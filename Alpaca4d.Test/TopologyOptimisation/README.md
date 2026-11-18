@@ -39,6 +39,14 @@ output into a pipe is buffered). Each iteration (`TopologyAnalysis`):
 4. the energy of an element is u_e . f_e, its nodal displacements against its resisting forces, which
    is u_e . K_e u_e for any linear element whatever its formulation.
 
+**Load cases.** A model with load combinations is optimised for each (`TopologyLoadCases`): every
+pattern a combination names gets a `Path` time series in place of its own, holding its factor in
+combination k on a plateau from k - 0.5 to k, and `alpacaSolve` solves case k from rest - `reset`,
+`setTime k-1`, `analyze 1` - with recorders of its own. The optimisers take every case's energies
+(`RunCases`, `CaseEnergies`): SIMP and BESO add them up, as the 88 line code's section 5.2 does;
+Multi-Material adds them up or, with `LoadCases = Worst`, makes the largest compliance least through
+MMA's min-max form. A model without combinations writes the deck and runs exactly as before.
+
 The optimiser (`TopologyOptimiser`) is top3d step for step, with two generalisations: elements may
 differ in size, so volumes and the filter count by element volume, and some may be kept solid (Keep).
 top3d's bisection runs between 0 and 1e9, which fits its unit modulus and loads; here the
@@ -81,6 +89,17 @@ sensitivities are scaled to a largest ratio of one first, so that a model in kN 
   run's alone. `./run.sh bench <name>` prints how small the frames are: the cantilever's 201 in 92 KB
   (doubles 7.4 MB, bytes 942 KB, each byte frame deflated whole 342 KB), the tower's 44 in 19 KB.
 
+* **Load cases**: the deck - each pattern's factors on plateaus, its series' and pattern's factors
+  kept, a pattern in no combination left out, names matched whatever their case, a pattern on another
+  series refused; each case's energies the same, to the last bit, as its loads analysed alone, and
+  again when solved again; **one pattern, or one combination of it, runs SIMP, BESO and Multi-Material
+  (sum and worst case) to the last bit as before**, and a combination of factor 2 gives the same design
+  at four times the compliance; two cases against both loads at once (16 x 16 x 1): the cases'
+  compliances equal by symmetry, and the design for both at once 1e8 times softer under either alone;
+  Multi-Material's worst case: its compliance the larger case's, the volumes held, its worst case
+  stiffer than the sum's design's (645 / 645 against 249 / 759, down twice up), and with a hundredth
+  of down as the other case, as stiff as the design for down alone (133.0 against 130.4).
+
 ## The benchmarks
 
 `./run.sh bench <name>` runs one with the OpenSees given and writes `<name>_history.csv` and
@@ -102,6 +121,25 @@ The first compliance agrees to round-off: OpenSees' `stdBrick` is top3d's brick.
 goes through a rearrangement around iteration 70 (the change jumps to 0.13) in which round-off between
 two solvers grows for a while; both come out at the same design. Neither run reaches top3d's
 tolerance of 0.01 within 200 iterations - top3d's own runs of these do not either.
+
+**two-loads**: the 88 line code's two load cases (Andreassen et al. 2011, section 5.2) on a square of
+30 x 30 x 2, clamped along x = 0, up by 1 at the top edge of the free end and down by 1 at the bottom
+edge, 40% of the volume, top3d's filter of 1.5; `reference.py` makes the paper's change to top3d (F a
+column per case, c and dc summed over them). **two-loads-together** has both loads in one case;
+**beso-two-loads** runs BESO (radius 3, ER 0.02) against `../TopologyMethods/reference.py`, esoL with
+the energies summed. With OpenSees 3.8.0, 2026-11-17:
+
+| | two-loads (SIMP) | two-loads-together (SIMP) | beso-two-loads |
+|---|---|---|---|
+| iterations, Alpaca4d / reference | 59 / 59 | 45 / 45 | 55 / 55 |
+| largest gap over the run | 8.5e-13 | 2.9e-14 | 7.9e-13 |
+| final compliance | 311.000998 both | 82.441012 both | 336.5272648 both |
+| final densities | 2.4e-11 apart at most | 1.5e-11 apart at most | all 1 800 the same |
+| the design under each load alone | 155.5, 155.5 | 2.0e10, 2.0e10 | 168.2, 168.2 |
+
+A model without combinations runs as before, to the last bit: on 2026-11-17 the cantilever (SIMP, 200
+iterations), beso-3d (84) and zheng 2 30 15 8 (300) were run with the Core before load cases and after,
+and their histories, densities and decks were the same files.
 
 **cantilever-20k**, 80 x 8 x 30 = 19 200 bricks and 67 800 unknowns: 0.94 s of analysis and 0.06 s of
 update per iteration, 200 iterations in 3 min 20 s, OpenSees started once (0.3 s).
