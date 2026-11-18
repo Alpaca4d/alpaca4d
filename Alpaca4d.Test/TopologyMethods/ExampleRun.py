@@ -20,6 +20,7 @@ from Grasshopper.Kernel import GH_Document, GH_SolutionMode, GH_RuntimeMessageLe
 WORK = "__WORK__"
 EXAMPLES = "__EXAMPLES__"
 OPENSEES = "__OPENSEES__"
+PICTURES = "__PICTURES__" == "1"
 
 lines = []
 fails = [0]
@@ -35,8 +36,94 @@ def values(param):
     return [g.Value for g in param.VolatileData.AllData(True)]
 
 
+def picture(meshes, path, width=4800):
+    """The design in 3D, as the topology pictures of the docs have it: each surface shaded in its colour, creased at
+    35 degrees, the block it was carved from in light grey lines, seen in perspective from in front, to the right and
+    above, on a light grey (251). Rhino's own document, emptied before and after. The capture has the maximised
+    viewport's shape: trim it to the drawn pixels after (Tools/Marketing/post.py trim)."""
+    import math
+    from Rhino.Geometry import BoundingBox, Vector3d
+    rdoc = Rhino.RhinoDoc.ActiveDoc
+    for o in list(rdoc.Objects):
+        rdoc.Objects.Delete(o, True)
+
+    def attributes(colour):
+        a = Rhino.DocObjects.ObjectAttributes()
+        a.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        a.ObjectColor = colour
+        return a
+
+    box = BoundingBox.Empty
+    for mesh, colour in meshes:
+        mesh = mesh.DuplicateMesh()
+        if not mesh.IsValid:
+            mesh.Faces.CullDegenerateFaces()
+            mesh.Compact()
+        mesh.Unweld(math.radians(35.0), True)
+        mesh.Normals.ComputeNormals()
+        rdoc.Objects.AddMesh(mesh, attributes(colour), None, False, False)
+        box.Union(mesh.GetBoundingBox(True))
+    for edge in box.GetEdges():
+        rdoc.Objects.AddLine(edge, attributes(System.Drawing.Color.FromArgb(185, 185, 185)))
+
+    view = rdoc.Views.ActiveView
+    view.Maximized = True
+    vp = view.ActiveViewport
+    vp.ChangeToPerspectiveProjection(True, 50.0)
+    target = box.Center
+    # Rhino lights a shaded view from the camera, so a face seen at a slant comes out dark: from lower down, the
+    # deck's top was nearly navy. A display mode's AmbientColor changed nothing (2026-11-17).
+    vp.SetCameraLocations(target, target + Vector3d(0.4, -1.1, 0.95) * box.Diagonal.Length * 2.0)
+    framed = BoundingBox(box.Min, box.Max)
+    framed.Inflate(box.Diagonal.Length * 0.02)
+    vp.ZoomBoundingBox(framed)
+    modes = Rhino.Display.DisplayModeDescription
+    shaded = modes.FindByName("Shaded")
+    # Rhino keeps display modes in its settings: clear any a run that stopped left behind.
+    for old in modes.GetDisplayModes():
+        if old.EnglishName == "Example grey":
+            modes.DeleteDisplayMode(old.Id)
+    mode = modes.GetDisplayMode(modes.CopyDisplayMode(shaded.Id, "Example grey"))
+    try:
+        attrs = mode.DisplayAttributes
+        attrs.FillMode = Rhino.Display.DisplayPipelineAttributes.FrameBufferFillMode.SolidColor
+        attrs.SetFill(System.Drawing.Color.FromArgb(251, 251, 251))
+        for name in ("ShowGrid", "ShowGridAxes", "ShowWorldAxes"):
+            try:
+                setattr(attrs, name, False)
+            except Exception:
+                pass
+        try:
+            attrs.MeshSpecificAttributes.ShowMeshWires = False
+        except Exception:
+            pass
+        vp.ConstructionGridVisible = False
+        vp.ConstructionAxesVisible = False
+        vp.WorldAxesVisible = False
+        modes.UpdateDisplayMode(mode)
+        vp.DisplayMode = mode
+        height = int(round(width * vp.Size.Height / float(vp.Size.Width)))
+        view.Redraw()
+        Rhino.RhinoApp.Wait()
+        # The first capture can come before the mode takes hold.
+        view.CaptureToBitmap(System.Drawing.Size(width, height), mode).Dispose()
+        view.Redraw()
+        Rhino.RhinoApp.Wait()
+        view.CaptureToBitmap(System.Drawing.Size(width, height), mode).Save(path)
+    finally:
+        vp.DisplayMode = shaded
+        modes.DeleteDisplayMode(mode.Id)
+        for o in list(rdoc.Objects):
+            rdoc.Objects.Delete(o, True)
+    lines.append("  drew the design in 3D to " + os.path.basename(path))
+
+
 try:
     Rhino.RhinoApp.GetPlugInObject("Grasshopper")
+    # Grasshopper loads its libraries when its component server is first used. Use it now, before this build goes
+    # in: otherwise an installed Alpaca4d binds to this build's Core, with this build's Newtonsoft.Json, and its
+    # Section Library fails ("Grasshopper Loading Errors", Method not found ... FindEntry).
+    Grasshopper.Instances.ComponentServer.ObjectProxies.Count
 
     context = AssemblyLoadContext("TopologyMethods " + os.path.basename(WORK), False)
     from_rhino = ("RhinoCommon", "Grasshopper", "GH_IO", "Eto")
@@ -80,7 +167,12 @@ try:
         doc.FilePath = os.path.join(WORK, module + ".gh")
         example.build(doc)
         objects = [getattr(o, "__implementation__", o) for o in doc.Objects]
-        component = [o for o in objects if o.GetType().Name == kind][0]
+        # kind is the method: Topology Optimisation's unit (BesoTopology, MultiMaterialTopology). The retired
+        # BESO and Multi-Material Topology components are subclasses with their method fixed and Obsolete on them.
+        component = [o for o in objects if o.GetType().Name == kind + "_obsolete" or (
+            o.GetType().Name == "TopologyOptimisation" and o.ActiveUnit is not None and o.ActiveUnit.Name == kind)][0]
+        check(not component.Obsolete, "{0}: made with Topology Optimisation, not the retired {1} ({2})".format(
+            module, component.Name, component.GetType().Name))
         doc.Enabled = True
         doc.NewSolution(True, GH_SolutionMode.Silent)
         errors = list(component.RuntimeMessages(GH_RuntimeMessageLevel.Error))
@@ -107,19 +199,23 @@ try:
         return doc, objects, component
 
     def analyse(module, doc, objects):
-        """Enables Run Analysis and Legend, as the note says, and reads View Results."""
+        """Enables Run Analysis and Legend, as the note says, and reads the Model View of the analysed design (View
+        Results is part of Model View now)."""
         for o in objects:
             if o.GetType().Name in ("RunAnalysis", "Legend"):
                 o.Locked = False
                 o.ExpireSolution(False)
         doc.NewSolution(False, GH_SolutionMode.Silent)
-        results = [o for o in objects if o.GetType().Name == "ViewResults"][0]
         analysis = [o for o in objects if o.GetType().Name == "RunAnalysis"][0]
+        results = [o for o in objects if o.GetType().Name == "ModelView" and any(
+            s.Attributes.GetTopLevel.DocObject.InstanceGuid == analysis.InstanceGuid for s in o.Params.Input[0].Sources)][0]
         errors = [m for o in (analysis, results) for m in o.RuntimeMessages(GH_RuntimeMessageLevel.Error)]
         check(not errors, "{0}: the design analysed, no errors{1}".format(module, "" if not errors else " - " + "; ".join(errors)))
-        drawn = values(results.Params.Output[0])
-        legend = values(results.Params.Output[1])
-        check(len(drawn) > 0 and len(legend) > 0, "{0}: View Results shows Von Mises stresses ({1})".format(module, drawn[:1]))
+        output = dict((p.Name, p) for p in results.Params.Output)
+        drawn = values(output["Geometry"])
+        info = [str(i) for i in values(output["Info"])]
+        legend = values(output["Values"])
+        check(len(drawn) > 0 and len(legend) > 0, "{0}: Model View shows the results ({1})".format(module, "; ".join(info)[:120]))
 
     # Multi-material: steel and concrete, at most 5% and 15%.
     doc, objects, mm = run("MultiMaterialBridge", "MultiMaterialTopology")
@@ -135,7 +231,10 @@ try:
           "MultiMaterialBridge: {0} steel and {1} concrete bricks, deck included".format(choice.count(0), choice.count(1)))
     check(len(surfaces) == 2 and all(s.Faces.Count > 0 for s in surfaces), "MultiMaterialBridge: a surface for each")
     lines.append("  " + str(values(mm.Params.Output[9])[-1]))
-    analyse("MultiMaterialBridge", doc, objects)
+    if PICTURES:
+        picture(list(zip(surfaces, values(mm.Params.Output[1]))), os.path.join(WORK, "multi-material-bridge-3d.png"))
+    # Analysed after the BESO picture: an analysed design's Legend draws in Rhino's viewport, over any picture after.
+    mm_doc, mm_objects = doc, objects
 
     # BESO: from the whole block down to a fifth.
     doc, objects, beso = run("BesoBridge", "BesoTopology")
@@ -146,6 +245,10 @@ try:
     density = values(beso.Params.Output[2])
     check(all(d == 1.0 or abs(d - 1e-3) < 1e-12 for d in density), "BesoBridge: every brick solid or void")
     lines.append("  " + str(values(beso.Params.Output[7])[-1]))
+    if PICTURES:
+        blue = System.Drawing.Color.FromArgb(66, 136, 247)
+        picture([(m, blue) for m in values(beso.Params.Output[0])], os.path.join(WORK, "beso-bridge-3d.png"))
+    analyse("MultiMaterialBridge", mm_doc, mm_objects)
     analyse("BesoBridge", doc, objects)
 except Exception:
     lines.append("  [FAIL] the script ran: " + traceback.format_exc())

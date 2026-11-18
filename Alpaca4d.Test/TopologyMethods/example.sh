@@ -2,6 +2,7 @@
 # Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, each built by its own build(doc) in a running Rhino 8
 # with its script server started (StartScriptServer), with this build of the plugin: each runs to its end, at
 # the bricks per metre it opens with, and its design is analysed as the definition does.
+# PICTURES=1 also draws each design in 3D, into the work folder it prints.
 # Needs a Release build of Alpaca4d.Gh, an OpenSees (OPENSEES, or the one on PATH) and a license (LICENSE,
 # the user's by default; copied, never written). RHINO_PIPE=rhinocode_remotepipe_<pid> picks one Rhino.
 set -e
@@ -18,7 +19,7 @@ work=$(mktemp -d)
 cp "$GHDIR"/*.dll "$GHDIR"/*.gha "$work/"
 cp "$LICENSE" "$work/license.bin"
 sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples/Topology && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
-    ExampleRun.py > "$work/ExampleRun.py"
+    -e "s|__PICTURES__|${PICTURES:-0}|" ExampleRun.py > "$work/ExampleRun.py"
 
 if [ -n "$RHINO_PIPE" ]; then
   "$RHINOCODE" --rhino "$RHINO_PIPE" script "$work/ExampleRun.py"
@@ -28,4 +29,5 @@ fi
 for _ in $(seq 1 1800); do [ -f "$work/result.txt" ] && break; sleep 1; done
 [ -f "$work/result.txt" ] || { echo "no result: an error is in the newest ~/.rhinocode/logs/rhinocode_<Rhino's pid>"; exit 1; }
 cat "$work/result.txt"
+[ "${PICTURES:-0}" = 1 ] && echo "pictures in $work"
 if grep -q "\[FAIL\]" "$work/result.txt"; then exit 1; fi
