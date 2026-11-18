@@ -53,6 +53,10 @@ def summary(case):
 
 try:
     Rhino.RhinoApp.GetPlugInObject("Grasshopper")
+    # Grasshopper loads its libraries when its component server is first used. Use it now, before this build goes
+    # in: otherwise an installed Alpaca4d binds to this build's Core, with this build's Newtonsoft.Json, and its
+    # Section Library fails ("Grasshopper Loading Errors", Method not found ... FindEntry).
+    Grasshopper.Instances.ComponentServer.ObjectProxies.Count
     context = AssemblyLoadContext("TopologyNodes " + os.path.basename(WORK), False)
     loaded = []
     for name in sorted(os.listdir(WORK)):
