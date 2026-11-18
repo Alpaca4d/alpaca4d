@@ -157,7 +157,8 @@ namespace Alpaca4d.Gh
                 "Each solid's density of each material, 0 to 1: a branch per material, in the order of the Element output.");
             unit.RegisterOutputParam(new Param_GenericObject(), "Element", "Element", ElementIdentity.ElementOutput);
             unit.RegisterOutputParam(new Param_Number(), "Compliance", "Compliance",
-                $"The compliance F.u of each iteration's design, the work of the loads [{Units.Force}·{Units.Length}]: the lower, the stiffer.");
+                $"The compliance F.u of each iteration's design, the work of the loads [{Units.Force}·{Units.Length}]: the lower, the stiffer. " +
+                "With load combinations, the sum of theirs, or the largest with Worst case in the right-click menu.");
             unit.RegisterOutputParam(new Param_Number(), "Volume", "Volume",
                 "Each iteration's share of the designed solids' volume filled by each material: a branch per material.");
             unit.RegisterOutputParam(new Param_Boolean(), "Converged", "Converged",
@@ -250,6 +251,7 @@ namespace Alpaca4d.Gh
                 Tolerance = tolerance,
                 MinStiffness = minStiffness,
                 Move = move,
+                LoadCases = _worstCase ? LoadCaseObjective.Worst : LoadCaseObjective.Sum,
             };
             string problem =
                 materials.Any(m => !(m.E > 0.0)) ? "Every material needs a positive Young's modulus." :
@@ -274,7 +276,11 @@ namespace Alpaca4d.Gh
             if (systemObj == null)
                 return;
 
-            WarnAboutModel(model);
+            WarnAboutModel(model, settings.LoadCases);
+            if (_worstCase && TopologyLoadCases.Count(model) < 2)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    "Worst case (right-click menu) weighs two load combinations or more against each other. The model has " +
+                    (TopologyLoadCases.FromCombinations(model) ? "one" : "none") + ", so it is optimised for its one load case as always.");
             var own = model.Bricks.Select(b => b.Material).OfType<ElasticMaterial>().Select(m => m.Nu).Distinct().ToList();
             if (materials.Any(m => !own.Contains(m.Nu)))
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
@@ -288,7 +294,7 @@ namespace Alpaca4d.Gh
                 System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(model), string.Join(",", kept.Select(b => b.Id)),
                 string.Join(",", settings.Moduli.Select(e => e.ToString("R", CultureInfo.InvariantCulture))),
                 string.Join(",", shares.Select(f => f.ToString("R", CultureInfo.InvariantCulture))),
-                penalty, pNorm, filterRadius, minStiffness, move, systemObj.Type,
+                penalty, pNorm, filterRadius, minStiffness, move, systemObj.Type, settings.LoadCases,
             }.Select(v => Convert.ToString(v, CultureInfo.InvariantCulture)));
 
             if (!run)
@@ -305,7 +311,7 @@ namespace Alpaca4d.Gh
                     {
                         var start = new double[materials.Count * cells.Count];
                         Run = TopologyRun.Start(this, key, model, tcl, cells, settings, start,
-                            (analyse, stop, progress, before, frames) => MultiMaterialOptimiser.Run(cells, settings, analyse, stop, progress, before, frames),
+                            (analyse, stop, progress, before, frames) => MultiMaterialOptimiser.RunCases(cells, settings, analyse, stop, progress, before, frames),
                             systemObj, openSees, folder, stem, previous);
                     }
                     if (Run == null)

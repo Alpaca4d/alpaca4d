@@ -126,7 +126,7 @@ namespace Alpaca4d.Gh
             unit.RegisterOutputParam(new Param_GenericObject(), "Element", "Element", ElementIdentity.ElementOutput);
             unit.RegisterOutputParam(new Param_Number(), "Compliance", "Compliance",
                 $"The compliance F.u of each iteration's design, the work of the loads [{Units.Force}·{Units.Length}]: the lower, the stiffer. " +
-                "It rises as the volume comes down, then settles.");
+                "It rises as the volume comes down, then settles. With load combinations, the sum of theirs.");
             unit.RegisterOutputParam(new Param_Number(), "Volume", "Volume",
                 "Each iteration's share of the designed solids' volume: from 1 down to VolumeFraction.");
             unit.RegisterOutputParam(new Param_Boolean(), "Converged", "Converged",
@@ -241,7 +241,7 @@ namespace Alpaca4d.Gh
                     Run = null;
                     if (Prepare(DA, model, kept, "Topology Optimisation (BESO) takes", "Beso", out var tcl, out var cells, out var openSees, out var folder, out var stem))
                         Run = TopologyRun.Start(this, key, model, tcl, cells, settings, cells.Select(_ => 1.0).ToArray(),
-                            (analyse, stop, progress, before, frames) => BesoOptimiser.Run(cells, settings, analyse, stop, progress, before, frames),
+                            (analyse, stop, progress, before, frames) => BesoOptimiser.RunCases(cells, settings, analyse, stop, progress, before, frames),
                             systemObj, openSees, folder, stem, previous);
                     if (Run == null)
                         return;

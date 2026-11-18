@@ -22,7 +22,7 @@ namespace Alpaca4d.Gh
     /// Runs one method of topology optimisation on cells, from the beginning or from a previous run, as
     /// <see cref="TopologyOptimiser.Run"/> does.
     /// </summary>
-    internal delegate TopologyResult TopologyMethod(CellEnergies analyse, Func<bool> stop, Action<TopologyIteration, double[]> progress,
+    internal delegate TopologyResult TopologyMethod(CaseEnergies analyse, Func<bool> stop, Action<TopologyIteration, double[]> progress,
                                                     TopologyResult previous, DensityHistory frames);
 
     /// <summary>
@@ -83,7 +83,7 @@ namespace Alpaca4d.Gh
                                         TopologyResult previous = null)
         {
             return Start(owner, key, model, tcl, cells, settings, cells.Select(cell => cell.Passive ? 1.0 : settings.VolumeFraction).ToArray(),
-                (analyse, stop, progress, before, frames) => TopologyOptimiser.Run(cells, settings, analyse, stop, progress, before, frames),
+                (analyse, stop, progress, before, frames) => TopologyOptimiser.RunCases(cells, settings, analyse, stop, progress, before, frames),
                 system, openSees, folder, stem, previous);
         }
 
@@ -104,8 +104,9 @@ namespace Alpaca4d.Gh
                 TopologyAnalysis analysis = null;
                 try
                 {
-                    analysis = new TopologyAnalysis(openSees, folder, stem, tcl, cells, solidNodes, system, timeout);
-                    var result = method(analysis.Energies, () => run._stop, run.Reached, previous, run.Frames);
+                    // One analysis per load case: per combination of the model's, when it has any (Prepare wrote the deck for them).
+                    analysis = new TopologyAnalysis(openSees, folder, stem, tcl, cells, solidNodes, system, timeout, TopologyLoadCases.Count(model));
+                    var result = method(analysis.CaseEnergies, () => run._stop, run.Reached, previous, run.Frames);
                     run.Log = analysis.Log;
                     run.Result = result;
                     lock (run._gate)
