@@ -12,6 +12,9 @@
     ./run.sh bench node joint 20               # a beam-column joint, the same way
     ./example.sh                               # Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
     ./nodes.sh                                 # Tools/Examples/Topology/TopologyNodes.py's two definitions, against the node benches
+    ./run.sh bench classic cantilever 40 0.4 1.5                  # the mid-loaded cantilever, SIMP at p = 1..5, BESO, Multi-Material
+    ./run.sh bench classic lbracket 60 0.4 1.5 simp3 beso multi   # the L-bracket, the three ways
+    ./classics.sh                              # Tools/Examples/Topology/TopologyClassics.py's two definitions, against those (PICTURES=1 draws them)
     ./speed.sh                                 # the speed test: every method timed on the bridge, the joint and the truss node
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or

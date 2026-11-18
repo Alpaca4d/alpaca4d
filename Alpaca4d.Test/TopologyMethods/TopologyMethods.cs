@@ -257,6 +257,38 @@ static class TopologyMethods
     }
 
     /// <summary>
+    /// A cantilever twice as long as it is high, n bricks high and one deep, held along x = 0 and loaded down by 1 at
+    /// the middle of its free end: the problem of the PTO papers' tables, in unit values.
+    /// </summary>
+    static Voxels ClassicCantilever(int n, int pad)
+    {
+        var v = new Voxels(1.0);
+        if (pad > 0)
+            v.Box(2 * n - pad, 2 * n, 0, 1, n / 2 - pad / 2, n / 2 + (pad + 1) / 2, true);
+        v.Box(0, 2 * n, 0, 1, 0, n, false);
+        v.Fix(v.Face(0, 0, 0, 1, 0, n));
+        v.Load(v.Face(2 * n, 2 * n, 0, 1, n / 2, n / 2), new Vector3d(0, 0, -1));
+        return v;
+    }
+
+    /// <summary>
+    /// The L-bracket: a square n bricks a side, one deep, without its top right 0.6 n square - legs 0.4 n wide - held
+    /// along the top of its upright leg and loaded down by 1 at the middle of the end of its lower leg.
+    /// </summary>
+    static Voxels LBracket(int n, int pad)
+    {
+        int leg = 2 * n / 5;
+        var v = new Voxels(1.0);
+        if (pad > 0)
+            v.Box(n - pad, n, 0, 1, leg / 2 - pad / 2, leg / 2 + (pad + 1) / 2, true);
+        v.Box(0, leg, 0, 1, 0, n, false);
+        v.Box(leg, n, 0, 1, 0, leg, false);
+        v.Fix(v.Face(0, leg, 0, 1, n, n));
+        v.Load(v.Face(n, n, 0, 1, leg / 2, leg / 2), new Vector3d(0, 0, -1));
+        return v;
+    }
+
+    /// <summary>
     /// A node of a space truss, Tools/Examples/Topology/TopologyTrussNode's: a 1 m cube of n bricks a side (n a multiple of 10)
     /// where nine members meet. The chords along x pull out with 450 and 250 kN, those along y push in with 300 and 150
     /// kN - unequal, as a space truss's chords are on either side of a node, the difference going down the diagonals -
@@ -737,6 +769,56 @@ static class TopologyMethods
                     File.WriteAllLines(Path.Combine(folder, $"{stem}-{method}_densities.csv"), result.Densities.Select(N));
                     File.AppendAllText(Path.Combine(folder, stem + "_summary.csv"),
                         $"{method},{result.History.Count},{N(result.History.First().Compliance)},{N(last.Compliance)}\n");
+                }
+            }
+        }
+        else if (name == "classic")
+        {
+            // Tools/Examples/Topology/TopologyClassics' two problems, in unit values (E = 1, unit bricks, a load of 1):
+            // classic cantilever|lbracket [n] [fraction] [radius] [simp1..simp5|beso|multi ...]. CLASSIC_PAD=k keeps a
+            // pad of k x k bricks under the load.
+            string kind = a.Length > 1 ? a[1] : "cantilever";
+            bool cantilever = kind == "cantilever";
+            int n = a.Length > 2 ? int.Parse(a[2]) : cantilever ? 40 : 60;
+            double fraction = a.Length > 3 ? double.Parse(a[3], CultureInfo.InvariantCulture) : cantilever ? 0.5 : 0.4;
+            double radius = a.Length > 4 ? double.Parse(a[4], CultureInfo.InvariantCulture) : 1.5;
+            var methods = a.Length > 5 ? a.Skip(5).ToList() : new List<string> { "simp1", "simp2", "simp3", "simp4", "simp5", "beso", "multi" };
+            int pad = int.Parse(Environment.GetEnvironmentVariable("CLASSIC_PAD") ?? "0");
+            var v = cantilever ? ClassicCantilever(n, pad) : LBracket(n, pad);
+            var cells = v.Cells(1.0);
+            Console.WriteLine($"{kind} {n}: {cells.Count} bricks ({cells.Count(c => c.Passive)} kept), fraction {fraction}, radius {radius}");
+            string stem = $"classic-{kind}-{n}";
+            File.Delete(Path.Combine(folder, stem + "_summary.csv"));
+            File.WriteAllLines(Path.Combine(folder, stem + "_cells.csv"),
+                cells.Select(c => $"{N(c.Centroid.X)},{N(c.Centroid.Y)},{N(c.Centroid.Z)},{(c.Passive ? 1 : 0)}"));
+            using (var analysis = Start(v, stem, openSees, folder, cells, 1.0, 0.3))
+            {
+                foreach (var method in methods)
+                {
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    TopologyResult result;
+                    if (method.StartsWith("simp"))
+                        result = TopologyOptimiser.Run(cells, new TopologySettings
+                        {
+                            VolumeFraction = fraction, Penalty = double.Parse(method.Substring(4), CultureInfo.InvariantCulture),
+                            FilterRadius = radius, MaxIterations = 300,
+                        }, analysis.Energies);
+                    else if (method == "beso")
+                        result = BesoOptimiser.Run(cells, new BesoSettings { VolumeFraction = fraction, MaxIterations = 300 }, analysis.Energies);
+                    else
+                        result = MultiMaterialOptimiser.Run(cells, new MultiMaterialSettings
+                        {
+                            Moduli = new[] { 1.0, 0.5 }, VolumeFractions = new[] { 0.6 * fraction, 0.4 * fraction }, FilterRadius = radius,
+                        }, analysis.Energies);
+                    var last = result.History.Last();
+                    var design = cells.Select((c, i) => i).Where(i => !cells[i].Passive).ToList();
+                    double grey = result.Materials > 1 ? double.NaN
+                        : design.Count(i => result.Densities[i] > 0.1 && result.Densities[i] < 0.9) / (double)design.Count;
+                    Console.WriteLine($"  {method}: {result.History.Count} iterations, converged {result.Converged}{(result.BrokeAfter != null ? $", broke after {result.BrokeAfter}" : "")}, " +
+                                      $"compliance {last.Compliance:0.000}, grey {grey:P1}, {clock.Elapsed.TotalSeconds:0} s");
+                    File.WriteAllLines(Path.Combine(folder, $"{stem}-{method}_densities.csv"), result.Densities.Select(N));
+                    File.AppendAllText(Path.Combine(folder, stem + "_summary.csv"),
+                        $"{method},{result.History.Count},{N(result.History.First().Compliance)},{N(last.Compliance)},{N(grey)}\n");
                 }
             }
         }
