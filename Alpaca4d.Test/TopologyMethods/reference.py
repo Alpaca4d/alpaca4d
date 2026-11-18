@@ -7,7 +7,11 @@ own assembly and SciPy's solver - in the soft-kill form BesoOptimiser uses: a vo
 x_min^p of its stiffness, x_min = 1e-9^(1/3). Only the problem and the algorithm are shared with the run
 through OpenSees.
 
-    python3 reference.py beso-3d|beso-cantilever <results folder> [nx nz ny] [--plot]
+    python3 reference.py beso-3d|beso-cantilever|beso-two-loads <results folder> [nx nz ny] [--plot]
+
+beso-two-loads is ../TopologyOptimisation's two-loads (the 88 line code's two load cases, Andreassen et al.
+2011, section 5.2) by BESO: the elements' energies summed over the cases, which ../TopologyOptimisation/run.sh
+bench beso-two-loads writes the run of.
 
 Reads <name>_history.csv and <name>_densities.csv from the folder, which ./run.sh bench <name> writes,
 compares them with its own run and writes <name>_reference.csv. With --plot (and matplotlib) it draws
@@ -31,6 +35,12 @@ def problem(name, nx, nz, ny):
     cantilever (load at the middle of the free end), held along x = 0."""
     grid = Grid(nx, ny, nz)
     fixed = [3 * grid.node(0, j, k) + d for k in range(nz + 1) for j in range(ny + 1) for d in range(3)]
+    if name == "beso-two-loads":
+        F = np.zeros((3 * grid.nodes, 2))
+        for j in range(ny + 1):
+            F[3 * grid.node(nx, j, nz) + 2, 0] = 1.0
+            F[3 * grid.node(nx, j, 0) + 2, 1] = -1.0
+        return grid, np.array(sorted(fixed)), F
     F = np.zeros(3 * grid.nodes)
     if name == "beso-3d":
         for j in range(ny + 1):
@@ -81,10 +91,13 @@ def beso(grid, fixed, F, volfrac, er, rmin, penal=3.0, emin=1e-9, maxloop=300, t
         E = x ** penal
         K = sp.csc_matrix(((KE.ravel()[None, :] * E[:, None]).ravel(), (iK, jK)), shape=(3 * grid.nodes, 3 * grid.nodes))
         K = (K + K.T) / 2
-        U = np.zeros(3 * grid.nodes)
-        U[free] = spla.spsolve(K[free][:, free], F[free])
-        Ue = U[edof]
-        energy = E * np.einsum("ij,jk,ik->i", Ue, KE, Ue)
+        # A load case per column of F: the energies summed over the cases. One case is esoL's own.
+        energy = 0.0
+        for Fi in ([F] if F.ndim == 1 else [F[:, i] for i in range(F.shape[1])]):
+            U = np.zeros(3 * grid.nodes)
+            U[free] = spla.spsolve(K[free][:, free], Fi[free])
+            Ue = U[edof]
+            energy = energy + E * np.einsum("ij,jk,ik->i", Ue, KE, Ue)
         c = float(energy.sum())
         dc = (H @ (energy / x)) / Hs
         if olddc is not None:
@@ -118,8 +131,9 @@ def main():
     name, folder = sys.argv[1], sys.argv[2]
     numbers = [int(a) for a in sys.argv[3:] if a.isdigit()]
     flat = name == "beso-cantilever"
-    nx, nz = (numbers[0], numbers[1]) if len(numbers) >= 2 else ((100, 50) if flat else (40, 20))
-    ny = 1 if flat else (numbers[2] if len(numbers) >= 3 else 4)
+    two = name == "beso-two-loads"
+    nx, nz = (numbers[0], numbers[1]) if len(numbers) >= 2 else ((100, 50) if flat else (30, 30) if two else (40, 20))
+    ny = 1 if flat else (numbers[2] if len(numbers) >= 3 else 2 if two else 4)
     volfrac, rmin = (0.6, 6.0) if flat else (0.4, 3.0)
     grid, fixed, F = problem(name, nx, nz, ny)
     print(f"reference: BESO in numpy, {name} {nx} x {nz} x {ny}, volume {volfrac}, rmin {rmin}")

@@ -63,6 +63,48 @@ namespace Alpaca4d.Gh
             "Once it stops, AlpacaModel is the design as a model of its own, to analyse.\n\n" +
             "SIMP: " + SimpHelp + "\n\nBESO: " + BesoHelp + "\n\nMulti-Material: " + MultiMaterialHelp;
 
+        /// <summary>
+        /// Multi-Material with two load combinations or more: true makes the worst one's compliance least, false the sum
+        /// of theirs. Saved with the file; a file saved without it takes the sum.
+        /// </summary>
+        private bool _worstCase;
+        private const string WorstCaseKey = "TopologyWorstCase";
+
+        public override void AppendAdditionalMenuItems(System.Windows.Forms.ToolStripDropDown menu)
+        {
+            base.AppendAdditionalMenuItems(menu);
+            if (ActiveUnit?.Name != MultiMaterialUnit)
+                return;
+            Menu_AppendSeparator(menu);
+            var item = Menu_AppendItem(menu, "Load combinations");
+            item.ToolTipText = "With two load combinations or more on the model, what is made least: the sum of their compliances, " +
+                               "or the largest of them, the worst case (MMA's min-max form). SIMP and BESO always take the sum.";
+            Menu_AppendItem(item.DropDown, "Sum of their compliances", (sender, e) => SetWorstCase(false), true, !_worstCase);
+            Menu_AppendItem(item.DropDown, "Worst case", (sender, e) => SetWorstCase(true), true, _worstCase);
+        }
+
+        private void SetWorstCase(bool worst)
+        {
+            if (worst == _worstCase)
+                return;
+            RecordUndoEvent("Load combinations");
+            _worstCase = worst;
+            ExpireSolution(true);
+        }
+
+        public override bool Write(GH_IO.Serialization.GH_IWriter writer)
+        {
+            writer.SetBoolean(WorstCaseKey, _worstCase);
+            return base.Write(writer);
+        }
+
+        public override bool Read(GH_IO.Serialization.GH_IReader reader)
+        {
+            _worstCase = false;
+            reader.TryGetBoolean(WorstCaseKey, ref _worstCase);
+            return base.Read(reader);
+        }
+
         public override string UnitMenuName => "Method";
         public override string UnitMenuHeader => "Select the method";
         protected override string DefaultEvaluationUnit => SimpUnit;
@@ -190,7 +232,8 @@ namespace Alpaca4d.Gh
                 "Each solid's density, 0 to 1, in the order of the Element output.");
             unit.RegisterOutputParam(new Param_GenericObject(), "Element", "Element", ElementIdentity.ElementOutput);
             unit.RegisterOutputParam(new Param_Number(), "Compliance", "Compliance",
-                $"The compliance F.u of each iteration's design, the work of the loads [{Units.Force}·{Units.Length}]: the lower, the stiffer.");
+                $"The compliance F.u of each iteration's design, the work of the loads [{Units.Force}·{Units.Length}]: the lower, the stiffer. " +
+                "With load combinations, the sum of theirs.");
             unit.RegisterOutputParam(new Param_Number(), "Volume", "Volume",
                 "Each iteration's share of the designed solids' volume.");
             unit.RegisterOutputParam(new Param_Boolean(), "Converged", "Converged",

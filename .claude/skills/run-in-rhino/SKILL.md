@@ -74,6 +74,18 @@ description: Run Alpaca4d code, or real Grasshopper components, inside a live Rh
   - Reflection, because the script compiler does not reference System.Runtime.Loader.
   - `Assembly.LoadFile` does not do it either: it gives each file a context of its own.
   - `RhinoRun.cs` shows how. Call your entry point by reflection.
+- **Make Grasshopper load its own plugins before you load the build.** Right after
+  `GetPlugInObject("Grasshopper")`, use the component server, for example read
+  `Grasshopper.Instances.ComponentServer.ObjectProxies.Count`.
+  - Grasshopper loads its plugins only when the component server is first used. If your build is
+    already in Rhino by then, the installed Alpaca4d binds to your build's Alpaca4d.Core, which
+    carries your build's Newtonsoft.Json.
+  - Section Library then fails, and a "Grasshopper Loading Errors" window comes up:
+    `SectionLibrary`, `MissingMethodException`, "Method not found: Newtonsoft.Json.Linq.JObject
+    Alpaca4d.Section.SteelCatalogue.FindEntry". Nobody sees it on a locked screen, but the user
+    does.
+  - `Alpaca4d.Test/TopologyMethods/ExampleRun.py`, `ClassicsRun.py` and `NodesRun.py` do this.
+    Most other runners in `Alpaca4d.Test` do not yet: fix one before you use it.
 - **To time old against new Core,** load each build into its own context from its own folder, call
   the same code in each, and alternate the runs.
 - **Settings and licence.**

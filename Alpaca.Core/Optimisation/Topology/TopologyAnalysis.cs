@@ -26,10 +26,17 @@ namespace Alpaca4d.Optimisation
         private readonly LiveOpenSees _openSees;
         private readonly IReadOnlyList<SolidCell> _cells;
         private readonly int _nodes;
-        private readonly string _moduliFile, _displacementFile, _forceFile;
+        private readonly string _moduliFile;
+        private readonly string[] _displacementFiles, _forceFiles;
 
-        /// <summary>The nodal displacements of the last design solved, three per solid node, by node tag from 1.</summary>
-        public double[] Displacements { get; private set; }
+        /// <summary>How many load cases each design is solved for: 1, or the model's load combinations (<see cref="TopologyLoadCases"/>).</summary>
+        public int Cases { get; }
+
+        /// <summary>The nodal displacements of the last design solved, three per solid node, by node tag from 1: of the first load case.</summary>
+        public double[] Displacements => CaseDisplacements?[0];
+
+        /// <summary>The nodal displacements of the last design solved, as <see cref="Displacements"/>, one array per load case.</summary>
+        public double[][] CaseDisplacements { get; private set; }
 
         /// <summary>
         /// Writes the deck into <paramref name="folder"/> and starts OpenSees on it.
@@ -37,17 +44,26 @@ namespace Alpaca4d.Optimisation
         /// <param name="model">The model's Tcl, nodes to loads, with each cell's element line as the cell is to be solved.</param>
         /// <param name="solidNodes">How many three degree of freedom nodes there are: the nodes tagged 1 to this.</param>
         /// <param name="system">The system of equations; null for Auto.</param>
+        /// <param name="cases">
+        /// How many load cases: 1 for the model's loads as they are, or as many as the model's combinations, with the
+        /// deck's patterns written for them by <see cref="TopologyLoadCases.Write(Model, IReadOnlyList{string})"/>.
+        /// </param>
         public TopologyAnalysis(string openSees, string folder, string stem, IEnumerable<string> model,
-                                IReadOnlyList<SolidCell> cells, int solidNodes, SystemEquation system, TimeSpan? timeout)
+                                IReadOnlyList<SolidCell> cells, int solidNodes, SystemEquation system, TimeSpan? timeout, int cases = 1)
         {
+            if (cases < 1)
+                throw new ArgumentException("There has to be a load case at least.");
             _cells = cells;
             _nodes = solidNodes;
+            Cases = cases;
             _moduliFile = Path.Combine(folder, stem + "_moduli.txt");
-            _displacementFile = Path.Combine(folder, stem + "_displacements.bin");
-            _forceFile = Path.Combine(folder, stem + "_forces.bin");
+            // One case writes the files it always wrote; several, a pair each.
+            string Of(string name, int k) => Path.Combine(folder, stem + "_" + name + (cases == 1 ? "" : "_" + (k + 1)) + ".bin");
+            _displacementFiles = Enumerable.Range(0, cases).Select(k => Of("displacements", k)).ToArray();
+            _forceFiles = Enumerable.Range(0, cases).Select(k => Of("forces", k)).ToArray();
 
             string deck = Path.Combine(folder, stem + ".tcl");
-            File.WriteAllText(deck, Deck(model, cells, solidNodes, system ?? new SystemEquation("Auto")));
+            File.WriteAllText(deck, Deck(model, cells, solidNodes, system ?? new SystemEquation("Auto"), cases));
             _openSees = new LiveOpenSees(openSees, deck, timeout);
         }
 
@@ -58,8 +74,12 @@ namespace Alpaca4d.Optimisation
         /// The deck: the model, a static analysis in one step of load control solved by Linear - the
         /// model is elastic, so one solve is the answer - and a procedure that solves one design, then
         /// the loop that waits for it to be called.
+        ///
+        /// With several load cases the procedure solves the design once for each: from rest, the time set to
+        /// k - 1, to time k, where the patterns' series hold case k's factors (<see cref="TopologyLoadCases"/>).
+        /// One case is solved as it always was.
         /// </summary>
-        public static string Deck(IEnumerable<string> model, IReadOnlyList<SolidCell> cells, int solidNodes, SystemEquation system)
+        public static string Deck(IEnumerable<string> model, IReadOnlyList<SolidCell> cells, int solidNodes, SystemEquation system, int cases = 1)
         {
             var deck = new StringBuilder();
             foreach (var line in model)
@@ -78,6 +98,35 @@ namespace Alpaca4d.Optimisation
             deck.Append("analysis Static\n");
 
             deck.Append("set alpacaCells {").Append(string.Join(" ", cells.Select(cell => cell.Tag))).Append("}\n");
+            if (cases > 1)
+            {
+                deck.Append(
+$@"proc alpacaSolve {{moduli displacements forces}} {{
+    set file [open $moduli r]
+    set values [read $file]
+    close $file
+    foreach tag $::alpacaCells value $values {{
+        setParameter -val $value -ele $tag E
+    }}
+    set case 0
+    foreach displacement $displacements force $forces {{
+        reset
+        setTime $case
+        incr case
+        set ok [analyze 1]
+        if {{$ok < 0}} {{
+            error ""analyze returned $ok in load case $case""
+        }}
+        recorder Node -binary $displacement -nodeRange 1 {solidNodes} -dof 1 2 3 disp
+        recorder Element -binary $force -ele {{*}}$::alpacaCells forces
+        record
+        remove recorders
+    }}
+}}
+");
+                deck.Append(LiveOpenSees.CommandLoop);
+                return deck.ToString();
+            }
             deck.Append(
 $@"proc alpacaSolve {{moduli displacements forces}} {{
     set file [open $moduli r]
@@ -101,24 +150,57 @@ $@"proc alpacaSolve {{moduli displacements forces}} {{
             return deck.ToString();
         }
 
-        /// <summary>Solves the design with these moduli, one per cell, and returns u_e . f_e for each cell.</summary>
-        public double[] Energies(double[] moduli)
+        /// <summary>
+        /// Solves the design with these moduli, one per cell, and returns u_e . f_e for each cell, summed over the
+        /// load cases: of the one case, the case's own.
+        /// </summary>
+        public double[] Energies(double[] moduli) => Sum(CaseEnergies(moduli));
+
+        /// <summary>The energies of the cells, element by element, added up over the cases; the one case's own when there is one.</summary>
+        public static double[] Sum(double[][] cases)
+        {
+            if (cases.Length == 1)
+                return cases[0];
+            var sum = (double[])cases[0].Clone();
+            for (int k = 1; k < cases.Length; k++)
+                for (int c = 0; c < sum.Length; c++)
+                    sum[c] += cases[k][c];
+            return sum;
+        }
+
+        /// <summary>Solves the design with these moduli, one per cell, and returns u_e . f_e for each cell, one array per load case.</summary>
+        public double[][] CaseEnergies(double[] moduli)
         {
             if (moduli.Length != _cells.Count)
                 throw new ArgumentException($"{moduli.Length} moduli for {_cells.Count} elements.");
 
             File.WriteAllText(_moduliFile, string.Join(" ", moduli.Select(e => e.ToString("R", CultureInfo.InvariantCulture))));
-            File.Delete(_displacementFile);
-            File.Delete(_forceFile);
+            foreach (var file in _displacementFiles.Concat(_forceFiles))
+                File.Delete(file);
 
-            string problem = _openSees.Send($"alpacaSolve {TclPath.Write(_moduliFile)} {TclPath.Write(_displacementFile)} {TclPath.Write(_forceFile)}");
+            string command = Cases == 1
+                ? $"alpacaSolve {TclPath.Write(_moduliFile)} {TclPath.Write(_displacementFiles[0])} {TclPath.Write(_forceFiles[0])}"
+                : $"alpacaSolve {TclPath.Write(_moduliFile)} [list {string.Join(" ", _displacementFiles.Select(TclPath.Write))}] " +
+                  $"[list {string.Join(" ", _forceFiles.Select(TclPath.Write))}]";
+            string problem = _openSees.Send(command);
             if (problem != null)
                 throw new InvalidOperationException("The analysis failed: " + problem + "\n" + Log);
 
-            var u = ReadBinary(_displacementFile, 3 * _nodes);
-            var f = ReadBinary(_forceFile, _cells.Sum(cell => 3 * cell.Nodes.Count));
-            Displacements = u;
+            var displacements = new double[Cases][];
+            var energies = new double[Cases][];
+            for (int k = 0; k < Cases; k++)
+            {
+                var u = ReadBinary(_displacementFiles[k], 3 * _nodes);
+                var f = ReadBinary(_forceFiles[k], _cells.Sum(cell => 3 * cell.Nodes.Count));
+                displacements[k] = u;
+                energies[k] = EnergiesOf(u, f);
+            }
+            CaseDisplacements = displacements;
+            return energies;
+        }
 
+        private double[] EnergiesOf(double[] u, double[] f)
+        {
             var energies = new double[_cells.Count];
             int at = 0;
             for (int c = 0; c < _cells.Count; c++)
@@ -154,7 +236,7 @@ $@"proc alpacaSolve {{moduli displacements forces}} {{
         public void Dispose()
         {
             _openSees.Dispose();
-            foreach (var file in new[] { _moduliFile, _displacementFile, _forceFile })
+            foreach (var file in new[] { _moduliFile }.Concat(_displacementFiles).Concat(_forceFiles))
             {
                 try { File.Delete(file); }
                 catch (IOException) { }

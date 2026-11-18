@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 
@@ -94,9 +95,27 @@ namespace Alpaca4d.Gh
             return kinds.Count == 1 ? kinds[0] : string.Join(", ", kinds.Take(kinds.Count - 1)) + " and " + kinds.Last();
         }
 
-        /// <summary>Warns of what the optimisation leaves as it is: elements that are not solids, and the self-weight.</summary>
-        protected void WarnAboutModel(Alpaca4d.Model model)
+        /// <summary>
+        /// Warns of what the optimisation leaves as it is: elements that are not solids, and the self-weight. Says which
+        /// load cases it is for: the model's combinations, <paramref name="objective"/> saying how their compliances count.
+        /// </summary>
+        protected void WarnAboutModel(Alpaca4d.Model model, LoadCaseObjective objective = LoadCaseObjective.Sum)
         {
+            if (TopologyLoadCases.FromCombinations(model))
+            {
+                var names = model.Combinations.Select(c => c.Name).ToList();
+                string listed = names.Count <= 4 ? string.Join(", ", names) : string.Join(", ", names.Take(3)) + $" and {names.Count - 3} more";
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, names.Count == 1
+                    ? $"Optimised for the model's load combination {names[0]}: its patterns, each times its factor."
+                    : $"Optimised for the model's {names.Count} load combinations ({listed}), each solved on its own: Compliance is " +
+                      (objective == LoadCaseObjective.Worst ? "the largest of theirs, the worst case." : "the sum of theirs."));
+                var unused = TopologyLoadCases.Unused(model);
+                if (unused.Count > 0)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                        $"Load pattern{(unused.Count == 1 ? "" : "s")} {string.Join(", ", unused)} {(unused.Count == 1 ? "is" : "are")} in no combination, " +
+                        "so the optimisation leaves " + (unused.Count == 1 ? "it" : "them") + " out, as Run Analysis does.");
+            }
+
             string others = OtherElements(model);
             if (others != null)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
@@ -149,6 +168,8 @@ namespace Alpaca4d.Gh
             try
             {
                 tcl = TopologyDeck.From(model, kept.Contains, out cells);
+                if (TopologyLoadCases.FromCombinations(model))
+                    tcl = TopologyLoadCases.Write(model, tcl);
             }
             catch (Exception ex)
             {
@@ -264,6 +285,11 @@ namespace Alpaca4d.Gh
             else
             {
                 this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
+                var cases = run.Result?.History.LastOrDefault()?.CaseCompliances;
+                var combinations = run.Model.Combinations;
+                if (cases != null && combinations != null && combinations.Count == cases.Length)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Compliance of each load combination in the last iteration: " +
+                        string.Join(", ", combinations.Select((c, k) => $"{c.Name} {cases[k].ToString("G4", CultureInfo.InvariantCulture)}")) + ".");
                 if (run.Result != null && !run.Result.Converged)
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, run.Result.Stopped
                         ? $"Paused after iteration {done}. The outputs are the design it reached; set Run to true to go on from there."

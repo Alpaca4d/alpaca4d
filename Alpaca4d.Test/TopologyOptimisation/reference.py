@@ -8,7 +8,11 @@ algorithm. The one change is the one Alpaca4d makes: the bisection for the volum
 sensitivities scaled to a largest ratio of one (see TopologyOptimiser.OptimalityCriteria). --top3d
 runs top3d's bisection instead, to show what that changes.
 
-    python3 reference.py cantilever|simply-supported <results folder> [--top3d] [--plot]
+    python3 reference.py cantilever|simply-supported|two-loads|two-loads-together <results folder> [--top3d] [--plot]
+
+two-loads is the 88 line code's example of two load cases (Andreassen et al. 2011, section 5.2), with its
+change made here as there: F has a column per case, and the compliance and its sensitivity are summed over
+them. two-loads-together has the two loads in one case.
 
 Reads <name>_history.csv and <name>_densities.csv from the folder, which ./run.sh bench <name> writes,
 compares them with its own run and writes <name>_reference.csv. With --plot (and matplotlib) it draws
@@ -90,6 +94,17 @@ def problem(name):
         fixed = [3 * grid.node(0, j, 0) + d for j in range(grid.ny + 1) for d in range(3)]
         fixed += [3 * grid.node(grid.nx, j, 0) + d for j in range(grid.ny + 1) for d in (1, 2)]
         loads = [grid.node(grid.nx // 2, j, grid.nz) for j in range(grid.ny + 1)]
+    elif name in ("two-loads", "two-loads-together"):
+        # A square held along x = 0: up by 1 at every node of the free end's top edge, down by 1 at its bottom edge.
+        grid = Grid(30, 2, 30)
+        fixed = [3 * grid.node(0, j, k) + d for k in range(grid.nz + 1) for j in range(grid.ny + 1) for d in range(3)]
+        F = np.zeros((3 * grid.nodes, 2))
+        for j in range(grid.ny + 1):
+            F[3 * grid.node(grid.nx, j, grid.nz) + 2, 0] = 1.0
+            F[3 * grid.node(grid.nx, j, 0) + 2, 1] = -1.0
+        if name == "two-loads-together":
+            F = F.sum(axis=1)
+        return grid, np.array(sorted(fixed)), F
     else:
         raise SystemExit(f"unknown problem {name}")
     F = np.zeros(3 * grid.nodes)
@@ -134,12 +149,16 @@ def top3d(grid, fixed, F, volfrac=0.3, penal=3.0, rmin=1.5, maxloop=200, tolx=0.
         sK = (KE.ravel()[None, :] * (Emin + xPhys ** penal * (E0 - Emin))[:, None]).ravel()
         K = sp.csc_matrix((sK, (iK, jK)), shape=(3 * grid.nodes, 3 * grid.nodes))
         K = (K + K.T) / 2
-        U = np.zeros(3 * grid.nodes)
-        U[free] = spla.spsolve(K[free][:, free], F[free])
-        Ue = U[edof]
-        ce = np.einsum("ij,jk,ik->i", Ue, KE, Ue)
-        c = float(((Emin + xPhys ** penal * (E0 - Emin)) * ce).sum())
-        dc = -penal * (E0 - Emin) * xPhys ** (penal - 1) * ce
+        # A load case per column of F, as the 88 line code's section 5.2 has it: the compliances and their
+        # sensitivities summed over the cases. One case is top3d's own.
+        c, dc = 0.0, 0.0
+        for Fi in ([F] if F.ndim == 1 else [F[:, i] for i in range(F.shape[1])]):
+            U = np.zeros(3 * grid.nodes)
+            U[free] = spla.spsolve(K[free][:, free], Fi[free])
+            Ue = U[edof]
+            ce = np.einsum("ij,jk,ik->i", Ue, KE, Ue)
+            c += float(((Emin + xPhys ** penal * (E0 - Emin)) * ce).sum())
+            dc = dc - penal * (E0 - Emin) * xPhys ** (penal - 1) * ce
         dv = np.ones(nele)
         dc = H @ (dc / Hs)
         dv = H @ (dv / Hs)
@@ -176,7 +195,10 @@ def main():
     grid, fixed, F = problem(name)
     print(f"reference top3d on {name}: {len(grid.elements())} elements ({'scaled' if scaled else 'top3d'} bisection)")
     t0 = time.time()
-    history, xPhys = top3d(grid, fixed, F, scaled=scaled)
+    if name.startswith("two-loads"):
+        history, xPhys = top3d(grid, fixed, F, volfrac=0.4, scaled=scaled)
+    else:
+        history, xPhys = top3d(grid, fixed, F, scaled=scaled)
     print(f"  {len(history)} iterations in {time.time() - t0:.1f} s, final compliance {history[-1][1]:.6f}")
 
     suffix = "" if scaled else "_top3d"

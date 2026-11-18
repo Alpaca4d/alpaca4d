@@ -22,6 +22,7 @@ using System.Threading;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
+using Alpaca4d.Optimisation;
 
 public static class GrasshopperCheck
 {
@@ -71,6 +72,7 @@ public static class GrasshopperCheck
             MixedModel();
             Beso();
             MultiMaterial();
+            LoadCombinations();
             if (!string.IsNullOrEmpty(openSeesTet10))
             {
                 oldOpenSees = openSees == openSeesTet10 ? null : openSees;
@@ -406,6 +408,124 @@ public static class GrasshopperCheck
             for (int j = 0; j <= 2; j++)
                 fixedEnd.Add(new Point3d(0, j, k));
         return Assemble(doc, bricks, Supports(doc, fixedEnd), Enumerable.Range(0, 3).Select(j => new Point3d(24, j, 0)));
+    }
+
+    /// <summary>A plain pattern named <paramref name="name"/> of point loads of <paramref name="fz"/> at the points, on no time series: the Constant one the component makes.</summary>
+    static GH_Component NamedPattern(Doc doc, string name, IEnumerable<Point3d> at, double fz)
+    {
+        var load = doc.Add<Alpaca4d.Gh.PointLoad>();
+        var points = at.ToList();
+        Set(load, "Point", points.Select(p => new GH_Point(p)).ToArray());
+        Set(load, "Force", points.Select(_ => new GH_Vector(new Vector3d(0, 0, fz))).ToArray());
+        var pattern = doc.Add<Alpaca4d.Gh.PatternBase>("PlainPattern (Alpaca4d)");
+        In(pattern, "Loads").AddSource(load.Params.Output[0]);
+        Set(pattern, "Name", new GH_String(name));
+        return pattern;
+    }
+
+    /// <summary>The small cantilever's bricks and supports, assembled with <paramref name="patterns"/>.</summary>
+    static GH_Component AssembleWith(Doc doc, params Func<Doc, GH_Component>[] patterns)
+    {
+        var meshes = new List<Mesh>();
+        for (int k = 0; k < 8; k++)
+            for (int j = 0; j < 2; j++)
+                for (int i = 0; i < 24; i++)
+                    meshes.Add(Box(i, j, k));
+        var bricks = doc.Add<Alpaca4d.Gh.SSPbrick>();
+        Set(bricks, "Mesh", meshes.Select(m => new GH_Mesh(m)).ToArray());
+        Wire(Material(doc), "Material", bricks, "Material");
+        var fixedEnd = new List<Point3d>();
+        for (int k = 0; k <= 8; k++)
+            for (int j = 0; j <= 2; j++)
+                fixedEnd.Add(new Point3d(0, j, k));
+        var assemble = doc.Add<Alpaca4d.Gh.AssembleModel>();
+        Wire(bricks, "Element", assemble, "Elements");
+        Wire(Supports(doc, fixedEnd), "Support", assemble, "Supports");
+        foreach (var pattern in patterns)
+            In(assemble, "LoadPatterns").AddSource(pattern(doc).Params.Output[0]);
+        return assemble;
+    }
+
+    /// <summary>The result of the component's run.</summary>
+    static TopologyResult ResultOf(GH_Component topology)
+    {
+        var run = topology.GetType().GetProperty("Run", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(topology);
+        return (TopologyResult)run?.GetType().GetProperty("Result").GetValue(run);
+    }
+
+    static void LoadCombinations()
+    {
+        Section("Load combinations: the small cantilever pulled up at the top of its free end, and down at the bottom");
+
+        var top = Enumerable.Range(0, 3).Select(j => new Point3d(24, j, 8)).ToList();
+        var bottom = Enumerable.Range(0, 3).Select(j => new Point3d(24, j, 0)).ToList();
+        Func<Doc, GH_Component> up = d => NamedPattern(d, "Up", top, 1.0);
+        Func<Doc, GH_Component> down = d => NamedPattern(d, "Down", bottom, -1.0);
+        Func<Doc, GH_Component> unused = d => NamedPattern(d, "Unused", bottom, -5.0);
+
+        var doc = new Doc("combinations");
+        var assemble = AssembleWith(doc, up, down, unused);
+        var combine = doc.Add<Alpaca4d.Gh.LoadCombinationComponent>();
+        Wire(assemble, "AlpacaModel", combine, "AlpacaModel");
+        Set(combine, "Name", new GH_String("Wind up"), new GH_String("Wind down"));
+        Set(combine, "Combination", new GH_String("Up"), new GH_String("Down"));
+        var topology = Topology(doc, combine, 20);
+        doc.Solve();
+        NoErrors(doc, "every component, as the run starts");
+        var remarks = topology.RuntimeMessages(GH_RuntimeMessageLevel.Remark);
+        Check(remarks.Any(m => m.Contains("2 load combinations")), "the component says it is optimising for the model's two combinations");
+        Check(remarks.Any(m => m.Contains("Unused") && m.Contains("no combination")), "and that Unused, in no combination, is left out");
+        Check(Finish(doc, topology, TimeSpan.FromMinutes(5)), "the run finishes");
+        NoErrors(doc, "every component, once it has");
+
+        var result = ResultOf(topology);
+        var last = result.History.Last();
+        Check(result.History.Count == 20 && last.CaseCompliances != null && last.CaseCompliances.Length == 2 &&
+              Math.Abs(last.CaseCompliances.Sum() / last.Compliance - 1.0) < 1e-12,
+              $"each iteration solves both combinations, and Compliance is their sum ({last})");
+        Check(Math.Abs(last.CaseCompliances[0] / last.CaseCompliances[1] - 1.0) < 1e-6,
+              "the model is symmetric top to bottom, and so are the two combinations' compliances");
+        Check(topology.RuntimeMessages(GH_RuntimeMessageLevel.Remark).Any(m => m.StartsWith("Compliance of each load combination") && m.Contains("Wind up")),
+              "the component gives each combination's compliance");
+        var design = All<object>(Out(topology, "AlpacaModel")).OfType<Alpaca4d.Model>().SingleOrDefault();
+        Check(design != null && design.Combinations.Select(c => c.Name).SequenceEqual(new[] { "Wind up", "Wind down" }),
+              "AlpacaModel, the design, keeps the two combinations to be analysed for");
+
+        // Wind up in the first iteration against the model with Up alone and no combinations: Assemble Model's deck, its
+        // Constant series written as a Path, solves the same loads.
+        var alone = new Doc("up-alone");
+        var upAlone = Topology(alone, AssembleWith(alone, up), 1);
+        alone.Solve();
+        Check(Finish(alone, upAlone, TimeSpan.FromMinutes(2)), "the model of Up alone runs");
+        double first = ResultOf(upAlone).History[0].Compliance, upCase = result.History[0].CaseCompliances[0];
+        Check(Math.Abs(upCase / first - 1.0) < 1e-12, $"Wind up's first compliance is that of Up alone ({upCase:R} vs {first:R})");
+
+        // Multi-Material, the worst case: chosen in the right-click menu and saved with the file.
+        var soft = Material(doc);
+        var stiff = Material(doc);
+        Set(stiff, "E", new GH_Number(5.0));
+        Set(stiff, "G", new GH_Number(5.0 / 2.6));
+        var mm = doc.Add<Alpaca4d.Gh.TopologyOptimisation>("MultiMaterialTopology");
+        typeof(Alpaca4d.Gh.TopologyOptimisation).GetField("_worstCase", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(mm, true);
+        Wire(combine, "AlpacaModel", mm, "AlpacaModel");
+        In(mm, "Materials").AddSource(Out(soft, "Material"));
+        In(mm, "Materials").AddSource(Out(stiff, "Material"));
+        Set(mm, "VolumeFractions", new GH_Number(0.15));
+        Set(mm, "Iterations", new GH_Integer(15));
+        Set(mm, "Run", new GH_Boolean(true));
+        doc.Solve(everything: false);
+        Check(mm.RuntimeMessages(GH_RuntimeMessageLevel.Remark).Any(m => m.Contains("the worst case")), "Multi-Material says it makes the worst case least");
+        Check(Finish(doc, mm, TimeSpan.FromMinutes(5)), "its run finishes");
+        NoErrors(doc, "every component, once it has");
+        var worst = ResultOf(mm).History.Last();
+        Check(worst.CaseCompliances != null && worst.Compliance == worst.CaseCompliances.Max(), $"its Compliance is the larger combination's ({worst})");
+
+        var chunk = new GH_IO.Serialization.GH_LooseChunk("component");
+        mm.Write(chunk);
+        var copy = new Alpaca4d.Gh.TopologyOptimisation();
+        copy.Read(chunk);
+        Check((bool)typeof(Alpaca4d.Gh.TopologyOptimisation).GetField("_worstCase", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(copy),
+              "Worst case is saved with the component and read back");
     }
 
     static void Beso()

@@ -1,5 +1,5 @@
 #! python3
-# The BESO Topology example: the bridge of the Topology Optimisation example, carved out of its block a
+# The BESO example: the bridge of the Topology Optimisation example, carved out of its block a
 # little each iteration.
 #
 # make.sh, in the folder above, writes BesoBridge.gh straight from this script, without Rhino. It also runs
@@ -7,9 +7,9 @@
 # and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
 # The block of TopologyBridge.py: steel, 16 m long, 2 m wide and 4 m high, of SSP Bricks, pinned along
-# both ends of its bottom, its top layer a deck kept solid under 10 kN/m2. BESO Topology starts from the
-# whole block and takes 2% of what is left away each iteration, every brick solid or void all along,
-# until a fifth of the block below the deck is left. Every iteration is a design of its own: Step goes
+# both ends of its bottom, its top layer a deck kept solid under 10 kN/m2. Topology Optimisation, on its
+# BESO method, starts from the whole block and takes 2% of what is left away each iteration, every brick
+# solid or void all along, until a fifth of the block below the deck is left. Every iteration is a design of its own: Step goes
 # through them, from the whole block down.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
@@ -44,12 +44,13 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
-BESO = "3B7E5C21-9A4D-4F68-B2E1-7C5D0A8F6E14"               # BESO Topology
+TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation, on the method below
+BESO_UNIT = "BesoTopology"                                  # its BESO method
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
-# BESO Topology's inputs and outputs, by position.
+# Topology Optimisation's inputs and outputs on BESO, by position.
 T_MODEL, T_KEEP, T_VOLUME_FRACTION, T_ITERATIONS, T_RUN = range(5)
 T_STEP = 11                                                 # after the Settings menu's
 T_SURFACE, T_SOLID, T_DENSITY, T_ELEMENT, T_COMPLIANCE, T_VOLUME, T_CONVERGED, T_HISTORY, T_LOG = range(9)
@@ -182,6 +183,20 @@ def emit(guid, what):
     obj = getattr(obj, "__implementation__", obj)
     obj.CreateAttributes()
     return obj
+
+
+def switch_unit(c, unit):
+    """Puts a switcher component on another of its units, as its drop-down does. It sets its unit's
+    parameters aside as it switches, and writes to Rhino's command line when one still has a parent -
+    which outside Rhino is not there to write to - so the parents are cleared first."""
+    c = getattr(c, "__implementation__", c)
+    for param in list(c.Params.Input) + list(c.Params.Output):
+        if param.Attributes is not None:
+            param.Attributes.Parent = None
+    c.SwitchUnit(unit, False, False)
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+    return c
 
 
 def component(grid, guid, what, nickname, col, row=None, gap=0):
@@ -476,7 +491,8 @@ def build(doc):
     run = toggle(m, "Run", False, MODEL, RUN, gap=10)
     # Up against its end, Step shows the latest design; drag it back to watch the run again.
     step = slider(m, "Step", 0, 300, 300, 0, MODEL, RUN, gap=10)
-    topology = emit(BESO, "BESO Topology")
+    topology = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), BESO_UNIT)
+    topology.NickName = "BESO"
     open_menus(topology)
     m.put(topology, OPTIMISE, RUN)
     faint(wire(inp(topology, T_MODEL), out(assemble)))
@@ -521,7 +537,7 @@ def build(doc):
     group(doc, "4 - Pinned ends, 10 kN/m2 on the deck",
           [ends, ys, held, free, support, top_lift, top, top_nodes, node_count, share, down, deck_load, pattern], GREEN)
     group(doc, "5 - Assemble Model (enable Model View to see the domain)", [assemble, view], BLUE)
-    group(doc, "6 - BESO Topology: set Run to true", [keep, fraction, iterations, run, step, topology, compliance, converged, volume, history], GREY)
+    group(doc, "6 - Topology Optimisation, BESO: set Run to true", [keep, fraction, iterations, run, step, topology, compliance, converged, volume, history], GREY)
     group(doc, "7 - The design, analysed: once the run has stopped, enable Run Analysis and Legend",
           [settings, analysis, results, legend, legend_title, shown], PURPLE)
 
@@ -533,10 +549,10 @@ def build(doc):
         if hasattr(obj, "Hidden") and str(obj.InstanceGuid) not in drawn:
             obj.Hidden = True
 
-    note(doc, "BESO Topology",
-         "Bridge carved out of its block - a BESO Topology example.\n\n"
+    note(doc, "BESO",
+         "Bridge carved out of its block - Topology Optimisation's BESO method.\n\n"
          "The block of the Topology Optimisation example: steel, 16 m long, 2 m wide and 4 m high, pinned along both "
-         "ends of its bottom, its top layer a deck kept solid under 10 kN/m2. BESO Topology starts from the whole block "
+         "ends of its bottom, its top layer a deck kept solid under 10 kN/m2. BESO starts from the whole block "
          "and takes 2% of what is left away each iteration - the bricks that work least go, and some come back - until "
          "a fifth of the block below the deck is left. Every brick is solid or void all along.\n\n"
          "1. Set Run to true. The run goes on its own thread: the Surface preview and the outputs follow it.\n"
@@ -547,7 +563,7 @@ def build(doc):
          "4. Once the run has stopped, enable Run Analysis and Legend: AlpacaModel is the design shown as a model, and "
          "the Model View after Run Analysis colours it by Von Mises stress.\n\n"
          "Each SSP Brick is solved as OpenSees' eight point brick, and a void brick keeps a billionth of its stiffness. "
-         "Above 500 bricks BESO Topology needs a license.",
+         "Above 500 bricks Topology Optimisation needs a license.",
          0, -450, 620, 380)
 
 
@@ -556,7 +572,7 @@ def main():
     build(doc)
     doc.NewSolution(False)
     Grasshopper.Instances.ActiveCanvas.Refresh()
-    print("BESO bridge built. Set Run to true on BESO Topology to start.")
+    print("BESO bridge built. Set Run to true on BESO to start.")
 
 
 if __name__ == "__main__":

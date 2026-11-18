@@ -4,6 +4,7 @@
     ./run.sh bench zheng 3                     # Zheng et al.'s 3D cantilever, 3 materials (or 2, or 5)
     ./run.sh bench zheng 3 60 30 15 5 auto     # ... with its grid, filter radius, and the component's objective scale
     ./run.sh bench beso-3d                     # BESO on a 40 x 20 x 4 cantilever, then reference.py on it
+    ../TopologyOptimisation/run.sh bench beso-two-loads   # BESO for two load cases, then reference.py beso-two-loads on it
     ./run.sh bench beso-cantilever             # esoL's clamped cantilever, one brick deep, then reference.py
     ./run.sh bench bridge                      # TopologyBridge's block by SIMP, BESO and single-material MMA
     ./run.sh bench grasshopper                 # what ../TopologyOptimisation/GrasshopperChecks.cs expects of the new components
@@ -11,6 +12,9 @@
     ./run.sh bench node joint 20               # a beam-column joint, the same way
     ./example.sh                               # Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
     ./nodes.sh                                 # Tools/Examples/Topology/TopologyNodes.py's two definitions, against the node benches
+    ./run.sh bench classic cantilever 40 0.4 1.5                  # the mid-loaded cantilever, SIMP at p = 1..5, BESO, Multi-Material
+    ./run.sh bench classic lbracket 60 0.4 1.5 simp3 beso multi   # the L-bracket, the three ways
+    ./classics.sh                              # Tools/Examples/Topology/TopologyClassics.py's two definitions, against those (PICTURES=1 draws them)
     ./speed.sh                                 # the speed test: every method timed on the bridge, the joint and the truss node
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or

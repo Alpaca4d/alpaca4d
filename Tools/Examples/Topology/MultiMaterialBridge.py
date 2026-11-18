@@ -1,5 +1,5 @@
 #! python3
-# The Multi-Material Topology example: where a bridge needs its steel, and where concrete will do, found in
+# The Multi-Material example: where a bridge needs its steel, and where concrete will do, found in
 # a block of bricks.
 #
 # make.sh, in the folder above, writes MultiMaterialBridge.gh straight from this script, without Rhino. It also runs
@@ -8,9 +8,9 @@
 #
 # The block of the Topology Optimisation example (TopologyBridge.py): 16 m long, 2 m wide and 4 m high,
 # of SSP Bricks, pinned along both ends of its bottom, its top layer a deck kept solid under 10 kN/m2.
-# Multi-Material Topology chooses, element by element, between steel (E = 210 GPa) and concrete
-# (E = 33 GPa), with at most 5% of the block below the deck in steel and 15% in concrete: the stiffest
-# bridge for that much of each. Only the Young's moduli count: every brick keeps the Poisson's ratio of
+# Topology Optimisation, on its Multi-Material method, chooses, element by element, between steel
+# (E = 210 GPa) and concrete (E = 33 GPa), with at most 5% of the block below the deck in steel and 15% in
+# concrete: the stiffest bridge for that much of each. Only the Young's moduli count: every brick keeps the Poisson's ratio of
 # its own material, the steel's.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
@@ -45,12 +45,13 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
-MULTI_TOPOLOGY = "6D2A9E47-1C8B-4E35-A9F0-58B3C7D16A22"     # Multi-Material Topology
+TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation, on the method below
+MULTI_UNIT = "MultiMaterialTopology"                        # its Multi-Material method
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
-# Multi-Material Topology's inputs and outputs, by position.
+# Topology Optimisation's inputs and outputs on Multi-Material, by position.
 M_MODEL, M_KEEP, M_MATERIALS, M_FRACTIONS, M_ITERATIONS, M_RUN = range(6)
 M_STEP = 14                                                 # after the Settings menu's
 (M_SURFACE, M_COLOUR, M_SOLID, M_MATERIAL, M_DENSITY, M_ELEMENT, M_COMPLIANCE, M_VOLUME, M_CONVERGED, M_HISTORY,
@@ -184,6 +185,20 @@ def emit(guid, what):
     obj = getattr(obj, "__implementation__", obj)
     obj.CreateAttributes()
     return obj
+
+
+def switch_unit(c, unit):
+    """Puts a switcher component on another of its units, as its drop-down does. It sets its unit's
+    parameters aside as it switches, and writes to Rhino's command line when one still has a parent -
+    which outside Rhino is not there to write to - so the parents are cleared first."""
+    c = getattr(c, "__implementation__", c)
+    for param in list(c.Params.Input) + list(c.Params.Output):
+        if param.Attributes is not None:
+            param.Attributes.Parent = None
+    c.SwitchUnit(unit, False, False)
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+    return c
 
 
 def component(grid, guid, what, nickname, col, row=None, gap=0):
@@ -487,7 +502,8 @@ def build(doc):
     run = toggle(m, "Run", False, MODEL, RUN, gap=10)
     # Up against its end, Step shows the latest design; drag it back to watch the run again.
     step = slider(m, "Step", 0, 500, 500, 0, MODEL, RUN, gap=10)
-    topology = emit(MULTI_TOPOLOGY, "Multi-Material Topology")
+    topology = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), MULTI_UNIT)
+    topology.NickName = "Multi-Material"
     open_menus(topology)
     m.put(topology, OPTIMISE, RUN)
     faint(wire(inp(topology, M_MODEL), out(assemble)))
@@ -533,7 +549,7 @@ def build(doc):
     group(doc, "4 - Pinned ends, 10 kN/m2 on the deck",
           [ends, ys, held, free, support, top_lift, top, top_nodes, node_count, share, down, deck_load, pattern], GREEN)
     group(doc, "5 - Assemble Model (enable Model View to see the domain)", [assemble, view], BLUE)
-    group(doc, "6 - Multi-Material Topology: set Run to true", [keep, steel_share, concrete_share, iterations, run, step, topology, compliance, converged, history], GREY)
+    group(doc, "6 - Topology Optimisation, Multi-Material: set Run to true", [keep, steel_share, concrete_share, iterations, run, step, topology, compliance, converged, history], GREY)
     group(doc, "7 - The design, analysed: once the run has stopped, enable Run Analysis and Legend",
           [settings, analysis, results, legend, legend_title, shown], PURPLE)
 
@@ -545,10 +561,10 @@ def build(doc):
         if hasattr(obj, "Hidden") and str(obj.InstanceGuid) not in drawn:
             obj.Hidden = True
 
-    note(doc, "Multi-Material Topology",
-         "Bridge in steel and concrete - a Multi-Material Topology example.\n\n"
+    note(doc, "Multi-Material",
+         "Bridge in steel and concrete - Topology Optimisation's Multi-Material method.\n\n"
          "The block of the Topology Optimisation example: steel, 16 m long, 2 m wide and 4 m high, pinned along both "
-         "ends of its bottom, its top layer a deck kept solid under 10 kN/m2. Multi-Material Topology chooses, brick by "
+         "ends of its bottom, its top layer a deck kept solid under 10 kN/m2. Multi-Material chooses, brick by "
          "brick, between steel and concrete, with at most 5% of the block below the deck in steel and 15% in concrete, "
          "and finds the stiffest bridge for that much of each. The component draws each material in its colour: steel "
          "blue, concrete orange.\n\n"
@@ -562,7 +578,7 @@ def build(doc):
          "5. Once the run has stopped, enable Run Analysis and Legend: AlpacaModel is the design as a model, each brick of "
          "its material, and the Model View after Run Analysis colours it by Von Mises stress.\n\n"
          "Each SSP Brick is solved as OpenSees' eight point brick, and a void brick keeps a billionth of the steel's "
-         "stiffness. Above 500 bricks Multi-Material Topology needs a license.",
+         "stiffness. Above 500 bricks Topology Optimisation needs a license.",
          0, -450, 620, 380)
 
 
@@ -571,7 +587,7 @@ def main():
     build(doc)
     doc.NewSolution(False)
     Grasshopper.Instances.ActiveCanvas.Refresh()
-    print("Multi-material bridge built. Set Run to true on Multi-Material Topology to start.")
+    print("Multi-material bridge built. Set Run to true on Multi-Material to start.")
 
 
 if __name__ == "__main__":

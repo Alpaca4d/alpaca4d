@@ -8,6 +8,9 @@
 #     ./run.sh bench simply-supported   the simply supported beam, the same way
 #     ./run.sh bench cantilever-20k     a cantilever of 19 200 bricks, for the time it takes
 #     ./run.sh bench bridge             Tools/Examples/Topology/TopologyBridge.gh as it opens (bridge-<n>: n bricks per metre)
+#     ./run.sh bench two-loads          the 88 line code's two load cases (section 5.2), then reference.py on it
+#     ./run.sh bench two-loads-together the same two loads in one case, then reference.py on it
+#     ./run.sh bench beso-two-loads     the two load cases by BESO, then ../TopologyMethods/reference.py on it
 #
 # A benchmark writes its history and densities to ./results (or RESULTS=...), which reference.py reads.
 set -e
@@ -39,10 +42,14 @@ NETSTD_REF=""
     mono TopologyOptimisation.exe "$OPENSEES" "$work/files"
   fi )
 
-if [ "$1" = "bench" ] && { [ "$2" = "cantilever" ] || [ "$2" = "simply-supported" ]; }; then
+if [ "$1" = "bench" ] && case "$2" in cantilever|simply-supported|two-loads|two-loads-together|beso-two-loads) true;; *) false;; esac; then
   PYTHON=${PYTHON:-python3}
   if "$PYTHON" -c "import numpy, scipy" 2>/dev/null; then
-    "$PYTHON" reference.py "$2" "$results"
+    if [ "$2" = "beso-two-loads" ]; then
+      "$PYTHON" ../TopologyMethods/reference.py "$2" "$results"
+    else
+      "$PYTHON" reference.py "$2" "$results"
+    fi
   else
     echo "note: $PYTHON has no numpy and scipy, so reference.py was not run (set PYTHON=...)"
   fi

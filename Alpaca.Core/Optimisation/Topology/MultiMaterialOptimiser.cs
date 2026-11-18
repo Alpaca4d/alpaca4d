@@ -65,6 +65,12 @@ namespace Alpaca4d.Optimisation
         /// whatever the model's units.
         /// </summary>
         public double? ObjectiveScale { get; set; }
+
+        /// <summary>
+        /// With several load cases, what is made least: the sum of their compliances, or the largest of them. One
+        /// case is optimised as it always was, whichever this is.
+        /// </summary>
+        public LoadCaseObjective LoadCases { get; set; } = LoadCaseObjective.Sum;
     }
 
     /// <summary>
@@ -122,7 +128,22 @@ namespace Alpaca4d.Optimisation
         /// <param name="frames">Where to keep ψ after every iteration, as <see cref="TopologyOptimiser.Run"/> keeps densities.</param>
         public static TopologyResult Run(IReadOnlyList<SolidCell> cells, MultiMaterialSettings settings, CellEnergies analyse,
                                          Func<bool> stop = null, Action<TopologyIteration, double[]> progress = null,
-                                         TopologyResult previous = null, DensityHistory frames = null)
+                                         TopologyResult previous = null, DensityHistory frames = null) =>
+            RunCases(cells, settings, TopologyOptimiser.OneCase(analyse), stop, progress, previous, frames);
+
+        /// <summary>
+        /// <see cref="Run"/> for several load cases, which <paramref name="analyse"/> solves each design for, and
+        /// <see cref="MultiMaterialSettings.LoadCases"/> says what of theirs is made least.
+        ///
+        /// The sum: the compliance is the sum of the cases' and its gradient the sum of theirs, as in the 88 line code's
+        /// extension (Andreassen et al. 2011, section 5.2). The worst: MMA's bound formulation for a min-max problem
+        /// (Svanberg 2007) - the objective is z alone, a0 = 1, and each case's scaled compliance is a
+        /// constraint of its own, c_k - z &lt;= 0 with a_k = 1, beside the volume constraints, a = 0. The compliance
+        /// recorded is then the largest. One case is <see cref="Run"/>'s, MMA as it always was.
+        /// </summary>
+        public static TopologyResult RunCases(IReadOnlyList<SolidCell> cells, MultiMaterialSettings settings, CaseEnergies analyse,
+                                              Func<bool> stop = null, Action<TopologyIteration, double[]> progress = null,
+                                              TopologyResult previous = null, DensityHistory frames = null)
         {
             var problem = new Problem(cells, settings);
             int materials = problem.Materials, nd = problem.Nd;
@@ -133,7 +154,8 @@ namespace Alpaca4d.Optimisation
             if (previous == null)
             {
                 x = Enumerable.Repeat(settings.StartDensity, materials * nd).ToArray();
-                memory = new Memory { Mma = Mma.Standard(materials * nd, materials) };
+                // MMA is set up once the first analysis has said how many load cases there are.
+                memory = new Memory();
             }
             else
             {
@@ -166,23 +188,42 @@ namespace Alpaca4d.Optimisation
 
                 clock.Restart();
                 var elementModuli = problem.ElementModuli(state);
-                var energies = analyse(elementModuli);
-                if (energies == null || energies.Length != cells.Count)
-                    throw new InvalidOperationException($"The analysis returned {energies?.Length ?? 0} energies for {cells.Count} elements.");
+                var cases = analyse(elementModuli);
+                var energies = TopologyOptimiser.Summed(cases, cells.Count);
                 double analysisSeconds = clock.Elapsed.TotalSeconds;
                 clock.Restart();
-                double compliance = energies.Sum();
+                bool worst = settings.LoadCases == LoadCaseObjective.Worst && cases.Length > 1;
+                var caseCompliances = TopologyOptimiser.Compliances(cases);
+                double compliance = worst ? caseCompliances.Max() : energies.Sum();
                 if (previous == null && iteration == 1)
+                {
                     memory.Scale = settings.ObjectiveScale ?? ObjectiveSize / compliance;
+                    memory.Mma = worst
+                        ? new Mma(materials * nd, materials + cases.Length, 1.0,
+                                  Enumerable.Repeat(0.0, materials).Concat(Enumerable.Repeat(1.0, cases.Length)).ToArray(),
+                                  Enumerable.Repeat(1e6, materials + cases.Length).ToArray(), new double[materials + cases.Length])
+                        : Mma.Standard(materials * nd, materials);
+                }
+                if (memory.Mma.M != materials + (worst ? cases.Length : 0))
+                    throw new ArgumentException("The run to go on from was made for other load cases.");
 
                 var (dc, used, dv) = problem.Gradient(state, energies, elementModuli);
-                var df0dx = dc.Select(d => memory.Scale * d).ToArray();
-                var g = new double[materials];
-                var dgdx = new double[materials][];
+                var df0dx = worst ? new double[dc.Length] : dc.Select(d => memory.Scale * d).ToArray();
+                var g = new double[memory.Mma.M];
+                var dgdx = new double[memory.Mma.M][];
                 for (int k = 0; k < materials; k++)
                 {
                     g[k] = ConstraintScale * (used[k] - settings.VolumeFractions[k]);
                     dgdx[k] = dv[k].Select(d => ConstraintScale * d).ToArray();
+                }
+                if (worst)
+                {
+                    // Each case's compliance at most z: its scaled compliance is the constraint's value, a_k z the bound.
+                    for (int k = 0; k < cases.Length; k++)
+                    {
+                        g[materials + k] = memory.Scale * caseCompliances[k];
+                        dgdx[materials + k] = problem.Gradient(state, cases[k], elementModuli).dc.Select(d => memory.Scale * d).ToArray();
+                    }
                 }
 
                 var xmin = new double[x.Length];
@@ -192,7 +233,7 @@ namespace Alpaca4d.Optimisation
                     xmin[j] = Math.Max(settings.MinDensity, x[j] - settings.Move);
                     xmax[j] = Math.Min(1.0, x[j] + settings.Move);
                 }
-                var xNew = memory.Mma.Update(x, xmin, xmax, memory.Scale * compliance, df0dx, g, dgdx);
+                var xNew = memory.Mma.Update(x, xmin, xmax, worst ? 0.0 : memory.Scale * compliance, df0dx, g, dgdx);
                 double change = Settling(result.History, compliance, state.Beta, settings.MaxSharpness);
 
                 var record = new TopologyIteration
@@ -204,6 +245,7 @@ namespace Alpaca4d.Optimisation
                     Change = change,
                     Sharpness = state.Beta,
                     AnalysisSeconds = analysisSeconds,
+                    CaseCompliances = caseCompliances,
                 };
 
                 x = xNew;

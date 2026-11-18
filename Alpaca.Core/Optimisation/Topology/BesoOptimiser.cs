@@ -97,7 +97,18 @@ namespace Alpaca4d.Optimisation
         /// <param name="frames">Where to keep the design after every iteration, as <see cref="TopologyOptimiser.Run"/> does.</param>
         public static TopologyResult Run(IReadOnlyList<SolidCell> cells, BesoSettings settings, CellEnergies analyse,
                                          Func<bool> stop = null, Action<TopologyIteration, double[]> progress = null,
-                                         TopologyResult previous = null, DensityHistory frames = null)
+                                         TopologyResult previous = null, DensityHistory frames = null) =>
+            RunCases(cells, settings, TopologyOptimiser.OneCase(analyse), stop, progress, previous, frames);
+
+        /// <summary>
+        /// <see cref="Run"/> for several load cases, which <paramref name="analyse"/> solves each design for. An element's
+        /// sensitivity number is the sum of its numbers in the cases, the strain energies added up before the filter: the
+        /// sensitivity of the sum of the cases' compliances, every case weighed the same, which is the compliance here.
+        /// One case is <see cref="Run"/>'s.
+        /// </summary>
+        public static TopologyResult RunCases(IReadOnlyList<SolidCell> cells, BesoSettings settings, CaseEnergies analyse,
+                                              Func<bool> stop = null, Action<TopologyIteration, double[]> progress = null,
+                                              TopologyResult previous = null, DensityHistory frames = null)
         {
             if (cells == null || cells.Count == 0)
                 throw new ArgumentException("There are no solid elements to optimise.");
@@ -167,9 +178,8 @@ namespace Alpaca4d.Optimisation
                 var moduli = new double[count];
                 for (int i = 0; i < count; i++)
                     moduli[i] = Math.Pow(x[i], p) * e0[i];
-                var energies = analyse(moduli);
-                if (energies == null || energies.Length != count)
-                    throw new InvalidOperationException($"The analysis returned {energies?.Length ?? 0} energies for {count} elements.");
+                var cases = analyse(moduli);
+                var energies = TopologyOptimiser.Summed(cases, count);
                 double analysisSeconds = clock.Elapsed.TotalSeconds;
                 clock.Restart();
 
@@ -210,6 +220,7 @@ namespace Alpaca4d.Optimisation
                     Volume = designed,
                     Change = reached ? change : double.NaN,
                     AnalysisSeconds = analysisSeconds,
+                    CaseCompliances = TopologyOptimiser.Compliances(cases),
                 };
 
                 x = Update(x, numbers, design, volume, designVolume, target, xMin);
