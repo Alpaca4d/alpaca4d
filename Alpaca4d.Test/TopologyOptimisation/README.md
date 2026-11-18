@@ -165,6 +165,14 @@ and the user folder pointed at the test folder:
 * A model with Gravity warns that the self-weight stays on the emptied elements.
 * Bricks propped by a truss: the component warns that the truss takes no part - it keeps its stiffness
   and its energy is not in Compliance - and optimises the bricks.
+* Load combinations: the small cantilever with three named Plain Patterns on no time series (the
+  Constant one), up at the top of the free end, down at the bottom and one unused, and Load
+  Combination adding "Wind up" and "Wind down": the component says it optimises for two combinations
+  and leaves Unused out; every iteration has both cases, Compliance their sum, equal by symmetry, and
+  each combination's compliance in a remark; Wind up's first compliance is that of the model of Up
+  alone to the last bit (Assemble Model's Constant series written as a Path); AlpacaModel keeps the two
+  combinations; Multi-Material set to Worst case says so, its Compliance is the larger case's, and
+  Worst case is saved with the component and read back.
 * 576 Ten Node Tetrahedra (OPENSEES_TET10, default /Applications/OpenSeesLatest-Mumps): the run, 30%
   of the volume, a closed surface, `TenNodeTetrahedronStd` in the deck; and on the OpenSees given for
   the bricks, when it is 3.8.0, the run ends with `TenNodeTetrahedron.SolverTooOld`'s explanation.
