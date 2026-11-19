@@ -2051,13 +2051,14 @@ public static class Shots
         {
             Do("open", () =>
             {
+                // The bridge is found three ways now: this scene shoots SIMP's.
                 Open("TopologyBridge.gh");
-                topology = Components(TopologyId).First();
+                topology = Components(TopologyId).First(c => c.NickName == "SIMP");
                 ((IGH_PreviewObject)topology).Hidden = true;
                 surfacePreview = Preview(Welded(Out(topology, "Surface"), Beside(topology, 120, 160)), LightBlue, Beside(topology, 300, 160));
                 modelView = Symbols(topology.Params.Input[0].Sources[0], Beside(topology, 120, 300), 1, 1);
-                Find<GH_BooleanToggle>("Run").Value = true;
-                Find<GH_BooleanToggle>("Run").ExpireSolution(true);
+                Find<GH_BooleanToggle>("Run SIMP").Value = true;
+                Find<GH_BooleanToggle>("Run SIMP").ExpireSolution(true);
             }),
             Until("run", Finished(() => topology)),
             Do("design", () =>
@@ -2076,14 +2077,14 @@ public static class Shots
             }),
             Do("iterations", () =>
             {
-                Iterations(topology, "Step", Aim(frame, eye, Vector3d.ZAxis), "bridge-frames");
+                Iterations(topology, "Step SIMP", Aim(frame, eye, Vector3d.ZAxis), "bridge-frames");
                 Loads(modelView, true);
             }),
             Do("analysed", () =>
             {
-                var run = Components(RunAnalysisId).First();
-                var results = ResultViews().First();
-                var legend = Components(LegendId).First();
+                var run = Components(RunAnalysisId).First(c => c.NickName == "Analyse SIMP");
+                var results = ResultViews().First(c => c.NickName == "Stress SIMP");
+                var legend = Components(LegendId).First(c => c.NickName == "Legend SIMP");
                 run.Locked = false;
                 legend.Locked = false;
                 run.ExpireSolution(false);
@@ -2112,7 +2113,7 @@ public static class Shots
             {
                 Open("TopologyBenchmarks.gh");
                 cantilever = Components(TopologyId).First(c => c.NickName == "Cantilever");
-                simple = Components(TopologyId).First(c => c.NickName != "Cantilever");
+                simple = Components(TopologyId).First(c => c.NickName == "Simply supported");
                 foreach (var t in new[] { cantilever, simple }) ((IGH_PreviewObject)t).Hidden = true;
                 pc = Preview(Welded(Out(cantilever, "Surface"), Beside(cantilever, 120, 0)), LightBlue, Beside(cantilever, 300, 0));
                 ps = Preview(Welded(Out(simple, "Surface"), Beside(simple, 120, 0)), LightBlue, Beside(simple, 300, 0));
@@ -2237,7 +2238,7 @@ public static class Shots
         Do("open", () => Open("TopologyBridge.gh")),
         Do("lines", () =>
         {
-            topology = Components(TopologyId).First();
+            topology = Components(TopologyId).First(c => c.NickName == "SIMP");
             var model = topology.Params.Input[0].Sources[0];
             var at = new PointF(topology.Attributes.Bounds.Left, topology.Attributes.Bounds.Bottom + 420);
             var settings = Place((IGH_Component)Instances.ComponentServer.EmitObject(AnalysisSettingsId), at);
@@ -2249,7 +2250,7 @@ public static class Shots
             Messages(run);
             Log($"  solved in {watch.Elapsed.TotalSeconds:F1} s");
             // The domain's box, from the full design at step 0.
-            Slider("Step", 0);
+            Slider("Step SIMP", 0);
             doc.NewSolution(false);
             var box = BoundingBox.Empty;
             var meshToBrick = new Guid("95F0E8F1-33B7-4A2D-ABAE-693DAA6AA8B9");
