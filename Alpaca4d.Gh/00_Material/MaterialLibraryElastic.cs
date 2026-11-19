@@ -461,7 +461,7 @@ namespace Alpaca4d.Gh
 
 		/// <summary>
 		/// What the selection is for design - its family and strengths - from whichever database it came
-		/// out of, for the Utilisation component to check it against. Only steel has one so far.
+		/// out of, for the Utilisation component to check it against: steel and timber have one.
 		/// </summary>
 		private Alpaca4d.Material.IDesignGrade DesignGradeOf(string type, string grade)
 		{
@@ -471,8 +471,11 @@ namespace Alpaca4d.Gh
 				entry = customDb?[grade] as JObject;
 			else if (string.Equals(type, "Steel", StringComparison.OrdinalIgnoreCase))
 				entry = LoadJsonResourceOnce(ref steelDb, "Alpaca4d.Resources.Material.steel_properties.json")?[grade] as JObject;
+			else if (string.Equals(type, "Timber", StringComparison.OrdinalIgnoreCase))
+				entry = LoadJsonResourceOnce(ref timberDb, "Alpaca4d.Resources.Material.timber_properties.json")?[grade] as JObject;
 
-			return Alpaca4d.Material.SteelGrade.FromEntry(grade, entry);
+			return (Alpaca4d.Material.IDesignGrade)Alpaca4d.Material.SteelGrade.FromEntry(grade, entry)
+				?? Alpaca4d.Material.TimberGrade.FromEntry(grade, entry);
 		}
 
 		private void GetElasticParameters(string type, string grade, out double E, out double nu, out double rho)

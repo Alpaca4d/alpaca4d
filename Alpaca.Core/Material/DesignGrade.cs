@@ -156,7 +156,8 @@ namespace Alpaca4d.Material
     {
         /// <summary>
         /// The design grade of a material: the one it carries, or else the one its name stands for, so
-        /// a material made by hand and called "S355" is checked as S355. Null when neither says.
+        /// a material made by hand and called "S355" is checked as S355, and one called "GL24h" as
+        /// GL24h. Null when neither says.
         /// </summary>
         public static IDesignGrade Of(IUniaxialMaterial material)
         {
@@ -167,7 +168,9 @@ namespace Alpaca4d.Material
                 return material.Grade;
 
             var elastic = material as UniaxialMaterialElastic;
-            return elastic != null ? SteelGrade.Find(elastic.MatName) : null;
+            if (elastic == null)
+                return null;
+            return (IDesignGrade)SteelGrade.Find(elastic.MatName) ?? TimberGrade.Find(elastic.MatName);
         }
     }
 }
