@@ -166,6 +166,7 @@ public static class Shots
                         list = Earthquakes("buildings", scene); break;
                     case "bundled": case "braced": case "buttressed": case "outrigger": case "diagrid":
                         list = Earthquakes("towers", scene); break;
+                    case "silo": list = SiloScene(); break;
                     case "plates": list = Plates(); break;
                     case "kangaroo": list = Kangaroo(); break;
                     case "nerviflatslab": list = NerviFlatSlab(); break;
@@ -3461,6 +3462,188 @@ public static class Shots
         var info = Info(view);
         int at = info.LastIndexOf("max ");
         return at >= 0 && double.TryParse(info.Substring(at + 4), System.Globalization.NumberStyles.Float, Inv, out double v) ? v : 0.0;
+    }
+
+    // ------------------------------------------------------------------ a silo: a dust explosion and a tractor's impact
+
+    /// <summary>
+    /// The glass fibre silo on four legs of Tools/Examples/Structures/Silo.py, SiloExplosionImpact.gh, under its two
+    /// events in turn, picked by its Event list: for each, the still at the step it moves the most, with its charts on
+    /// their own, and a frame every few steps through the event, each with its charts in a folder of their own - the
+    /// load's pulse, and how the points it watches move. publish.sh puts the charts beside the frames: the silo is
+    /// taller than it is wide.
+    /// </summary>
+    static List<(string, Func<bool>)> SiloScene() => new List<(string, Func<bool>)>
+    {
+        Do("open", () =>
+        {
+            SoftEdges(EdgeGrey);
+            Open("SiloExplosionImpact.gh");
+        }),
+        // The explosion is over in 150 ms: a frame every 5 ms to 300 ms, from a corner and above, where the roof
+        // lifts and the wall swells between the legs. The tractor: a frame every 20 ms for the first 2 s, from in
+        // front, across the way the silo sways.
+        Do("explosion", () => SiloEvent(0, "Explosion", "silo-explosion-impact-explosion", new Vector3d(0.8, -1.2, 0.6), 300, 5,
+                                        "Pressure inside [kPa]", "kPa", 0.1, 1000, "ms", "0", "0.00")),
+        Do("impact", () => SiloEvent(1, "Impact", "silo-explosion-impact-impact", new Vector3d(0.35, -1, 0.3), 400, 4,
+                                     "Tractor's force on the leg [kN]", "kN", 0.5, 1, "s", "0.00", "0")),
+        Do("close", Close),
+    };
+
+    /// <summary>
+    /// One of the silo's events: Event set to it and solved; the points it watches read every step - for the
+    /// explosion the rim of the roof's manhole, up, and the wall between two legs, out; for the impact the top of
+    /// the silo and the point the tractor hits, along x; the still at the step its view draws the most, and a frame
+    /// every <paramref name="every"/> steps up to <paramref name="last"/>, each with its charts.
+    /// </summary>
+    static void SiloEvent(int e, string name, string prefix, Vector3d eye, int last, int every, string loadTitle, string loadUnit,
+                          double tick, double timeScale, string timeUnit, string timeFormat, string moveFormat)
+    {
+        var events = Find<GH_ValueList>("Event");
+        events.SelectItem(e);
+        events.ExpireSolution(false);
+        var clock = Stopwatch.StartNew();
+        doc.NewSolution(false);
+        Log($"  {name}: solved in {clock.Elapsed.TotalSeconds:F0} s");
+        foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel == GH_RuntimeMessageLevel.Error))
+            Messages(c);
+        var view = Find<IGH_Component>(name);
+        var legend = Find<IGH_Component>(name + " legend");
+        var step = Find<GH_NumberSlider>(name + " step");
+        Func<IGH_Goo, double> number = v => Convert.ToDouble(v.ScriptVariable(), Inv);
+        double dt = Values<IGH_Goo>(Find<IGH_Component>("Time step [s]").Params.Output[0]).Select(number).First();
+        int steps = (int)Math.Round(Values<IGH_Goo>(Find<IGH_Component>("Steps").Params.Output[0]).Select(number).First());
+
+        // The pulse, as the definition makes it: its times, and its size then as a share of the peak.
+        var pulse = Find<IGH_Component>(e == 0 ? "Explosion pulse" : "Tractor impact");
+        var pt = Values<IGH_Goo>(Out(pulse, "Times")).Select(number).ToArray();
+        var pv = Values<IGH_Goo>(Out(pulse, "Values")).Select(number).ToArray();
+        double peak = e == 0 ? (double)Find<GH_NumberSlider>("Peak pressure [kPa]").CurrentValue
+                             : Values<IGH_Goo>(Out(pulse, "Force")).Select(number).First();
+
+        List<double[]> moves;
+        string[] labels;
+        string moveTitle;
+        if (e == 0)
+        {
+            double c = Math.Sqrt(0.5);
+            var wall = new Point3d(1.1 * c, 1.1 * c, 3.845);
+            var x = Histories(new List<Point3d> { wall }, 0)[0];
+            var y = Histories(new List<Point3d> { wall }, 1)[0];
+            var up = Histories(new List<Point3d> { new Point3d(0.3, 0, 5.507) }, 2)[0];
+            moves = new List<double[]> { up, x.Select((v, k) => (v + y[k]) * c).ToArray() };
+            labels = new[] { "manhole's rim, up", "wall, out" };
+            moveTitle = "Displacement [mm]";
+        }
+        else
+        {
+            var hit = Values<GH_Point>(Out(Find<IGH_Component>("Silo"), "Impact")).First().Value;
+            moves = Histories(new List<Point3d> { new Point3d(1.1, 0, 5.045), hit }, 0);
+            labels = new[] { "top", "where it hits" };
+            moveTitle = "Displacement along x [mm]";
+        }
+        // Model View's step k is the history's k-th, the end of the k+1-th step when there are as many as steps.
+        int offset = moves[0].Length > steps ? 0 : 1;
+        int n = Math.Min(moves[0].Length, last + 1);
+        var times = Enumerable.Range(0, n).Select(k => (k + offset) * dt).ToArray();
+        var load = times.Select(t => peak * Between(pt, pv, t)).ToArray();
+        moves = moves.Select(m => m.Take(n).ToArray()).ToList();
+        Log($"  {n} steps of {dt * 1000:G3} ms charted; " + string.Join(", ", labels.Select((l, i) => $"{l} {moves[i].Max(Math.Abs):G3} mm at the most")));
+
+        // The step it moves the most, every second one looked at, with the view's Range off: Info gives the Range
+        // when one is set, not what is drawn.
+        ShowOnly(view, legend);
+        var range = (GH_PersistentParam<GH_Interval>)In(view, "Range");
+        var colours = range.PersistentData.AllData(true).OfType<GH_Interval>().FirstOrDefault();
+        range.PersistentData.Clear();
+        range.ExpireSolution(false);
+        int worst = 0;
+        double most = -1;
+        for (int k = 0; k <= last; k += 2)
+        {
+            double largest = AtStep(step, k, view);
+            if (largest > most) { most = largest; worst = k; }
+        }
+        if (colours != null) range.PersistentData.Append(colours);
+        range.ExpireSolution(false);
+        Log($"  the most, {most:G4} mm, at step {worst}, {times[Math.Min(worst, n - 1)] * timeScale:G4} {timeUnit}");
+
+        // Framed on that step and on the steps each watched point moves the most either way.
+        var extremes = new SortedSet<int>();
+        foreach (var m in moves)
+        {
+            int high = 0, low = 0;
+            for (int k = 1; k < m.Length; k++) { if (m[k] > m[high]) high = k; if (m[k] < m[low]) low = k; }
+            extremes.Add(high);
+            extremes.Add(low);
+        }
+        extremes.Remove(worst);
+        AtStep(step, worst, view);
+        var frame = Drawn();
+        foreach (int k in extremes) { AtStep(step, k, view); frame.Union(Drawn()); }
+        AtStep(step, worst, view);
+        RhinoView Framed()
+        {
+            var v = Aim(Grown(frame, 0.06), eye, Vector3d.ZAxis, magnify: 1.3);
+            Slide(v, 0.25);
+            FitInside(v, frame, 0.17);
+            return v;
+        }
+        var eyeView = Framed();
+        var framedFor = eyeView.ActiveViewport.Size;
+        Shoot(eyeView, prefix, WithLegend);
+        SiloCharts(Path.Combine(outDir, prefix + "-chart.png"), times, load, loadTitle, loadUnit, moves, labels, moveTitle, moveFormat,
+                   worst, WithLegend, tick, timeScale, timeUnit, timeFormat);
+
+        Directory.CreateDirectory(Path.Combine(outDir, prefix + "-frames"));
+        Directory.CreateDirectory(Path.Combine(outDir, prefix + "-charts"));
+        int frames = 0;
+        for (int k = 0; k < n; k += every, frames++)
+        {
+            AtStep(step, k, view);
+            if (eyeView.ActiveViewport.Size != framedFor)
+            {
+                Log($"  the viewport changed at frame {frames}; framed again");
+                eyeView = Framed();
+                framedFor = eyeView.ActiveViewport.Size;
+            }
+            Shoot(eyeView, Path.Combine(prefix + "-frames", frames.ToString("D3")));
+            SiloCharts(Path.Combine(outDir, prefix + "-charts", frames.ToString("D3") + ".png"), times, load, loadTitle, loadUnit, moves,
+                       labels, moveTitle, moveFormat, k, 1, tick, timeScale, timeUnit, timeFormat);
+        }
+        Log($"  {frames} frames and their charts, a frame every {every * dt * timeScale:G3} {timeUnit}");
+    }
+
+    /// <summary>A path's value at t, straight between its points, and nothing before its first or after its last.</summary>
+    static double Between(double[] times, double[] values, double t)
+    {
+        if (times.Length == 0 || t < times[0] || t > times[times.Length - 1]) return 0.0;
+        for (int i = 1; i < times.Length; i++)
+            if (t <= times[i])
+                return values[i - 1] + (values[i] - values[i - 1]) * (t - times[i - 1]) / Math.Max(1e-12, times[i] - times[i - 1]);
+        return values[values.Length - 1];
+    }
+
+    /// <summary>The silo's charts at step k, 1400 x 1500 px times scale, to stand beside it: the load over the event, and how the watched points move.</summary>
+    static void SiloCharts(string path, double[] times, double[] load, string loadTitle, string loadUnit, List<double[]> moves,
+                           string[] labels, string moveTitle, string moveFormat, int k, double scale,
+                           double tick, double timeScale, string timeUnit, string timeFormat)
+    {
+        float s = (float)scale;
+        int w = (int)(1400 * s), h = (int)(1500 * s);
+        int at = Math.Max(0, Math.Min(k, times.Length - 1));
+        using (var bitmap = new Bitmap(w, h))
+        using (var g = Graphics.FromImage(bitmap))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.Clear(Background);
+            TimeChart(g, new RectangleF(200 * s, 160 * s, w - 260 * s, 360 * s), times, new List<double[]> { load }, times[at], loadTitle,
+                      new[] { DarkTech }, null, loadUnit, "0", s, true, tick, timeScale, timeUnit, timeFormat);
+            TimeChart(g, new RectangleF(200 * s, 760 * s, w - 260 * s, 620 * s), times, moves, times[at], moveTitle,
+                      ChartLines, labels, "mm", moveFormat, s, true, tick, timeScale, timeUnit, timeFormat);
+            bitmap.Save(path, ImageFormat.Png);
+        }
     }
 
     // ------------------------------------------------------------------ a building pushed over

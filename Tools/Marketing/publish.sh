@@ -784,7 +784,22 @@ plasticity() {
   done
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything"
+# The silo under its two events, a dust explosion inside it and a tractor reversing into a leg: the impact's still,
+# the example's first picture; for each event its still beside its charts, and the GIF of it through the event, each
+# frame beside its charts. Into the example's folder only: no copies in marketing/ unless they are asked for.
+silo() {
+  local s=silo-explosion-impact e=$M/../examples/silo-explosion-impact
+  mkdir -p "$e"
+  trim silo/$s-impact "$e/$s.png" 0 12
+  trim silo/$s-explosion "$OUT/silo/$s-explosion-trimmed.png" 0 12
+  trim silo/$s-impact "$OUT/silo/$s-impact-trimmed.png" 0 12
+  $P pair "$e/$s-2.png" "$OUT/silo/$s-explosion-trimmed.png" "$OUT/silo/$s-explosion-chart.png" 1400
+  $P pair "$e/$s-3.png" "$OUT/silo/$s-impact-trimmed.png" "$OUT/silo/$s-impact-chart.png" 1400
+  $P besidecharts "$OUT/silo/$s-explosion-frames" "$OUT/silo/$s-explosion-charts" "$e/$s-explosion" 40 700 15 0
+  $P besidecharts "$OUT/silo/$s-impact-frames" "$OUT/silo/$s-impact-charts" "$e/$s-impact" 40 700 15 0
+}
+
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything silo"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done
