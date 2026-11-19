@@ -750,7 +750,7 @@ namespace Alpaca4d
                 };
             }).ToList();
 
-            return new LoadPattern(pattern.PatternType, pattern.TimeSeries, loads, pattern.Factor) { Name = pattern.Name };
+            return new LoadPattern(pattern.PatternType, pattern.TimeSeries, loads, pattern.Factor) { Name = pattern.Name, Duration = pattern.Duration };
         }
 
         /// <summary>

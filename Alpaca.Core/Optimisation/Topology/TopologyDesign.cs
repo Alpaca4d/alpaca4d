@@ -183,6 +183,7 @@ namespace Alpaca4d.Optimisation
                     Load = loads,
                     Factor = pattern.Factor,
                     Name = pattern.Name,
+                    Duration = pattern.Duration,
                     Dof = pattern.Dof,
                     Velocity = pattern.Velocity,
                 });
