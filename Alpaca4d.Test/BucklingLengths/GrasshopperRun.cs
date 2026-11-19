@@ -23,10 +23,14 @@ try
     var context = Activator.CreateInstance(contextType, new object[] { "BucklingCheck " + Path.GetFileName(work), false });
     var loadFrom = contextType.GetMethod("LoadFromAssemblyPath");
 
+    // The DLLs before the .gha: Grasshopper looks into a .gha as soon as it is loaded, and a .gha
+    // loaded before its Alpaca4d.Core binds for good to the installed one, which may lack what is new.
     string[] fromRhino = { "RhinoCommon", "Grasshopper", "GH_IO", "Eto" };
     var loaded = Directory.GetFiles(work)
         .Where(f => f.EndsWith(".dll") || f.EndsWith(".gha"))
         .Where(f => { var n = Path.GetFileNameWithoutExtension(f); return !fromRhino.Contains(n) && !n.StartsWith("System.") && !n.StartsWith("Microsoft."); })
+        .OrderBy(f => f.EndsWith(".gha"))
+        .ThenBy(f => Path.GetFileName(f) == "Alpaca4d.Core.dll" ? 0 : 1)
         .Select(f => (Assembly)loadFrom.Invoke(context, new object[] { f }))
         .ToList();
 
