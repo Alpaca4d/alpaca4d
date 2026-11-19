@@ -122,6 +122,7 @@ public partial class TrussCheck
             Check(Near(Num(element[5]), 0.001), "the section's area");
             Check(element[6] == lines[0][2], "the material it has just written");
             Check(element[7] == "-rho" && Near(Num(element[8]), ModelMass.FromKg(0.001 * Rho)), "its mass per length, in the model's mass unit");
+            Check(element.Length == 11 && element[9] == "-doRayleigh" && element[10] == "1", "and Rayleigh damping, which corotTruss leaves out unless told");
 
             var tension = Lines(Make(1, 1, 2, 0.001, AxialBehaviour.Tension).WriteTcl());
             Check(tension[0][1] == "Elastic" && Near(Num(tension[0][3]), E) && Num(tension[0][5]) == 0.0,
@@ -438,11 +439,23 @@ static class Deck
         double m = ModelMass.FromKg(TrussCheck.Rho * area) * length / 2.0;
 
         var text = new StringBuilder();
-        text.Append(Puts("C. The mass a truss writes: a bar fixed at one end, free to stretch at the other"));
+        text.Append(Puts("C. The mass and the damping a truss writes: a bar fixed at one end, free to stretch at the other"));
         text.Append("wipe\nmodel BasicBuilder -ndm 3 -ndf 6\nnode 1 0 0 0\nnode 2 2 0 0\nfix 1 1 1 1 1 1 1\nfix 2 0 1 1 1 1 1\n");
         text.Append(TrussCheck.Make(1, 1, 2, area, AxialBehaviour.Both).WriteTcl());
         text.Append("set lambda [lindex [eigen -fullGenLapack 1] 0]\n");
         text.Append($"check \"omega squared is EA/L over half its mass ($lambda)\" [near $lambda {k / m} 1e-9]\n");
+
+        // The same bar damped 20% by its mass alone, then pulled suddenly. A damped one overshoots its
+        // static stretch by exp(-zeta pi / sqrt(1 - zeta^2)); one that took no damping, as corotTruss
+        // does without -doRayleigh 1, overshoots by all of it whatever alphaM is.
+        double omega = Math.Sqrt(k / m), zeta = 0.2, dt = 2.0 * Math.PI / omega / 200.0, pull = 10.0;
+        double overshoot = Math.Exp(-zeta * Math.PI / Math.Sqrt(1.0 - zeta * zeta));
+        text.Append($"rayleigh {2.0 * zeta * omega} 0 0 0\n");
+        text.Append($"timeSeries Constant 1\npattern Plain 1 1 {{\n\tload 2 {pull} 0 0 0 0 0\n}}\n");
+        text.Append(Newton + "integrator Newmark 0.5 0.25\nanalysis Transient\n");
+        text.Append($"set peak 0.0\nfor {{set i 0}} {{$i < 600}} {{incr i}} {{ analyze 1 {dt}; set peak [expr {{max($peak, [nodeDisp 2 1])}}] }}\n");
+        text.Append($"set over [expr {{$peak / {pull / k} - 1.0}}]\n");
+        text.Append($"check \"damped 20% by alphaM, a sudden pull overshoots its static stretch by {overshoot:F3} ($over), not by all of it\" [near $over {overshoot} 0.01]\n");
         Write(path, text.ToString());
     }
 
