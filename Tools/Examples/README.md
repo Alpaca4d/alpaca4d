@@ -95,6 +95,7 @@ script too:
     ./make.sh Design/ColumnDomain.py            # the Interaction Domain example
     ./make.sh Design/MomentCurvature.py         # the Moment Curvature example
     ./make.sh Design/ConnectionDesign.py        # a tree column's cast steel node in shells
+    ./make.sh Meshing/SlabWithOpenings.py       # Mesh Surface: a flat slab with openings on columns
 
     # Optimisation/
     ./make.sh Optimisation/FootbridgeStudy.py         # the Explorer example, as ./make.sh alone - but see FootbridgeStudy.py below
@@ -111,7 +112,7 @@ script too:
 
     # Solids/
     ./make.sh Solids/SpotTheCow.py              # tetrahedra: a concrete cow under its own weight
-    ./make.sh Solids/Femur.py                   # tetrahedra: a femur under the force of the hip - but see Femur.py below
+    ./make.sh Solids/Femur.py                   # tetrahedra Mesh Solid makes: a femur under the force of the hip
     ./make.sh Solids/MeshLoftBricks.py          # a vault of bricks from polylines: Mesh Loft and Mesh Series to Brick
     ./make.sh Solids/RebelliousSlave.py         # tetrahedra: Michelangelo's Rebellious Slave, its weight and modes
 
@@ -180,6 +181,7 @@ script too:
 | `MomentCurvature.py` | The Moment Curvature example: a 300 x 500 reinforced concrete section, Concrete01 in 240 fibres and phi 24 bars of ReinforcingSteel, eight along the bottom and three along the top, under 400 kN of compression, bent until the first fibre reaches its ultimate strain; Moment Curvature Diagram draws the curve beside the section, and panels give first yield, the ultimate state, the ductility and the cracked stiffness. |
 | `ColumnDomain.py` | The Interaction Domain example: a 400 x 600 reinforced concrete column's N-My-Mz domain, three combinations checked against it, and the domain drawn with Domain 3D, N-M Diagram and My-Mz Diagram beside the section. |
 | `ConnectionDesign.py` | A tree column's cast steel node in shells: a sphere with a trunk tube and three branches welded on, joined and opened at the tube ends in a GhPython component (`ConnectionDesignGeometry.py`), meshed in quads by Mesh Brep, ASD Shells of S355 25 mm thick. The trunk's end built in, each branch's end loaded by the roof it carries, shared over its nodes by a second GhPython component. Drawn deformed and coloured by Von Mises stress. The website's Connection design example. |
+| `Meshing/SlabWithOpenings.py` | A concrete flat slab 12 m by 8 m on twelve columns, with a stair opening and a round shaft, made by a GhPython component (`SlabWithOpeningsGeometry.py`). Mesh Surface meshes it with the columns as inclusion points, finer round them and along the openings' edges, where two Mesh Refinements ask; ASD Shells 250 mm thick under 10 kN/m2. Checks that the column reactions add up to the slab's area times the load. Needs gmsh. The website's Slab with Openings example. |
 
 ### Optimisation/
 
@@ -204,7 +206,7 @@ script too:
 | Example | Builds |
 | --- | --- |
 | `SpotTheCow.py` | A tetrahedron example: Spot the cow, a solid concrete cow 2.4 m long standing on its hooves under its own weight, in 5 030 tetrahedra, with the vertical stress drawn over it. |
-| `Femur.py` | A tetrahedron example on a bone: the Standardised Femur, held at the knee with the force of the hip on its head, in 3 813 tetrahedra, drawn deformed. Femur.gh is not what it writes: Assemble's Tolerance of 0.1 mm, without which three edge nodes at the knee are left unsupported and OpenSees does not converge, and the modes were set in Grasshopper (d3c2004), so do not write it over - upgrade it in Grasshopper instead. |
+| `Femur.py` | A tetrahedron example on a bone: the Standardised Femur, held at the knee with the force of the hip on its head. Its closed surface - the outer faces of the tetrahedra in `Femur.txt` - is kept as nodes and triangles, and Mesh Solid fills it with about 8 400 tetrahedra, finer along the neck where a Mesh Refinement asks. Assemble's Tolerance 0.1 mm, below the tetrahedra; drawn deformed; a Natural Vibration Analysis and a Model View of its modes. Needs gmsh. |
 | `RebelliousSlave.py` | A tetrahedron example in marble: Michelangelo's Rebellious Slave, 2.13 m and 875 kg on its plinth, in 28 119 tetrahedra, held under the plinth, its vertical stress under its own weight drawn in iso-surfaces, and its first six modes, a slider picking which a second Model View draws. Assemble's Tolerance is 0.1 mm: the default 1 cm would weld the middle nodes of its 2.5 cm edges to their corners. |
 | `MeshLoftBricks.py` | A concrete barrel vault in bricks, from polylines: a GhPython component (`MeshLoftBricksGeometry.py`) draws Layers + 1 surfaces through its thickness, a branch of polylines each; Mesh Loft lofts each into a mesh, Mesh Series to Brick makes a layer of SSP Bricks between each two. Both springings held, its own weight; drawn deformed and coloured by Von Mises stress. Five layers of bricks through its 400 mm to start with (1 440 bricks), the slider up to 10. The website's Mesh Loft - Mesh Series to Bricks example. |
 
