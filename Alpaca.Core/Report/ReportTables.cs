@@ -745,7 +745,8 @@ namespace Alpaca4d.Report
             if (over.Count == 0) { problem = "none of the combinations is an ultimate one - ULS, accidental or seismic - to check the members against"; return null; }
             if (over.All(m => m.Beams.Count == 0)) { problem = "the model has no beams to check"; return null; }
 
-            var settings = new Alpaca4d.Design.DesignSettings { Report = false };
+            // The steel check alone: timber members are reported as not checked here.
+            var settings = new Alpaca4d.Design.DesignSettings { Report = false, Family = "Steel" };
             if (options != null)
             {
                 if (options["gammaM0"] != null) settings.GammaM0 = (double)options["gammaM0"];

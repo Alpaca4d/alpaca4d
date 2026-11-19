@@ -33,6 +33,16 @@ namespace Alpaca4d.Design
         /// <summary>Whether the checks ran. False for a Class 4 section, a section with no shape, or a material with no grade.</summary>
         public bool Checked;
 
+        /// <summary>
+        /// Why a member of a family with a check was not checked at all - a timber section that is not
+        /// a solid rectangle or circle, a grade with no f_v,k - as a clause: "its grade has no f_v,k".
+        /// Null when it was checked, and for the reasons the steel check gives through its class.
+        /// </summary>
+        public string NotCheckedWhy;
+
+        /// <summary>Timber: k_mod the member was checked with (Table 3.1). Null for steel.</summary>
+        public double? Kmod;
+
         /// <summary>EN 1993-1-1 cross-section class, the worst along the member.</summary>
         public int? Class;
 
@@ -67,6 +77,12 @@ namespace Alpaca4d.Design
 
         /// <summary>Everything worked out on the way, for checking by hand.</summary>
         public string Report = "";
+
+        /// <summary>
+        /// The report as values, for Deconstruct Anything: a <see cref="TimberReport"/> for a timber
+        /// member checked with its report on; null otherwise, where <see cref="Report"/> is all there is.
+        /// </summary>
+        public TimberReport Details;
 
         /// <summary>
         /// Checks that apply to the member but could not be made - buckling of a section that is Class 4

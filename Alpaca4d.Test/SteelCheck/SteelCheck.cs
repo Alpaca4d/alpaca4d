@@ -862,8 +862,8 @@ class SteelCheckTest
         Close(all[1].BendingY.Value, 15 / (r.WplY * r.Fy), 1e-6, "beam 2 BendingY, S275");
         Check(all[1].BucklingY == 0.0, "beam 2 in tension: no buckling");
 
-        Check(all[2].Type == "Unknown" && !all[2].Checked && all[2].Max == null,
-              "beam 3, whose material has no steel grade, is reported and left unchecked");
+        Check(all[2].Type == "Timber" && all[2].Checked && all[2].Class == null,
+              "beam 3, a material named after a glulam class, goes to the timber check, with no steel class");
 
         // The same through the overload that takes each member's lengths: beam 1's minor axis buckling
         // over 6 m rather than 3.
