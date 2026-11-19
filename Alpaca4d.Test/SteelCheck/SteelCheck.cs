@@ -874,6 +874,28 @@ class SteelCheckTest
         Close(held[0].BucklingZ.Value, u.BucklingZ.Value, 1e-12, "and BucklingZ as before");
     }
 
+    /// <summary>
+    /// The report on or off, the same utilisations. Lateral-torsional buckling kept its worst piece
+    /// between restraints by whether that piece's detail had been written - which only happens with
+    /// the report on - so with it off, the default of the component, it gave the last piece instead:
+    /// 0.495 for 0.634 on this beam. Found 2026-11-19.
+    /// </summary>
+    static void ReportOffAgrees()
+    {
+        Section("The report off gives the same utilisations: LTB restrained at thirds of a uniformly loaded span");
+        var i = new ISection("I", 0.3, 0.15, 0.0107, 0.15, 0.0107, 0.0071, Steel("S355"));
+        var c = SteelSection.Of(i, (SteelGrade)i.Material.Grade, Fabrication.Rolled);
+        int n = 9;
+        var forces = Enumerable.Range(0, n).Select(k => { double x = k / (double)(n - 1); return new SectionForces(0, 0, 0, 0, 0, 400 * x * (1 - x)); }).ToList();
+        var member = new SteelMember(9.0) { LateralTorsionalLength = 3.0 };
+        var on = SteelCheck.Run(c, forces, member, 1.0, 1.0, null, true);
+        var off = SteelCheck.Run(c, forces, member, 1.0, 1.0, null, false);
+        Close(off.LateralTorsional.Value, on.LateralTorsional.Value, 1e-12, "LTB with the report off: the middle third, as with it on");
+        Check(on.Report.Contains("worst between x = 0.333 L and 0.667 L"), "and the report names the middle third");
+        foreach (var check in on.Checks)
+            Check(Nullable.Equals(check.Value, off.Checks.First(o => o.Key == check.Key).Value), $"{check.Key}: the same either way");
+    }
+
     static void Main(string[] args)
     {
         JrcColumn();
@@ -891,6 +913,7 @@ class SteelCheckTest
         Members();
         LateralTorsionalMembers();
         BendingAndCompression();
+        ReportOffAgrees();
         Chain(args.Length > 0 ? args[0] : ".");
 
         Console.WriteLine();

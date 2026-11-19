@@ -666,6 +666,8 @@ namespace Alpaca4d.Design
             double worst = 0.0;
             bool classFour = false, unknown = false;
             Func<string> worstDetail = null;
+            // Whether a piece was weighed yet: the detail is only written with the report on, so it cannot tell.
+            bool weighed = false;
 
             foreach (var piece in pieces)
             {
@@ -717,8 +719,9 @@ namespace Alpaca4d.Design
                     result.CmLT = piece.Uniform ? 1.0 : Cm(piece.Moment);
                 }
 
-                if (value > worst || worstDetail == null)
+                if (value > worst || !weighed)
                 {
+                    weighed = true;
                     worst = value;
                     if (describe)
                     {
