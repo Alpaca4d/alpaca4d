@@ -1,8 +1,9 @@
 #! python3
 # A steel office building under the load combinations of EN 1990, and the report of it: its loads in
 # four load patterns, G, Q, S and W, combined seven ways by one Load Combination, every combination
-# solved by one Run Analysis into one model that holds them all, and a Report that lists the patterns
-# and the combinations, gives the results of each and checks the steel members over the ultimate ones.
+# solved by one Run Analysis into one model that holds them all, the result components reading them a
+# branch each, and a Report that lists the patterns and the combinations, gives the results of each and
+# checks the steel members over the ultimate ones.
 #
 # Four bays of 6 m along x by two of 5 m along y, four storeys of 3.5 m: HEB 240 columns built in at
 # the ground, IPE 360 floor beams and IPE 300 roof beams along x, which carry the floors spanning
@@ -34,7 +35,7 @@ from Grasshopper.Kernel.Special import GH_Panel, GH_BooleanToggle
 from System.Drawing import PointF, RectangleF, Color
 
 import Structures as S
-from Structures import (component, inp, out, wire, flat, words, panel, slider, text, Structure,
+from Structures import (component, inp, out, wire, flat, words, panel, slider, text, expression, Structure,
                         SECTIONS, MEMBERS, GEOMETRY_, WIDTHS, MODEL, ANALYSIS, VIEWS, LEGENDS,
                         MAIN, LOADED, SHOWN, UNIT_X, UNIT_Z)
 
@@ -42,6 +43,12 @@ GEOMETRY_FILE = System.IO.Path.Combine(HERE, "SteelOfficeGeometry.py")
 
 LOAD_COMBINATION = "6F2B9C4E-3D81-4A7F-B5E2-9C04D7A1E863"   # Load Combination
 REPORT = "4D6285D0-F64A-4CF1-A9A6-B62EDC615D7D"             # Report
+REACTION_FORCES = "C86DB16F-84D1-4EF6-80CD-860B0F0B5A7D"    # Reaction Forces
+UTILISATION = "4F8A2D6B-91C3-4E57-B0A9-3C6E8D1F2A74"        # Utilisation
+MASS_ADDITION = "5B850221-B527-4BD6-8C62-E94168CD6EFA"      # Maths > Operators > Mass Addition
+VECTOR_LENGTH = "675E31BF-1775-48D7-BB8D-76B77786DD53"      # Vector > Vector > Vector Length
+BOUNDS = "F44B92B0-3B5B-493A-86F4-FD7408C3DAF3"             # Maths > Domain > Bounds
+DECONSTRUCT_DOMAIN = "825EA536-AEBB-41E9-AF32-8BAEB2ECB590" # Maths > Domain > Deconstruct Domain
 
 # Load Pattern's Name input; Load Combination's inputs; Model View's Combination; Report's Models and Run.
 P_NAME = 3
@@ -53,6 +60,9 @@ R_MODELS, R_RUN = 0, 4
 # and the combination to draw.
 NAMES, TYPES, FORMULAS, COMBINE = MODEL + 0.2, MODEL + 0.4, MODEL + 0.6, MODEL + 0.8
 PICK = ANALYSIS + 0.3
+# The numbers, right of the views: which combinations each reads, the result components, the steps that
+# bring each combination to one value, and the panels that show them.
+WHICH, READ, STEP1, STEP2, STEP3, STEP4, VALUES = [LEGENDS + k for k in (1.0, 1.3, 1.6, 1.9, 2.2, 2.5, 2.8)]
 
 YELLOW = Color.FromArgb(60, 230, 200, 40)
 
@@ -125,6 +135,11 @@ def lines_panel(grid, name, lines, width, col, row=None, gap=0):
     p.SetUserText("\n".join(lines))
     p.Attributes.Bounds = RectangleF(0.0, 0.0, float(width), float(max(24, 10 + 14 * len(lines))))
     return grid.put(p, col, row, gap)
+
+
+def named(params, name):
+    """An input or output by its name: the result components' Combination is their last input."""
+    return [p for p in params if p.Name == name][0]
 
 
 def retext(chapter, texts):
@@ -252,7 +267,42 @@ def office(doc):
     s.loads_view().Hidden = True
     results_part = [pick, order] + s.parts["6"]
 
-    right = s.grid.arrange(300, 300, stages=(GEOMETRY_, SECTIONS, WIDTHS, MODEL, NAMES, ANALYSIS, PICK))
+    # 9 - The numbers, a branch per combination with its place in front - {0} is ULS 1, {6} SLS 3. A result
+    # component reads every combination when its Combination input is empty, or the ones it names. The
+    # reactions added up, which carry each combination's loads; the largest displacement under the
+    # characteristic combinations; the largest utilisation under the ultimate ones.
+    reactions = component(s.grid, REACTION_FORCES, "Reaction Forces", "Every combination", READ, MAIN)
+    wire(inp(reactions, 0), out(run))
+    total = component(s.grid, MASS_ADDITION, "Mass Addition", "Added up", STEP1, MAIN)
+    wire(inp(total, 0), named(reactions.Params.Output, "ReactionForce"))
+    totals = panel(s.grid, "Reactions added up [kN]", out(total), 230, 230, VALUES, MAIN)
+
+    characteristic = lines_panel(s.grid, "SLS characteristic", ["SLS 1", "SLS 2"], 70, WHICH, LOADED)
+    displacements = component(s.grid, S.NODAL_DISPLACEMENTS, "Nodal Displacements", "SLS 1 and SLS 2", READ, LOADED)
+    wire(inp(displacements, 0), out(run))
+    wire(named(displacements.Params.Input, "Combination"), characteristic)
+    size = component(s.grid, VECTOR_LENGTH, "Vector Length", None, STEP1, LOADED)
+    wire(inp(size, 0), named(displacements.Params.Output, "Displacement"))
+    spread = component(s.grid, BOUNDS, "Bounds", None, STEP2, LOADED)
+    wire(inp(spread, 0), out(size))
+    largest = component(s.grid, DECONSTRUCT_DOMAIN, "Deconstruct Domain", "Largest", STEP3, LOADED)
+    wire(inp(largest, 0), out(spread))
+    in_mm = expression(s.grid, "f(x)=1000*x", [out(largest, 1)], "In mm", STEP4, LOADED)
+    moved = panel(s.grid, "Largest displacement [mm]", out(in_mm), 170, 90, VALUES, LOADED)
+
+    ultimate = lines_panel(s.grid, "ULS", ["ULS 1", "ULS 2", "ULS 3", "ULS 4"], 70, WHICH, SHOWN)
+    utilisation = component(s.grid, UTILISATION, "Utilisation", "ULS 1 to ULS 4", READ, SHOWN)
+    wire(inp(utilisation, 0), out(run))
+    wire(named(utilisation.Params.Input, "Combination"), ultimate)
+    used = component(s.grid, BOUNDS, "Bounds", None, STEP1, SHOWN)
+    wire(inp(used, 0), named(utilisation.Params.Output, "Max"))
+    most = component(s.grid, DECONSTRUCT_DOMAIN, "Deconstruct Domain", "Largest", STEP2, SHOWN)
+    wire(inp(most, 0), out(used))
+    worst = panel(s.grid, "Largest utilisation", out(most, 1), 170, 150, VALUES, SHOWN)
+    numbers_part = [reactions, total, totals, characteristic, displacements, size, spread, largest, in_mm, moved,
+                    ultimate, utilisation, used, most, worst]
+
+    right = s.grid.arrange(300, 300, stages=(GEOMETRY_, SECTIONS, WIDTHS, MODEL, NAMES, ANALYSIS, PICK, WHICH))
     bottom = max(o.Attributes.Bounds.Bottom for o, col, row, gap in s.grid.items)
     for key, name, objects, colour in [
             ("1", "Geometry: a grid of bays and storeys", s.parts["1"], S.RED),
@@ -262,11 +312,12 @@ def office(doc):
             ("5", "Model: every pattern on it", model_part, S.BLUE),
             ("6", "Load combinations to EN 1990: a line each", combine_part, YELLOW),
             ("7", "Analysis: every combination, one model out", [run], S.BLUE),
-            ("8", "Results: a combination deformed, picked by its place, and the loads", results_part, S.GREY)]:
+            ("8", "Results: a combination deformed, picked by its place, and the loads", results_part, S.GREY),
+            ("9", "Numbers: a branch per combination, its place first", numbers_part, S.GREY)]:
         S.group(doc, key + " - " + name, objects, colour)
     S.note(doc, s.title, ABOUT, 300, 60, 900, 200)
 
-    # 9 - The report, under the rest: the model Run Analysis hands on, and every combination in it. Its chapters are
+    # 10 - The report, under the rest: the model Run Analysis hands on, and every combination in it. Its chapters are
     # laid out left of it, as the Templates bar lays them, then the whole band is moved to the left edge.
     report = S.emit(REPORT, "Report")
     report.NickName = "Steel office report"
@@ -292,7 +343,7 @@ def office(doc):
     wire(inp(report, R_RUN), toggle)
     at = report.Attributes.Bounds
     S.move(toggle, at.Left, at.Top - 60)
-    S.group(doc, "9 - Report: set Write the report to True", [toggle, report], S.GREY)
+    S.group(doc, "10 - Report: set Write the report to True", [toggle, report], S.GREY)
     return report
 
 
@@ -318,7 +369,11 @@ ABOUT = (
     "SLS quasi-permanent. Run Analysis solves each, with only the patterns it names, each times its factor, and hands on "
     "one model that holds them all.\n\n"
     "Combination picks one to draw, deformed 60 times, with its own loads: its place, or type its name instead. The "
-    "view of every load has its preview off. The Report lists the patterns and the combinations, gives "
+    "view of every load has its preview off.\n\n"
+    "The result components read every combination, a branch each with its place in front - {0} is ULS 1, {6} SLS 3 - "
+    "or the ones their Combination input names: the reactions added up, which carry each combination's loads; the "
+    "largest displacement under SLS 1 and SLS 2; the largest utilisation under the four ULS ones.\n\n"
+    "The Report lists the patterns and the combinations, gives "
     "the results of each and checks the steel members to EN 1993-1-1 over the ULS ones: set Write the report to "
     "True. Its texts describe the building as it opens; change them with the sliders.\n\n"
     "Try: a fifth ULS combination, a line in each panel; Storeys up to 6, and see which member the steel check "
