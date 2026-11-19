@@ -79,6 +79,8 @@ namespace Alpaca4d.Gh
 
             if (_ckShowSupports?.Active ?? false)
                 Supports().Draw(args);
+
+            DrawBuckling(args, textSize);
         }
 
         /// <summary>What the overlays switched on span, at the scales in force.</summary>

@@ -121,17 +121,17 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthY", "LengthY",
-                $"Buckling length about local y, an I's minor axis [{Units.Length}]: one, or one per beam in model order. Empty: each beam's length.",
+                $"Buckling length about local y, an I's minor axis [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthZ", "LengthZ",
-                $"Buckling length about local z, an I's major axis [{Units.Length}]: one, or one per beam in model order. Empty: each beam's length.",
+                $"Buckling length about local z, an I's major axis [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthLT", "LengthLT",
-                $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]. Empty: each beam's length, unsafe for a cantilever.",
+                $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -396,8 +396,12 @@ namespace Alpaca4d.Gh
             if (!LicenseGate.Allows(this, "Section Optimiser"))
                 return;
 
-            // Node to node, the length OpenSees integrates over, as Utilisation takes it.
-            var members = beams.Select(b => new SteelMember(b.Curve != null ? b.Curve.PointAtStart.DistanceTo(b.Curve.PointAtEnd) : 0.0)).ToList();
+            // Node to node, the length OpenSees integrates over, and the buckling lengths worked out from the
+            // model where none are given, as Utilisation takes them. Once, from the model as it starts: the
+            // sections change, the geometry does not.
+            var worked = BucklingLengths.Of(model);
+            var members = worked.SteelMembers(model);
+            UtilisationBase.SayHowLengths(this, model, worked, lengthsY.Count == 0 || lengthsZ.Count == 0 || lengthsLT.Count == 0);
             for (int i = 0; i < beams.Count; i++)
             {
                 var member = members[i];

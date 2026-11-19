@@ -258,7 +258,22 @@ namespace Alpaca4d
         }
 
         /// <summary>L for <paramref name="a"/>, which only has its lower triangle read.</summary>
-        public static EnvelopeCholesky Factor(SparseMatrix a)
+        public static EnvelopeCholesky Factor(SparseMatrix a) => Factor(a, null, 0.0);
+
+        /// <summary>
+        /// L for a positive semi-definite <paramref name="a"/>. An equation whose pivot falls to
+        /// <paramref name="tolerance"/> of its diagonal or below - one the equations eliminated before it
+        /// leave no stiffness in - is taken out as if it were fixed, and listed in
+        /// <paramref name="zeroPivots"/>: Solve gives it back what the right-hand side holds there.
+        ///
+        /// Each one listed is a mechanism of <paramref name="a"/>: that equation moved by one, the others
+        /// eliminated before it following, the rest still. For a positive semi-definite matrix a shape
+        /// with no energy is in its null space, so a solve per equation listed gives a basis of it.
+        /// </summary>
+        internal static EnvelopeCholesky FactorSemiDefinite(SparseMatrix a, double tolerance, List<int> zeroPivots)
+            => Factor(a, zeroPivots ?? throw new ArgumentNullException(nameof(zeroPivots)), tolerance);
+
+        private static EnvelopeCholesky Factor(SparseMatrix a, List<int> zeroPivots, double tolerance)
         {
             int n = a.Size;
             int[] order = ReverseCuthillMcKee(a);
@@ -301,12 +316,19 @@ namespace Alpaca4d
             }
 
             // Row by row: L(i, j) for j < i from the rows above, then the diagonal.
+            var removed = zeroPivots != null ? new bool[n] : null;
             for (int i = 0; i < n; i++)
             {
                 int fi = first[i];
                 long si = diagonal[i] - i;
                 for (int j = fi; j < i; j++)
                 {
+                    if (removed != null && removed[j])
+                    {
+                        values[si + j] = 0.0;
+                        continue;
+                    }
+
                     int k0 = Math.Max(fi, first[j]);
                     long sj = diagonal[j] - j;
                     double sum = values[si + j];
@@ -318,6 +340,15 @@ namespace Alpaca4d
                 double d = values[diagonal[i]], original = d;
                 for (int k = fi; k < i; k++)
                     d -= values[si + k] * values[si + k];
+                if (removed != null && (!(d > tolerance * Math.Abs(original)) || !(d > 0.0)))
+                {
+                    removed[i] = true;
+                    zeroPivots.Add(order[i]);
+                    for (int k = fi; k < i; k++)
+                        values[si + k] = 0.0;
+                    values[diagonal[i]] = 1.0;
+                    continue;
+                }
                 if (!(d > 1e-12 * Math.Abs(original)) || !(d > 0.0))
                     throw new NotPositiveDefiniteException(order[i]);
                 values[diagonal[i]] = Math.Sqrt(d);

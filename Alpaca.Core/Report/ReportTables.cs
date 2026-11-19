@@ -759,7 +759,8 @@ namespace Alpaca4d.Report
             var notChecked = new Dictionary<int, string>();
             foreach (var model in over)
             {
-                var members = model.Beams.Select(b => new Alpaca4d.Design.SteelMember(b.Curve != null ? b.Curve.PointAtStart.DistanceTo(b.Curve.PointAtEnd) : 0.0)).ToList();
+                // Buckling lengths worked out from the model, as Utilisation takes them when none are given.
+                var members = Alpaca4d.Design.BucklingLengths.Of(model).SteelMembers(model);
                 var checks = Alpaca4d.Design.Utilisations.Of(model, LastStep(model), members, settings);
                 for (int i = 0; i < checks.Count; i++)
                 {

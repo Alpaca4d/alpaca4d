@@ -485,6 +485,9 @@ namespace Alpaca4d.Gh
             supportsMenu.AddControl(supportsPanel);
             attr.AddMenu(supportsMenu);
 
+            // ── Buckling ─────────────────────────────────────────────────────
+            BucklingMenu(attr);
+
             attr.MinWidth = 230f;
 
             // An upgraded Model View or View Results puts its settings on the controls just made.
@@ -575,7 +578,7 @@ namespace Alpaca4d.Gh
             foreach (var widget in new GH_Attr_Widget[]
                      {
                          _ckDeformed, _slDeformScale, _slDiagramScale, _ddLayer, _ddAxes, _ddReactionShape, _ddReaction, _slArrowScale, _ckBands,
-                         _ckExtruded, _ddColourBy, _ckHinges
+                         _ckExtruded, _ddColourBy, _ckHinges, _ckBuckling, _ddBuckling
                      })
                 Rebuild(widget);
 
@@ -686,7 +689,8 @@ namespace Alpaca4d.Gh
             bool any = !ModelOnly;
             Show(_results.Any(x => x.Tick.Active && x.Family != ResultFamily.BeamForce), _ckBands);
             Show(any, _ckValues, _ckExtremes);
-            Show(!any, _txColourBy, _ddColourBy);
+            Show(!any && !BucklingShown, _txColourBy, _ddColourBy);
+            Show(BucklingShown, _txBuckling, _ddBuckling);
 
             // A scale and an animation over a shape that is not being deformed do nothing.
             bool deformed = _ckDeformed?.Active ?? false;
@@ -712,7 +716,7 @@ namespace Alpaca4d.Gh
         private bool Labelled =>
             (!ModelOnly && ((_ckValues?.Active ?? false) || (_ckExtremes?.Active ?? false)))
             || (_ckNodeIds?.Active ?? false) || (_ckElementIds?.Active ?? false)
-            || (_ckSectionNames?.Active ?? false) || (_ckShowLoadValues?.Active ?? false);
+            || (_ckSectionNames?.Active ?? false) || (_ckShowLoadValues?.Active ?? false) || BucklingShown;
 
         /// <summary>
         /// An invisible dropdown keeps whatever bounds it last had, and an expanded one would go on
@@ -990,6 +994,7 @@ namespace Alpaca4d.Gh
             _shadedJoined = _faceEdgesJoined = _ghostJoined = _diagramsJoined = _beamSolidsJoined = _beamEdgesJoined = _dotsJoined = null;
             _box = BoundingBox.Empty;
             ClearOverlays();
+            ClearBuckling();
         }
 
         /// <summary>
@@ -1081,6 +1086,8 @@ namespace Alpaca4d.Gh
             }
 
             _fieldsUsed.Clear();
+            // The buckling lengths colour the model when no result does; their marks go over either.
+            SolveBuckling(DA, ticked.Count == 0);
             bool ok = ticked.Count == 0 ? SolveModel(DA, step) : SolveResults(DA, step, ticked);
             SolveHinges(step);
 
@@ -1117,7 +1124,8 @@ namespace Alpaca4d.Gh
             _drawnDisplacement = displacement;
             BuildModel(_filter, displacement);
 
-            DA.SetData(2, $"Model - coloured by {ColourBy}");
+            if (_bucklingColours == null)
+                DA.SetData(2, $"Model - coloured by {ColourBy}");
             return true;
         }
 
