@@ -14,6 +14,13 @@ try
 {
     // Loads Grasshopper, in case nobody has opened it in this Rhino yet.
     Rhino.RhinoApp.GetPlugInObject("Grasshopper");
+    // Grasshopper loads its libraries when its component server is first used. Use it now, before this
+    // build goes in: otherwise an installed Alpaca4d binds to this build's Core, with this build's
+    // Newtonsoft.Json, and its Section Library fails ("Grasshopper Loading Errors", Method not found ...
+    // FindEntry). By reflection, as this script is not compiled against Grasshopper.
+    var grasshopper = AppDomain.CurrentDomain.GetAssemblies().First(a => a.GetName().Name == "Grasshopper");
+    var server = grasshopper.GetType("Grasshopper.Instances").GetProperty("ComponentServer").GetValue(null);
+    server.GetType().GetProperty("ObjectProxies").GetValue(server);
 
     // This build of the plugin and everything of ours it needs go into one load context, beside the
     // installed Alpaca4d Grasshopper may already have loaded. Grasshopper, RhinoCommon, Eto and the

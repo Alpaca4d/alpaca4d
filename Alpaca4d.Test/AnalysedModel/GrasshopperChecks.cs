@@ -12,6 +12,7 @@ using System.Linq;
 using System.Text;
 
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
@@ -48,6 +49,8 @@ public static class GrasshopperCheck
             OneAfterTheOther();
             NothingToGoBackTo();
             Combinations();
+            Superposition();
+            SavedDescriptions();
         }
         catch (Exception e)
         {
@@ -278,6 +281,369 @@ public static class GrasshopperCheck
         report.AppendLine($"  Pushover, none named: {string.Join(" | ", pushed)}");
         Check(pushed.Count == 1 && pushed[0].Contains("name the one to push the model under") && pushed[0].Contains("ULS 1, ULS 2"),
               "Pushover with combinations and none named stops too, with the same list");
+    }
+
+    /// <summary>
+    /// Each load combination is solved in an OpenSees run of its own, so on a linear model their
+    /// results have to add up: DL + LL gives what DL and LL give, added; 1.35 DL + 1.5 LL and
+    /// DL + -1 LL the same with their factors; and DL + LL what the model without combinations
+    /// gives, both patterns on. A table: four columns 3 m tall and two beams 4 m long, IPE200, fixed
+    /// at the feet, under a slab of eight ASD shells, 200 mm. DL is self-weight, 1 kN/m on every beam
+    /// and 2 kN/m² on every shell; LL a point load with a moment, a push sideways and 3 kN/m² on
+    /// every shell. Compared: every node's displacement, rotation and reaction, the beams' forces at
+    /// every station and the shells' forces; and each combination's reactions against its loads.
+    /// </summary>
+    static void Superposition()
+    {
+        Section("A table of beams under a slab of shells, DL and LL: the combinations' results add up");
+        var doc = new Doc("superposition");
+
+        var lines = new List<GH_Curve>();
+        foreach (var (x, y) in new[] { (0.0, 0.0), (4.0, 0.0), (0.0, 2.0), (4.0, 2.0) })
+            for (int i = 0; i < 3; i++)
+                lines.Add(new GH_Curve(new LineCurve(new Point3d(x, y, i), new Point3d(x, y, i + 1))));
+        foreach (var y in new[] { 0.0, 2.0 })
+            for (int i = 0; i < 4; i++)
+                lines.Add(new GH_Curve(new LineCurve(new Point3d(i, y, 3), new Point3d(i + 1, y, 3))));
+        var beams = doc.Add<Alpaca4d.Gh.BeamBase>("ForceBeamColumn (Alpaca4d)");
+        Set(beams, "Line", lines.ToArray());
+        Wire(Ipe200(doc), "Section", beams, "Section");
+
+        var mesh = new Mesh();
+        for (int j = 0; j <= 2; j++)
+            for (int i = 0; i <= 4; i++)
+                mesh.Vertices.Add(new Point3d(i, j, 3));
+        for (int j = 0; j < 2; j++)
+            for (int i = 0; i < 4; i++)
+                mesh.Faces.AddFace(j * 5 + i, j * 5 + i + 1, j * 5 + i + 6, j * 5 + i + 5);
+        var concrete = doc.Add<SimplexGh.nD>("ElasticIsotropic (Alpaca4d)");
+        Set(concrete, "E", new GH_Number(30e6));
+        Set(concrete, "G", new GH_Number(12.5e6));
+        Set(concrete, "ν", new GH_Number(0.2));
+        Set(concrete, "Rho", new GH_Number(2500));
+        var plate = doc.Add<Alpaca4d.Gh.PlateFiberSection>();
+        Set(plate, "Thickness", new GH_Number(0.2));
+        Wire(concrete, "Material", plate, "Material");
+        var slab = doc.Add<Alpaca4d.Gh.ASDShell>();
+        Set(slab, "Mesh", new GH_Mesh(mesh));
+        Wire(plate, "Section", slab, "Section");
+
+        var feet = doc.Add<Alpaca4d.Gh.Support>();
+        Set(feet, "Position", new[] { (0.0, 0.0), (4.0, 0.0), (0.0, 2.0), (4.0, 2.0) }
+            .Select(p => new GH_Plane(new Plane(new Point3d(p.Item1, p.Item2, 0), Vector3d.XAxis, Vector3d.YAxis))).ToArray());
+
+        GH_Component Pattern(string name, params GH_Component[] loads)
+        {
+            var pattern = doc.Add<Alpaca4d.Gh.PatternBase>("PlainPattern (Alpaca4d)");
+            Wire(doc.Add<Alpaca4d.Gh.LinearTimeSeries>(), "TimeSeries", pattern, "TimeSeries");
+            foreach (var load in loads)
+                In(pattern, "Loads").AddSource(load.Params.Output[0]);
+            Set(pattern, "Name", new GH_String(name));
+            return pattern;
+        }
+        var self = doc.Add<Alpaca4d.Gh.GravityLoad>();
+        var onBeams = doc.Add<Alpaca4d.Gh.LinearLoad>();
+        Set(onBeams, "Force", new GH_Vector(new Vector3d(0, 0, -1)));
+        var finishes = doc.Add<Alpaca4d.Gh.MeshLoad>();
+        Set(finishes, "Force", new GH_Vector(new Vector3d(0, 0, -2)));
+        var dl = Pattern("DL", self, onBeams, finishes);
+
+        var point = doc.Add<Alpaca4d.Gh.PointLoad>();
+        Set(point, "Point", new GH_Point(new Point3d(2, 0, 3)));
+        Set(point, "Force", new GH_Vector(new Vector3d(5, 3, -20)));
+        Set(point, "Moment", new GH_Vector(new Vector3d(0, 0, 2)));
+        var push = doc.Add<Alpaca4d.Gh.PointLoad>();
+        Set(push, "Point", new GH_Point(new Point3d(4, 2, 3)));
+        Set(push, "Force", new GH_Vector(new Vector3d(10, 0, 0)));
+        var people = doc.Add<Alpaca4d.Gh.MeshLoad>();
+        Set(people, "Force", new GH_Vector(new Vector3d(0, 0, -3)));
+        var ll = Pattern("LL", point, push, people);
+
+        GH_Component Assembled()
+        {
+            var assemble = doc.Add<Alpaca4d.Gh.AssembleModel>();
+            In(assemble, "Elements").AddSource(beams.Params.Output[0]);
+            In(assemble, "Elements").AddSource(slab.Params.Output[0]);
+            In(assemble, "Supports").AddSource(feet.Params.Output[0]);
+            In(assemble, "LoadPatterns").AddSource(dl.Params.Output[0]);
+            In(assemble, "LoadPatterns").AddSource(ll.Params.Output[0]);
+            return assemble;
+        }
+        var plain = RunAnalysis(doc, Assembled());
+        var combined = doc.Add<Alpaca4d.Gh.LoadCombinationComponent>();
+        Wire(Assembled(), "AlpacaModel", combined, "AlpacaModel");
+        string[] names = { "DL", "LL", "DL + LL", "ULS", "Opposite" };
+        Set(combined, "Name", names.Select(n => new GH_String(n)).ToArray());
+        Set(combined, "Combination", new[] { "DL", "LL", "DL + LL", "1.35 DL + 1.5*LL", "DL + -1 LL" }.Select(n => new GH_String(n)).ToArray());
+        var run = RunAnalysis(doc, combined);
+
+        // The result components, each with Combination left empty - every combination - and the
+        // others as each check below sets them.
+        T Reader<T>(GH_Component from, string unit = null) where T : GH_Component, new()
+        {
+            var reader = doc.Add<T>(unit);
+            Wire(from, "AlpacaModel", reader, "AlpacaModel");
+            return reader;
+        }
+        var displacement = Reader<Alpaca4d.Gh.NodalDisplacement>(run);
+        var picked = Reader<Alpaca4d.Gh.NodalDisplacement>(run);
+        Set(picked, "Combination", new GH_String("ll"), new GH_String("4"));
+        var unknown = Reader<Alpaca4d.Gh.NodalDisplacement>(run);
+        Set(unknown, "Combination", new GH_String("SLS 9"));
+        var plainDisplacement = Reader<Alpaca4d.Gh.NodalDisplacement>(plain);
+        var plainNamed = Reader<Alpaca4d.Gh.NodalDisplacement>(plain);
+        Set(plainNamed, "Combination", new GH_String("DL"));
+        var beamForces = Reader<Alpaca4d.Gh.BeamForce>(run);
+        var beamHistory = Reader<Alpaca4d.Gh.BeamForce>(run);
+        Set(beamHistory, "History", new GH_Boolean(true));
+        var reactions = Reader<Alpaca4d.Gh.ReactionForce>(run);
+        var shellForces = Reader<Alpaca4d.Gh.ShellForces>(run);
+        var nodeForces = Reader<Alpaca4d.Gh.NodeForce>(run);
+        var shellStresses = Reader<Alpaca4d.Gh.ShellStresses>(run);
+        var beamStresses = Reader<Alpaca4d.Gh.BeamStresses>(run);
+        var utilisation = Reader<Alpaca4d.Gh.Utilisation>(run, "Utilisation");
+        doc.Solve();
+        var otherErrors = doc.Document.Objects.OfType<GH_Component>().Where(c => c != unknown && c != plainNamed)
+            .SelectMany(c => Said(c, GH_RuntimeMessageLevel.Error).Select(m => $"{c.Name}: {m}")).ToList();
+        Check(otherErrors.Count == 0, otherErrors.Count == 0 ? "the table, with and without combinations: no component has an error" : string.Join(" | ", otherErrors));
+
+        var handed = (Alpaca4d.Model)Items(run, "AlpacaModel").Single();
+        var results = new Dictionary<string, Dictionary<string, List<double>>>();
+        foreach (var name in names)
+        {
+            var one = handed.OfCombination(name, out string problem);
+            Check(one != null && one.Combination?.Name == name, $"{name}: picked by name{(problem == null ? "" : ", " + problem)}");
+            if (one == null) return;
+            results[name] = Everything(one);
+        }
+        results["no combinations"] = Everything((Alpaca4d.Model)Items(plain, "AlpacaModel").Single());
+        report.AppendLine($"  compared: {string.Join(", ", results["DL"].Select(r => $"{r.Key} ({r.Value.Count})"))}");
+
+        void Adds(string what, string name, double a, string x, double b, string y)
+        {
+            var worst = results[name].Keys
+                .Select(key => (key, misfit: Misfit(results[name][key], a, results[x][key], b, results[y][key])))
+                .OrderByDescending(m => m.misfit).First();
+            report.AppendLine($"  {what}: worst misfit {worst.misfit:E2} of the largest value, in {worst.key}");
+            Check(worst.misfit < 1e-6, $"{name} = {what}, every result");
+        }
+        Adds("DL + LL", "DL + LL", 1, "DL", 1, "LL");
+        Adds("1.35 DL + 1.5 LL", "ULS", 1.35, "DL", 1.5, "LL");
+        Adds("DL - LL", "Opposite", 1, "DL", -1, "LL");
+        Adds("DL + LL", "no combinations", 1, "DL + LL", 0, "LL");
+        var apart = Misfit(results["DL"]["displacement"], 1, results["DL + LL"]["displacement"], 0, results["LL"]["displacement"]);
+        Check(apart > 1e-2, $"and DL is not DL + LL: each combination reads a file of its own ({apart:E2} apart)");
+
+        // Each combination's reactions against its loads: what the deck has on it, none dropped, none twice.
+        var model = (Alpaca4d.Model)Items(plain, "AlpacaModel").Single();
+        var ipe = model.Beams.First().Section;
+        double weight = 20 * ipe.Area * ipe.Material.Rho.Value * 9.81 / 1000 + 8 * 0.2 * 2500 * 9.81 / 1000;
+        var dead = new Vector3d(0, 0, -(weight + 20 * 1 + 8 * 2));
+        var live = new Vector3d(5 + 10, 3, -20 - 8 * 3);
+        foreach (var (name, a, b) in new[] { ("DL", 1.0, 0.0), ("LL", 0.0, 1.0), ("DL + LL", 1.0, 1.0), ("ULS", 1.35, 1.5), ("Opposite", 1.0, -1.0) })
+        {
+            var r = results[name]["reaction force"];
+            var sum = new Vector3d(Enumerable.Range(0, r.Count / 3).Sum(i => r[3 * i]), Enumerable.Range(0, r.Count / 3).Sum(i => r[3 * i + 1]), Enumerable.Range(0, r.Count / 3).Sum(i => r[3 * i + 2]));
+            var loads = a * dead + b * live;
+            report.AppendLine($"  {name}: reactions {sum.X:F4}, {sum.Y:F4}, {sum.Z:F4} kN against loads {loads.X:F4}, {loads.Y:F4}, {loads.Z:F4}");
+            Check((sum + loads).Length < 1e-6 * loads.Length, $"{name}: the reactions balance its loads");
+        }
+
+        ResultComponents(results, names, model, displacement, picked, unknown, plainDisplacement, plainNamed, beamForces, beamHistory,
+                         reactions, shellForces, nodeForces, shellStresses, beamStresses, utilisation);
+        doc.Document.Enabled = false;
+    }
+
+    /// <summary>
+    /// Grasshopper saves each parameter's description in the file and reads it back, so a file from
+    /// an older Alpaca4d shows its old tooltips. Opened, or pasted in, a component's parameters take
+    /// the descriptions of this version - a switcher's those of the type it is set to - and another
+    /// plugin's components are left alone.
+    /// </summary>
+    static void SavedDescriptions()
+    {
+        Section("Descriptions saved in a file by an older Alpaca4d: this version's on opening and pasting");
+        const string Old = "an older version's description, as a file holds it";
+        IGH_Param Named(GH_Component c, string name) => c.Params.Input.First(p => p.Name == name);
+        T Placed<T>(string unit = null) where T : GH_Component, new()
+        {
+            var c = new T();
+            c.CreateAttributes();
+            if (unit != null)
+                c.GetType().GetMethod("SwitchUnit", new[] { typeof(string), typeof(bool), typeof(bool) }).Invoke(c, new object[] { unit, false, false });
+            return c;
+        }
+
+        string expectedName = Named(Placed<Alpaca4d.Gh.LoadCombinationComponent>(), "Name").Description;
+        string expectedWorksIn = Named(Placed<Alpaca4d.Gh.BeamBase>("Truss (Alpaca4d)"), "WorksIn").Description;
+        var combination = Placed<Alpaca4d.Gh.LoadCombinationComponent>();
+        Named(combination, "Name").Description = Old;
+        var truss = Placed<Alpaca4d.Gh.BeamBase>("Truss (Alpaca4d)");
+        Named(truss, "WorksIn").Description = Old;
+        var document = new GH_Document();
+        document.AddObject(combination, false);
+        document.AddObject(truss, false);
+
+        var refresh = typeof(Alpaca4d.Gh.RunAnalysis).Assembly.GetType("Alpaca4d.Gh.ParameterDescriptions");
+        refresh.GetMethod("Watch", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic).Invoke(null, null);
+        Grasshopper.Instances.DocumentServer.AddDocument(document);
+        try
+        {
+            Check(Named(combination, "Name").Description == expectedName, "opened: Load Combination's Name shows this version's description");
+            Check(Named(truss, "WorksIn").Description == expectedWorksIn && expectedWorksIn != Old, "and a Truss beam's WorksIn that of the Truss type");
+            var pasted = Placed<Alpaca4d.Gh.LoadCombinationComponent>();
+            Named(pasted, "Name").Description = Old;
+            document.AddObject(pasted, false);
+            Check(Named(pasted, "Name").Description == expectedName, "pasted into an open document: the same");
+        }
+        finally
+        {
+            Grasshopper.Instances.DocumentServer.RemoveDocument(document);
+        }
+    }
+
+    /// <summary>An output's branches: each path, and its items as plain values.</summary>
+    static List<(GH_Path Path, List<object> Items)> Branches(GH_Component c, string output)
+    {
+        var data = Out(c, output).VolatileData;
+        return Enumerable.Range(0, data.PathCount)
+            .Select(i => (data.Paths[i], data.get_Branch(i).Cast<IGH_Goo>().Select(goo => goo?.ScriptVariable()).ToList()))
+            .ToList();
+    }
+
+    /// <summary>The numbers of the branches whose path starts with <paramref name="place"/>, in path order: vectors as x, y, z.</summary>
+    static List<double> Of(List<(GH_Path Path, List<object> Items)> branches, int place) =>
+        branches.Where(b => b.Path.Indices[0] == place)
+                .SelectMany(b => b.Items)
+                .SelectMany(item => item is Vector3d v ? new[] { v.X, v.Y, v.Z } : new[] { Convert.ToDouble(item) })
+                .ToList();
+
+    static string Paths(List<(GH_Path Path, List<object> Items)> branches, int show = 6) =>
+        string.Join(" ", branches.Take(show).Select(b => b.Path.ToString())) + (branches.Count > show ? $" ... ({branches.Count})" : "");
+
+    /// <summary>
+    /// The result components on a model holding load combinations: a branch per combination, its
+    /// place in the model first, holding what Core reads for it; the outputs that do not change
+    /// with the combination one flat list; a combination picked by name or place; and a model
+    /// without combinations read as before.
+    /// </summary>
+    static void ResultComponents(Dictionary<string, Dictionary<string, List<double>>> results, string[] names, Alpaca4d.Model model,
+        GH_Component displacement, GH_Component picked, GH_Component unknown, GH_Component plainDisplacement, GH_Component plainNamed,
+        GH_Component beamForces, GH_Component beamHistory, GH_Component reactions, GH_Component shellForces, GH_Component nodeForces,
+        GH_Component shellStresses, GH_Component beamStresses, GH_Component utilisation)
+    {
+        Section("The result components on the table's combinations: a branch per combination, its place first");
+        bool Matches(List<double> shown, List<double> read) => Misfit(shown, 1, read, 0, read) < 1e-9;
+        var places = Enumerable.Range(0, names.Length).ToList();
+
+        var disp = Branches(displacement, "Displacement");
+        report.AppendLine($"  Nodal Displacement, Combination empty: Displacement {Paths(disp)}");
+        Check(disp.Select(b => b.Path.ToString()).SequenceEqual(places.Select(k => $"{{{k}}}")),
+              "Nodal Displacement: a branch {combination} for each of the five");
+        Check(places.All(k => Matches(Of(disp, k), results[names[k]]["displacement"])), "each holding that combination's displacements");
+        var position = Branches(displacement, "Position");
+        Check(position.Count == 1 && position[0].Items.Count == results["DL"]["displacement"].Count / 3,
+              $"Position stays one flat list ({position.Count} branch, {position.FirstOrDefault().Items?.Count} points)");
+        var remark = Said(displacement, GH_RuntimeMessageLevel.Remark);
+        report.AppendLine($"  its remark: {string.Join(" | ", remark)}");
+        Check(remark.Any(r => r.Contains("{0} DL, {1} LL, {2} DL + LL, {3} ULS, {4} Opposite")), "and a remark names each branch");
+
+        var two = Branches(picked, "Displacement");
+        Check(two.Select(b => b.Path.ToString()).SequenceEqual(new[] { "{1}", "{4}" }) && Matches(Of(two, 1), results["LL"]["displacement"])
+              && Matches(Of(two, 4), results["Opposite"]["displacement"]),
+              $"\"ll\" and \"4\" pick LL and Opposite, on their own places: {Paths(two)}");
+        var wrong = Said(unknown, GH_RuntimeMessageLevel.Error);
+        Check(wrong.Count == 1 && wrong[0].Contains("SLS 9") && wrong[0].Contains("DL, LL, DL + LL, ULS, Opposite"),
+              "a name the model has not is an error listing the names: " + string.Join(" | ", wrong));
+
+        var plainBranches = Branches(plainDisplacement, "Displacement");
+        report.AppendLine($"  without combinations: Displacement {Paths(plainBranches)}, remarks: {string.Join(" | ", Said(plainDisplacement, GH_RuntimeMessageLevel.Remark))}, " +
+                          $"misfit {Misfit(Of(plainBranches, 0), 1, results["no combinations"]["displacement"], 0, results["no combinations"]["displacement"]):E2}");
+        // Its one list at the path Grasshopper gives it, from the input's: straight through, as ever.
+        Check(plainBranches.Count == 1 && Matches(Of(plainBranches, plainBranches[0].Path.Indices[0]), results["no combinations"]["displacement"])
+              && Said(plainDisplacement, GH_RuntimeMessageLevel.Remark).All(r => !r.Contains("load combination")),
+              "a model without combinations reads as before: one list, no remark");
+        var notThere = Said(plainNamed, GH_RuntimeMessageLevel.Error);
+        Check(notThere.Count == 1 && notThere[0].Contains("no load combinations"), "and a combination named on it is an error: " + string.Join(" | ", notThere));
+
+        var beamN = Branches(beamForces, "N");
+        int beams = model.Beams.Count;
+        report.AppendLine($"  Beam Forces N: {Paths(beamN)}");
+        Check(beamN.Count == 5 * beams && beamN.All(b => b.Path.Length == 2) && places.All(k => Matches(Of(beamN, k), results[names[k]]["beam N"])),
+              $"Beam Forces: {{combination; tag}}, {beams} beams a combination, each its own forces");
+        Check(Branches(beamForces, "Element").Count == 1, "its Element stays one flat list");
+        var history = Branches(beamHistory, "Mz");
+        Check(history.Count == 5 * beams && history.All(b => b.Path.Length == 3 && b.Path.Indices[1] == 0)
+              && places.All(k => Matches(Of(history, k), results[names[k]]["beam Mz"])),
+              $"with History on, {{combination; step; tag}}: {Paths(history, 3)}");
+
+        var force = Branches(reactions, "ReactionForce");
+        Check(force.Select(b => b.Path.ToString()).SequenceEqual(places.Select(k => $"{{{k}}}")) && force.All(b => b.Items.Count == 4)
+              && Branches(reactions, "SupportPosition").Count == 1 && Branches(reactions, "NodeTag").Count == 1,
+              "Reaction Force: {combination} with the four supports' reactions; SupportPosition and NodeTag flat");
+        var dlZ = force[0].Items.Cast<Vector3d>().Sum(v => v.Z);
+        var ulsZ = force[3].Items.Cast<Vector3d>().Sum(v => v.Z);
+        Check(Math.Abs(dlZ - results["DL"]["reaction force"].Where((_, i) => i % 3 == 2).Sum()) < 1e-9
+              && Math.Abs(ulsZ - results["ULS"]["reaction force"].Where((_, i) => i % 3 == 2).Sum()) < 1e-9,
+              $"  and their sums are DL's {dlZ:F4} kN and ULS's {ulsZ:F4} kN");
+
+        var fxx = Branches(shellForces, "pxx");
+        Check(fxx.Count == 5 * model.Shells.Count && places.All(k => Matches(Of(fxx, k), results[names[k]]["shell Fxx"]))
+              && Branches(shellForces, "Element").Count == 1,
+              $"Shell Forces: {{combination; tag}}, each its own forces ({Paths(fxx, 2)}); Element flat");
+
+        var nodeN = Branches(nodeForces, "N");
+        var nodePosition = Branches(nodeForces, "Position");
+        Check(nodeN.Count > 0 && nodeN.Count % 5 == 0 && nodeN.All(b => b.Path.Length == 2)
+              && nodePosition.Select(b => b.Path.ToString()).SequenceEqual(nodeN.Select(b => b.Path.ToString())),
+              $"Node Forces: {{combination; node}} on every output, Position too, so they still pair branch for branch ({Paths(nodeN, 2)})");
+
+        var sigma = Branches(shellStresses, "VonMises");
+        Check(sigma.Count == 5 * model.Shells.Count * 3 && sigma.All(b => b.Path.Length == 3) && Branches(shellStresses, "Layer").Count == 1,
+              $"Shell Stresses: {{combination; element; layer}} ({Paths(sigma, 2)}); Layer flat");
+        var sigmaN = Branches(beamStresses, "SigmaN");
+        Check(sigmaN.Count == 5 * beams && sigmaN.All(b => b.Path.Length == 2), $"Beam Stresses: {{combination; tag}} ({Paths(sigmaN, 2)})");
+
+        var max = Branches(utilisation, "Max");
+        report.AppendLine($"  Utilisation Max: {string.Join("  ", max.Select(b => $"{b.Path} {b.Items.Where(x => x != null).Select(Convert.ToDouble).DefaultIfEmpty(0).Max():F3}"))}");
+        Check(max.Select(b => b.Path.ToString()).SequenceEqual(places.Select(k => $"{{{k}}}")) && max.All(b => b.Items.Count == beams)
+              && Branches(utilisation, "Element").Count == 1 && Branches(utilisation, "Type").Count == 1,
+              "Utilisation: {combination} with a value per beam; Element and Type flat");
+    }
+
+    /// <summary>Every result of a static run, flattened, by name: nodal vectors as x, y, z; beam and shell forces station by station.</summary>
+    static Dictionary<string, List<double>> Everything(Alpaca4d.Model m)
+    {
+        var all = new Dictionary<string, List<double>>();
+        foreach (var (type, name) in new[]
+        {
+            (Alpaca4d.Result.ResultType.DISPLACEMENT, "displacement"), (Alpaca4d.Result.ResultType.ROTATION, "rotation"),
+            (Alpaca4d.Result.ResultType.REACTION_FORCE, "reaction force"), (Alpaca4d.Result.ResultType.REACTION_MOMENT, "reaction moment"),
+        })
+            if (Alpaca4d.Result.Read.Holds(m, type))
+                all[name] = Alpaca4d.Result.Read.NodalOutput(m, 0, type).SelectMany(v => new[] { v.X, v.Y, v.Z }).ToList();
+
+        var (n, mz, vy, my, vz, t) = Alpaca4d.Result.Read.ForceBeamColumn(m, 0);
+        foreach (var (name, values) in new[] { ("beam N", n), ("beam Mz", mz), ("beam Vy", vy), ("beam My", my), ("beam Vz", vz), ("beam T", t) })
+            all[name] = values.SelectMany(v => v).ToList();
+
+        var s = Alpaca4d.Result.Read.ASDQ4Forces(m, 0);
+        foreach (var (name, values) in new[] { ("shell Fxx", s.Item1), ("shell Fyy", s.Item2), ("shell Fxy", s.Item3), ("shell Mxx", s.Item4),
+                                               ("shell Myy", s.Item5), ("shell Mxy", s.Item6), ("shell Vxz", s.Item7), ("shell Vyz", s.Item8) })
+            all[name] = values.SelectMany(v => v).ToList();
+        return all;
+    }
+
+    /// <summary>
+    /// How far <paramref name="c"/> is from a·x + b·y, at its worst, over the largest value of the
+    /// three: 0 for results that add up exactly. Infinite when they do not have the same length.
+    /// </summary>
+    static double Misfit(IReadOnlyList<double> c, double a, IReadOnlyList<double> x, double b, IReadOnlyList<double> y)
+    {
+        if (c.Count == 0 || c.Count != x.Count || c.Count != y.Count) return double.PositiveInfinity;
+        double scale = c.Concat(x).Concat(y).Max(v => Math.Abs(v));
+        if (scale == 0) return 0;
+        return Enumerable.Range(0, c.Count).Max(i => Math.Abs(c[i] - a * x[i] - b * y[i])) / scale;
     }
 
     // ---------------------------------------------------------------- the checks
