@@ -1,19 +1,26 @@
 #! python3
-# Topology Optimisation's two benchmarks, to run in Grasshopper and compare with top3d.
+# Topology Optimisation's two benchmarks, to run in Grasshopper and compare with top3d, each found by the three
+# methods of Topology Optimisation side by side: SIMP, BESO and Multi-Material.
 #
 # make.sh, in the folder above, writes TopologyBenchmarks.gh straight from this script, without Rhino. It also
 # runs in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor (open this
 # file and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
 # Both are top3d's problems (Liu and Tovar 2014), in its units - a unit modulus, Poisson 0.3, unit
-# cubes, loads of 1 - with its settings: 30% of the volume, penalty 3, a filter of 1.5, 200 iterations
-# at most. Each has its own Run toggle, and panels with what Alpaca4d.Test/TopologyOptimisation and
-# top3d itself give, to compare with:
+# cubes, loads of 1. SIMP runs with top3d's settings - 30% of the volume, penalty 3, a filter of 1.5, 200
+# iterations at most - beside panels with what Alpaca4d.Test/TopologyOptimisation and top3d itself give, to
+# compare with. BESO carves the block down to the same 30%; Multi-Material shares it between the unit material
+# (18%) and one half as stiff (12%); both with top3d's filter radius too. Each problem has one Run toggle, for its
+# three methods:
 #
-#   Cantilever        60 x 4 x 20 bricks, held at x = 0, -1 at each node of the bottom edge of the
+#   Cantilever        60 x 4 x 20 bricks, held at its left end, -1 at each node of the bottom edge of the
 #                     free end: top3d(60,20,4,0.3,3,1.5), its own example.
-#   Simply supported  120 x 4 x 20 bricks, pinned along the bottom edge at x = 0, on rollers along the
-#                     one at x = 120, -1 at each node of the top edge at mid-span.
+#   Simply supported  120 x 4 x 20 bricks, pinned along the bottom edge of its left end, on rollers along the
+#                     one of its right end, -1 at each node of the top edge at mid-span. Built 80 to the right of
+#                     the cantilever, so that their designs do not overlap.
+#
+# Each problem's three designs draw one above the other: SIMP at the top, BESO, and Multi-Material where the
+# model is, in its materials' colours.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -22,7 +29,7 @@ import Rhino
 import Grasshopper
 from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParamWireDisplay
 from Grasshopper.Kernel.Special import GH_NumberSlider, GH_Group, GH_Panel, GH_BooleanToggle
-from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Point, GH_Boolean
+from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Point, GH_Boolean, GH_String
 from Grasshopper.GUI.Base import GH_SliderAccuracy
 from Rhino.Geometry import Point3d
 from System.Drawing import PointF, RectangleF, Color
@@ -37,6 +44,8 @@ RECTANGLE_3PT = "9BC98A1D-2ECC-407E-948A-09A09ED3E69D"      # Curve > Primitive 
 MESH_PLANE = "8ADBF481-7589-4A40-B490-006531EA001D"         # Mesh > Primitive > Mesh Plane
 DECONSTRUCT_MESH = "BA2D8F57-0738-42B4-B5A5-FE4D853517EB"   # Mesh > Analysis > Deconstruct Mesh
 MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
+TEXT_TAG = "5A41528B-12B9-40DC-A3F2-842034D267C4"           # Display > Dimensions > Text Tag 3D
+XZ_PLANE = "8CC3A196-F6A0-49EA-9ED9-0CB343A3AE64"           # Vector > Plane > XZ Plane
 
 # Alpaca4d
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
@@ -47,12 +56,18 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
-TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation
+TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation, its Method one of these:
+BESO_UNIT, MULTI_UNIT = "BesoTopology", "MultiMaterialTopology"
 
-# Topology Optimisation's inputs and outputs, by position.
+# Topology Optimisation's inputs and outputs, by position, for each Method.
 T_MODEL, T_KEEP, T_VOLUME_FRACTION, T_ITERATIONS, T_RUN = range(5)
 T_STEP = 12                                                 # registered last, after the Settings menu's
+B_STEP = 11                                                 # BESO's, one input fewer before it
+B_FILTER_RADIUS = 7                                         # BESO's Settings menu
 T_SURFACE, T_SOLID, T_DENSITY, T_ELEMENT, T_COMPLIANCE, T_VOLUME, T_CONVERGED, T_HISTORY, T_LOG = range(9)
+M_MODEL, M_KEEP, M_MATERIALS, M_FRACTIONS, M_ITERATIONS, M_RUN = range(6)
+M_FILTER_RADIUS, M_STEP = 8, 14
+M_COMPLIANCE = 6
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
 RED = Color.FromArgb(50, 254, 0, 0)
@@ -323,28 +338,49 @@ def open_menus(c):
             menu.Expand()
 
 
+def switch_unit(c, unit):
+    """Puts a switcher component on another of its units, as its drop-down does. It sets its unit's
+    parameters aside as it switches, and writes to Rhino's command line when one still has a parent -
+    which outside Rhino is not there to write to - so the parents are cleared first."""
+    c = getattr(c, "__implementation__", c)
+    for param in list(c.Params.Input) + list(c.Params.Output):
+        if param.Attributes is not None:
+            param.Attributes.Parent = None
+    c.SwitchUnit(unit, False, False)
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+    return c
+
+
 # ---------------------------------------------------------------- the benchmarks
 
 LIST_ITEM = "59daf374-bc21-4a5e-8282-5504fb7ae9ae"          # Sets > List > List Item
 T_FILTER_RADIUS = 6                                         # Topology Optimisation's Settings menu
 
 # Columns, in the order the data flows...
-NUMBERS, SERIES_, POINTS, MESHES, BRICKS_, ELEMENTS, LOADS, PATTERN, MODEL, OPTIMISE, RESULTS = range(11)
+(NUMBERS, SERIES_, POINTS, MESHES, BRICKS_, ELEMENTS, LOADS, PATTERN, MODEL, OPTIMISE, RESULTS, PREVIEW,
+ SHOWN_COL) = range(13)
 # ...and rows: the material, then a band of rows per problem.
 MATERIAL_ = 0
 CANTILEVER, CANTILEVER_SUPPORT, CANTILEVER_LOAD = 1, 2, 3
 SIMPLE, SIMPLE_SUPPORT, SIMPLE_LOAD = 4, 5, 6
+# The grid of the models and their optimisations has its own: per problem, the model, then a row per method.
+C_MODEL, C_SIMP, C_BESO, C_MULTI, S_MODEL, S_SIMP, S_BESO, S_MULTI = range(10, 18)
 
 DEPTH, HEIGHT = 4, 20        # bricks deep and high, for both
+SIMPLE_X = 80                # where the simply supported beam starts, to the right of the cantilever
+# Where each method's design is drawn, up from its model: one above the other, Multi-Material where the model is.
+SHOWN = [("SIMP", 2 * (HEIGHT + 12)), ("BESO", HEIGHT + 12), ("Multi-Material", 0)]
+SOFT_SHARE = 0.4             # of Multi-Material's 30%, in the material half as stiff
 
 
-def domain(g, name, span, row):
-    """A block span x DEPTH x HEIGHT of unit bricks: its plan meshed, copied up level by level and made
-    into bricks between each pair. Returns the components, last the Mesh Series to Brick."""
+def domain(g, name, span, row, x0=0):
+    """A block span x DEPTH x HEIGHT of unit bricks from x = x0: its plan meshed, copied up level by level and
+    made into bricks between each pair. Returns the components, last the Mesh Series to Brick."""
     plan = component(g, RECTANGLE_3PT, "Rectangle 3Pt", name + " plan", POINTS, row)
-    point(inp(plan, 0), 0, 0, 0)
-    point(inp(plan, 1), span, 0, 0)
-    point(inp(plan, 2), span, DEPTH, 0)
+    point(inp(plan, 0), x0, 0, 0)
+    point(inp(plan, 1), x0 + span, 0, 0)
+    point(inp(plan, 2), x0 + span, DEPTH, 0)
     plan_mesh = component(g, MESH_PLANE, "Mesh Plane", "Plan mesh", MESHES, row)
     wire(inp(plan_mesh, 0), out(plan))
     integer(inp(plan_mesh, 1), span)
@@ -384,36 +420,95 @@ def support(g, nickname, points, held, row, gap=0):
     return s
 
 
-def optimise(m, name, assemble, row, expected, reference):
-    """Topology Optimisation with top3d's settings, its own Run toggle, and what to compare it with."""
-    run = toggle(m, "Run " + name, False, MODEL, row)
-    # Up against its end, Step shows the latest design; drag it back to watch the run again.
-    step = slider(m, "Step " + name, 0, 200, 200, 0, MODEL, row, gap=10)
-    topology = emit(TOPOLOGY, "Topology Optimisation")
-    topology.NickName = name
-    open_menus(topology)
-    m.put(topology, OPTIMISE, row)
-    faint(wire(inp(topology, T_MODEL), out(assemble)))
-    number(inp(topology, T_VOLUME_FRACTION), 0.3)
-    inp(topology, T_ITERATIONS).PersistentData.Clear()
-    inp(topology, T_ITERATIONS).PersistentData.Append(GH_Integer(200))
-    wire(inp(topology, T_RUN), run)
-    wire(inp(topology, T_STEP), step)
-    number(inp(topology, T_FILTER_RADIUS), 1.5)
-
-    last = component(m, LIST_ITEM, "List Item", "Last compliance", RESULTS, row)
-    wire(inp(last, 0), out(topology, T_COMPLIANCE))
+def last_compliance(m, name, source, row, gap=0):
+    """A panel showing the last of a run's compliances."""
+    last = component(m, LIST_ITEM, "List Item", "Last compliance", RESULTS, row, gap)
+    wire(inp(last, 0), source)
     integer(inp(last, 1), -1)
     inp(last, 2).PersistentData.Clear()
     inp(last, 2).PersistentData.Append(GH_Boolean(True))
-    got = readout(m, "Compliance, last iteration", out(last), RESULTS, row, width=180.0)
-    count = component(m, LIST_LENGTH, "List Length", "Iterations run", RESULTS, row, gap=10)
-    wire(inp(count, 0), out(topology, T_COMPLIANCE))
-    ran = readout(m, "Iterations run", out(count), RESULTS, row, width=180.0)
-    want = text(m, "Expected after 200 iterations", expected, RESULTS, row, gap=10, width=180.0)
-    top3d = text(m, "top3d (reference.py)", reference, RESULTS, row, width=180.0)
-    history = readout(m, "History", out(topology, T_HISTORY), RESULTS, row, gap=10, width=560.0, height=100.0)
-    return [run, topology, step, last, got, count, ran, want, top3d, history]
+    return [last, readout(m, name, out(last), RESULTS, row, width=180.0)]
+
+
+def optimise(m, name, assemble, rows, expected, reference, materials, x0, span):
+    """The problem's three optimisations on one Run toggle and one Step slider: SIMP with top3d's settings and what
+    to compare it with, BESO and Multi-Material beside it; and their designs drawn one above the other, each named.
+    Returns the SIMP component, the objects of the optimisations and those of the designs drawn."""
+    simp_row, beso_row, multi_row = rows
+    run = toggle(m, "Run " + name, False, MODEL, simp_row)
+    # Up against its end, Step shows each method's latest design; drag it back to watch the runs again.
+    step = slider(m, "Step " + name, 0, 300, 300, 0, MODEL, simp_row, gap=10)
+
+    simp = emit(TOPOLOGY, "Topology Optimisation")
+    simp.NickName = name
+    open_menus(simp)
+    m.put(simp, OPTIMISE, simp_row)
+    faint(wire(inp(simp, T_MODEL), out(assemble)))
+    number(inp(simp, T_VOLUME_FRACTION), 0.3)
+    integer(inp(simp, T_ITERATIONS), 200)
+    wire(inp(simp, T_RUN), run)
+    wire(inp(simp, T_STEP), step)
+    number(inp(simp, T_FILTER_RADIUS), 1.5)
+    got = last_compliance(m, "Compliance, last iteration", out(simp, T_COMPLIANCE), simp_row)
+    count = component(m, LIST_LENGTH, "List Length", "Iterations run", RESULTS, simp_row, gap=10)
+    wire(inp(count, 0), out(simp, T_COMPLIANCE))
+    ran = readout(m, "Iterations run", out(count), RESULTS, simp_row, width=180.0)
+    want = text(m, "Expected after 200 iterations", expected, RESULTS, simp_row, gap=10, width=180.0)
+    top3d = text(m, "top3d (reference.py)", reference, RESULTS, simp_row, width=180.0)
+    history = readout(m, "History", out(simp, T_HISTORY), RESULTS, simp_row, gap=10, width=560.0, height=100.0)
+
+    # BESO: the block carved down to the same 30%, every brick solid or void, with top3d's filter too: with its own
+    # default, two bricks, it cuts the simply supported beam through at 37% of the volume and never mends it.
+    beso = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), BESO_UNIT)
+    beso.NickName = name + ", BESO"
+    open_menus(beso)
+    m.put(beso, OPTIMISE, beso_row)
+    faint(wire(inp(beso, T_MODEL), out(assemble)))
+    number(inp(beso, T_VOLUME_FRACTION), 0.3)
+    integer(inp(beso, T_ITERATIONS), 200)
+    faint(wire(inp(beso, T_RUN), run))
+    faint(wire(inp(beso, B_STEP), step))
+    number(inp(beso, B_FILTER_RADIUS), 1.5)
+    beso_got = last_compliance(m, "Compliance, BESO", out(beso, T_COMPLIANCE), beso_row)
+
+    # Multi-Material: the same 30%, shared between the unit material and one half as stiff.
+    multi = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), MULTI_UNIT)
+    multi.NickName = name + ", Multi-Material"
+    open_menus(multi)
+    m.put(multi, OPTIMISE, multi_row)
+    faint(wire(inp(multi, M_MODEL), out(assemble)))
+    faint(wire(inp(multi, M_MATERIALS), *[out(x) for x in materials]))
+    number(inp(multi, M_FRACTIONS), 0.3 * (1.0 - SOFT_SHARE), 0.3 * SOFT_SHARE)
+    integer(inp(multi, M_ITERATIONS), 300)
+    faint(wire(inp(multi, M_RUN), run))
+    faint(wire(inp(multi, M_STEP), step))
+    number(inp(multi, M_FILTER_RADIUS), 1.5)
+    multi_got = last_compliance(m, "Compliance, Multi-Material", out(multi, M_COMPLIANCE), multi_row)
+
+    # The designs one above the other, each named under it: SIMP's and BESO's moved up; Multi-Material draws its
+    # own, in its materials' colours, where the model is.
+    shown = []
+    for label, up in SHOWN:
+        row = {"SIMP": simp_row, "BESO": beso_row, "Multi-Material": multi_row}[label]
+        source = {"SIMP": simp, "BESO": beso}.get(label)
+        if source is not None:
+            source.Hidden = True
+            moved = component(m, MOVE, "Move", label + " above", PREVIEW, row)
+            wire(inp(moved, 0), out(source, T_SURFACE))
+            lift = vector(m, UNIT_Z, "Up", up, PREVIEW, row, gap=10)
+            wire(inp(moved, 1), out(lift))
+            shown += [moved, lift]
+        place = component(m, XZ_PLANE, "XZ Plane", label + " name", PREVIEW, row, gap=10)
+        point(inp(place, 0), x0 + span / 2.0, 0.0, up - 4.5)
+        tag = component(m, TEXT_TAG, "Text Tag 3D", label + " name", SHOWN_COL, row)
+        wire(inp(tag, 0), out(place))
+        inp(tag, 1).PersistentData.Clear()
+        inp(tag, 1).PersistentData.Append(GH_String(label))
+        number(inp(tag, 2), 3.0)
+        shown += [place, tag]
+
+    optimisers = [run, step, simp] + got + [count, ran, want, top3d, history, beso] + beso_got + [multi] + multi_got
+    return simp, multi, optimisers, shown
 
 
 def build(doc):
@@ -428,8 +523,17 @@ def build(doc):
     material = component(g, ND_MATERIAL, "nD", "top3d material", LOADS, MATERIAL_)
     for i, source in enumerate(values):
         wire(inp(material, i), source)
+    # ...and one half as stiff, for Multi-Material.
+    soft_values = [text(g, "Material", "Soft", POINTS, MATERIAL_),
+                   text(g, "E", "0.5", POINTS, MATERIAL_),
+                   text(g, "G", "0.192307692307692", POINTS, MATERIAL_),
+                   text(g, "Poisson", "0.3", POINTS, MATERIAL_),
+                   text(g, "Density", "0", POINTS, MATERIAL_)]
+    soft = component(g, ND_MATERIAL, "nD", "Soft material", ELEMENTS, MATERIAL_)
+    for i, source in enumerate(soft_values):
+        wire(inp(soft, i), source)
 
-    # 2 - The cantilever: held at every node of the end at x = 0, loaded at the bottom of the other.
+    # 2 - The cantilever: held at every node of its left end, at x = 0, loaded at the bottom of the other.
     cantilever_domain = domain(g, "Cantilever", 60, CANTILEVER)
     cantilever_bricks = component(g, BRICK, "SSP Brick", "Cantilever", LOADS, CANTILEVER)
     wire(inp(cantilever_bricks, 0), out(cantilever_domain[-1]))
@@ -449,19 +553,19 @@ def build(doc):
     cantilever_pattern = component(g, LOAD_PATTERN, "Load Pattern", None, PATTERN, CANTILEVER_LOAD)
     flat(wire(inp(cantilever_pattern, 1), out(tip_load)))
 
-    # 3 - The simply supported beam: pinned along one bottom edge, on rollers along the other, loaded
-    # along the top at mid-span.
-    simple_domain = domain(g, "Simply supported", 120, SIMPLE)
+    # 3 - The simply supported beam, to the right of the cantilever: pinned along one bottom edge, on rollers along
+    # the other, loaded along the top at mid-span.
+    simple_domain = domain(g, "Simply supported", 120, SIMPLE, SIMPLE_X)
     simple_bricks = component(g, BRICK, "SSP Brick", "Simply supported", LOADS, SIMPLE)
     wire(inp(simple_bricks, 0), out(simple_domain[-1]))
     faint(wire(inp(simple_bricks, 1), out(material)))
 
-    pinned_nodes = line_of_nodes(g, "Bottom edge at x = 0", 0, 0, POINTS, SIMPLE_SUPPORT)
+    pinned_nodes = line_of_nodes(g, "Bottom edge, left end", SIMPLE_X, 0, POINTS, SIMPLE_SUPPORT)
     pinned = support(g, "Pinned", pinned_nodes, (True, True, True), SIMPLE_SUPPORT)
-    roller_nodes = line_of_nodes(g, "Bottom edge at x = 120", 120, 0, POINTS, SIMPLE_SUPPORT, gap=10)
+    roller_nodes = line_of_nodes(g, "Bottom edge, right end", SIMPLE_X + 120, 0, POINTS, SIMPLE_SUPPORT, gap=10)
     rollers = support(g, "Rollers, free along x", roller_nodes, (False, True, True), SIMPLE_SUPPORT, gap=10)
 
-    middle = line_of_nodes(g, "Top edge at mid-span", 60, HEIGHT, POINTS, SIMPLE_LOAD)
+    middle = line_of_nodes(g, "Top edge at mid-span", SIMPLE_X + 60, HEIGHT, POINTS, SIMPLE_LOAD)
     simple_down = vector(g, UNIT_Z, "-1", -1.0, ELEMENTS, SIMPLE_LOAD)
     middle_load = component(g, POINT_LOAD, "Point Load", "Mid-span load", LOADS, SIMPLE_LOAD)
     wire(inp(middle_load, 0), out(middle))
@@ -471,56 +575,67 @@ def build(doc):
 
     right = g.arrange(0, 0, stages=(POINTS, ELEMENTS))
 
-    # 4 - Assembled, and optimised: each problem with its own Run.
+    # 4 - Assembled, and optimised three ways: each problem with its own Run.
     m = Grid(doc)
-    cantilever_model = component(m, ASSEMBLE, "Assemble Model", "Cantilever", MODEL, CANTILEVER)
+    cantilever_model = component(m, ASSEMBLE, "Assemble Model", "Cantilever", MODEL, C_MODEL)
     flat(wire(inp(cantilever_model, 0), out(cantilever_bricks)))
     flat(wire(inp(cantilever_model, 1), out(held)))
     flat(wire(inp(cantilever_model, 2), out(cantilever_pattern)))
-    simple_model = component(m, ASSEMBLE, "Assemble Model", "Simply supported", MODEL, SIMPLE)
+    simple_model = component(m, ASSEMBLE, "Assemble Model", "Simply supported", MODEL, S_MODEL)
     flat(wire(inp(simple_model, 0), out(simple_bricks)))
     flat(wire(inp(simple_model, 1), out(pinned), out(rollers)))
     flat(wire(inp(simple_model, 2), out(simple_pattern)))
 
-    cantilever_run = optimise(m, "Cantilever", cantilever_model, CANTILEVER_SUPPORT,
-                              "2415.86, 200 iterations", "2415.82")
-    simple_run = optimise(m, "Simply supported", simple_model, SIMPLE_SUPPORT,
-                          "1203.026, 200 iterations", "1203.026")
+    materials = [material, soft]
+    cantilever, cantilever_multi, cantilever_run, cantilever_shown = optimise(
+        m, "Cantilever", cantilever_model, (C_SIMP, C_BESO, C_MULTI), "2415.86, 200 iterations", "2415.82",
+        materials, 0, 60)
+    simple, simple_multi, simple_run, simple_shown = optimise(
+        m, "Simply supported", simple_model, (S_SIMP, S_BESO, S_MULTI), "1203.026, 200 iterations", "1203.026",
+        materials, SIMPLE_X, 120)
 
     m.arrange(right + 160, 0)
 
-    group(doc, "1 - top3d's material: E = 1, Poisson 0.3", [material] + values, PURPLE)
+    group(doc, "1 - top3d's material: E = 1, Poisson 0.3; and one half as stiff, for Multi-Material",
+          [material, soft] + values + soft_values, PURPLE)
     group(doc, "2 - Cantilever, 60 x 4 x 20 bricks: top3d(60,20,4,0.3,3,1.5)",
           cantilever_domain + [cantilever_bricks, end, held, tip, down, tip_load, cantilever_pattern], ORANGE)
-    group(doc, "3 - Simply supported beam, 120 x 4 x 20 bricks",
+    group(doc, "3 - Simply supported beam, 120 x 4 x 20 bricks, to the right of the cantilever",
           simple_domain + [simple_bricks, pinned_nodes, pinned, roller_nodes, rollers, middle, simple_down,
                            middle_load, simple_pattern], GREEN)
-    group(doc, "4 - Cantilever: set Run Cantilever to true (about 45 s)", [cantilever_model] + cantilever_run, BLUE)
-    group(doc, "5 - Simply supported: set Run Simply supported to true (about 90 s)", [simple_model] + simple_run, GREY)
+    group(doc, "4 - Cantilever, three ways: set Run Cantilever to true (under two minutes)",
+          [cantilever_model] + cantilever_run, BLUE)
+    group(doc, "5 - Simply supported, three ways: set Run Simply supported to true (under four minutes)",
+          [simple_model] + simple_run, GREY)
+    group(doc, "6 - The designs one above the other: SIMP, BESO, Multi-Material where the model is",
+          cantilever_shown + simple_shown, BLUE)
 
-    # Only the optimised surfaces draw in Rhino, the simply supported beam behind the cantilever.
+    # Only the designs and their names draw in Rhino.
+    drawn = set(str(o.InstanceGuid) for o in cantilever_shown + simple_shown + [cantilever_multi, simple_multi])
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
-        if hasattr(obj, "Hidden") and obj.InstanceGuid not in (cantilever_run[1].InstanceGuid, simple_run[1].InstanceGuid):
+        if hasattr(obj, "Hidden") and str(obj.InstanceGuid) not in drawn:
             obj.Hidden = True
 
     note(doc, "Topology Optimisation benchmarks",
-         "Topology Optimisation: top3d's benchmarks.\n\n"
+         "Topology Optimisation: top3d's benchmarks, three ways.\n\n"
          "Two problems of top3d (Liu and Tovar 2014, 'An efficient 3D topology optimization code written in "
-         "Matlab'), in its units and with its settings: 30% of the volume, penalty 3, a filter radius of 1.5, "
-         "at most 200 iterations. Alpaca4d solves them with OpenSees; the panels give what its test bench and "
-         "a numpy port of top3d give for the same problems.\n\n"
-         "1. Set Run Cantilever to true. Its Surface draws as it goes; the run ends after 200 iterations, "
-         "about 45 s on an Apple M2 Pro. Neither problem reaches top3d's tolerance of 0.01 before then; nor "
-         "does top3d.\n"
-         "2. Compare 'Compliance, last iteration' with the panels under it. The first iterations agree with "
-         "top3d to round-off; the cantilever's runs part by up to 0.2% while its design rearranges itself "
-         "around iteration 70, and come back together.\n"
-         "3. The same for the simply supported beam, about 90 s.\n"
-         "4. Drag a Step slider back to watch the run again, design by design: every iteration is kept.\n\n"
-         "Expected: the cantilever as top flange, bottom flange and diagonal webs; the simply supported beam "
-         "as a truss, its tie thickest at mid-span. Topology Optimisation needs a license.",
-         0, -470, 640, 390)
+         "Matlab'), in its units. SIMP runs with top3d's settings: 30% of the volume, penalty 3, a filter radius of "
+         "1.5, at most 200 iterations; the panels give what Alpaca4d's test bench and a numpy port of top3d give for "
+         "the same problems. Beside it, BESO carves the block down to the same 30%, every brick solid or void, and "
+         "Multi-Material shares the 30% between the unit material (18%) and one half as stiff (12%); both with the "
+         "filter radius of 1.5 too.\n\n"
+         "1. Set Run Cantilever to true: its three runs go together, each on its own thread, and the designs draw "
+         "one above the other as they go - SIMP at the top, BESO, and Multi-Material where the model is.\n"
+         "2. SIMP ends after 200 iterations: neither problem reaches top3d's tolerance of 0.01 before then; nor does "
+         "top3d. Compare 'Compliance, last iteration' with the panels beside it. The first iterations agree with top3d "
+         "to round-off; the cantilever's runs part by up to 0.2% while its design rearranges itself around iteration "
+         "70, and come back together.\n"
+         "3. The same for the simply supported beam, with Run Simply supported.\n"
+         "4. Drag a Step slider back to watch the problem's runs again, design by design: every iteration is kept.\n\n"
+         "Expected from SIMP: the cantilever as top flange, bottom flange and diagonal webs; the simply supported "
+         "beam as a truss, its tie thickest at mid-span. Topology Optimisation needs a license.",
+         0, -520, 660, 440)
 
 
 def main():

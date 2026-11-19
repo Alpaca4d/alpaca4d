@@ -15,7 +15,7 @@ are here at the top.
 | `Structures/` | `Structures.py`'s definitions - the conventional structures, the earthquakes, the footbridge's and the tank's modes, the response spectrum sticks, the compressed shell, the pushover building - and the footfall stairs, the reciprocal vault, the high-tension tower, the multi-storey building and the silo under a dust explosion and a tractor's impact, which use its helpers |
 | `Design/` | Section and member design: the Utilisation, Interaction Domain and Moment Curvature examples, and the tree column's cast node in shells (Connection Design) |
 | `Optimisation/` | The Section Optimiser examples, the Explorer's footbridge study and the twisted ring |
-| `Topology/` | Topology Optimisation, Multi-Material Topology and BESO, and the nodes in space |
+| `Topology/` | Topology Optimisation, each example by its three methods - SIMP, BESO and Multi-Material - side by side |
 | `Solids/` | Ten node tetrahedra - the cow, the femur, the Rebellious Slave - and the scripts that mesh them; a vault of bricks from Mesh Loft and Mesh Series to Brick |
 | `Plasticity/` | Steel that yields, J2Plasticity: the beam with holes and four more |
 | `Printing/` | 3D printing in fresh concrete: the cylinder and the shapes printed along their sections |
@@ -104,10 +104,8 @@ script too:
     ./make.sh Optimisation/TwistedRing.py             # a twisted ring truss's geometry, in a Python component
 
     # Topology/
-    ./make.sh Topology/TopologyBridge.py        # the Topology Optimisation example
-    ./make.sh Topology/TopologyBenchmarks.py    # Topology Optimisation's two benchmarks, against top3d
-    ./make.sh Topology/MultiMaterialBridge.py   # the Multi-Material Topology example
-    ./make.sh Topology/BesoBridge.py            # the BESO Topology example
+    ./make.sh Topology/TopologyBridge.py        # the bridge, by SIMP, BESO and Multi-Material side by side
+    ./make.sh Topology/TopologyBenchmarks.py    # top3d's two benchmarks, by the three methods, SIMP against top3d
     NODE_CASE=truss ./make.sh Topology/TopologyNodes.py TopologyTrussNode.gh          # a space-truss node, three ways
     NODE_CASE=joint ./make.sh Topology/TopologyNodes.py TopologyBeamColumnJoint.gh    # a beam-column joint, three ways
 
@@ -197,11 +195,9 @@ script too:
 
 | Example | Builds |
 | --- | --- |
-| `TopologyBridge.py` | The Topology Optimisation example: a 16 x 2 x 4 m steel block of SSP Bricks pinned along both ends of its bottom, its top layer a deck kept solid through Keep under 10 kN/m2. With a fifth of the rest it finds an arch rising into the deck, with a column near each end; Bricks per metre takes it from 128 bricks to 8 192. |
-| `TopologyBenchmarks.py` | Topology Optimisation's two benchmarks in top3d's units and settings, each with its own Run toggle: top3d's 60 x 4 x 20 cantilever and a 120 x 4 x 20 simply supported beam, with panels giving the compliance the test bench and top3d reach after 200 iterations. `Alpaca4d.Test/TopologyOptimisation/example.sh` builds and runs it in Rhino. |
-| `MultiMaterialBridge.py` | The Multi-Material Topology example: TopologyBridge's block in steel (E = 210 GPa) and concrete (E = 33 GPa), at most 5% and 15% of the block below the deck. The concrete goes into two legs from the supports to the deck, the steel into an arch slung under it: 265 iterations, under a minute at 3 bricks per metre. `Alpaca4d.Test/TopologyMethods/example.sh` builds and runs it in Rhino. |
-| `BesoBridge.py` | The BESO Topology example: TopologyBridge's block carved down to a fifth of its volume below the deck, every brick solid or void, Step going through every volume on the way: two raking legs into the deck with a column near each end, 105 iterations, under 20 s. Built and run by the same `example.sh`. |
-| `TopologyNodes.py` | A node where members meet, in space, found by all three topology optimisations side by side: a 1 m cube of bricks with member stubs kept solid, loaded or held at their ends. `NODE_CASE=truss` writes `TopologyTrussNode.gh`, nine members of a space truss (chords pulled and pushed, a post loaded, four diagonals held); `NODE_CASE=joint` writes `TopologyBeamColumnJoint.gh`, a column and four beams with their shears and unbalanced hogging moments. `Alpaca4d.Test/TopologyMethods/nodes.sh` builds and runs both in Rhino. |
+| `TopologyBridge.py` | The bridge example, three ways: a 16 x 2 x 4 m steel block of SSP Bricks pinned along both ends of its bottom, its top layer a deck kept solid through Keep under 10 kN/m2, found by Topology Optimisation's three methods side by side, each with its own Run and Step. SIMP keeps a fifth of the rest and finds an arch rising into the deck with a column near each end (77 iterations); BESO carves the block down to a fifth, every brick solid or void, into two raking legs (105); Multi-Material shares it between steel (5%) and concrete (15%), concrete legs and a steel arch slung under the deck (265). The designs draw one above the other, Multi-Material where the model is, and each can be analysed in Von Mises stress. Bricks per metre takes it from 128 bricks to 8 192. `Alpaca4d.Test/TopologyMethods/example.sh` builds and runs it in Rhino. |
+| `TopologyBenchmarks.py` | Topology Optimisation's two benchmarks in top3d's units, each found by SIMP, BESO and Multi-Material on one Run toggle: top3d's 60 x 4 x 20 cantilever and a 120 x 4 x 20 simply supported beam, to the right of it. SIMP has top3d's settings, with panels giving the compliance the test bench and top3d reach after 200 iterations; BESO carves the block down to the same 30%; Multi-Material shares it between the unit material (18%) and one half as stiff (12%). Each problem's designs draw one above the other. `Alpaca4d.Test/TopologyOptimisation/example.sh` builds and runs it in Rhino. |
+| `TopologyNodes.py` | A node where members meet, in space, found by the three methods of Topology Optimisation side by side - SIMP, BESO and Multi-Material, left to right: a 1 m cube of bricks with member stubs kept solid, loaded or held at their ends. `NODE_CASE=truss` writes `TopologyTrussNode.gh`, nine members of a space truss (chords pulled and pushed, a post loaded, four diagonals held); `NODE_CASE=joint` writes `TopologyBeamColumnJoint.gh`, a column and four beams with their shears and unbalanced hogging moments. `Alpaca4d.Test/TopologyMethods/nodes.sh` builds and runs both in Rhino. |
 
 ### Solids/
 

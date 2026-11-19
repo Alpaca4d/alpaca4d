@@ -1,7 +1,6 @@
 #! python3
 # The topology examples of a node where members meet, in space: a space-truss node and a beam-column joint,
-# each found by all three of Alpaca4d's topology optimisations side by side - Topology Optimisation (SIMP),
-# BESO Topology and Multi-Material Topology.
+# each found by the three methods of Alpaca4d's Topology Optimisation side by side - SIMP, BESO and Multi-Material.
 #
 # make.sh, in the folder above, writes the two definitions straight from this script, without Rhino:
 #
@@ -53,15 +52,14 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
-TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation
-BESO = "3B7E5C21-9A4D-4F68-B2E1-7C5D0A8F6E14"               # BESO Topology
-MULTI_TOPOLOGY = "6D2A9E47-1C8B-4E35-A9F0-58B3C7D16A22"     # Multi-Material Topology
+TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation, its Method one of these:
+BESO_UNIT, MULTI_UNIT = "BesoTopology", "MultiMaterialTopology"
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
-# The three components' inputs and outputs, by position. Topology Optimisation registers Step and
-# AlpacaModel last, after the Settings menu's; the other two put Step after it.
+# Topology Optimisation's inputs and outputs, by position, for each Method. SIMP registers Step and AlpacaModel
+# last, after its Settings menu's; BESO has one input fewer before Step.
 T_MODEL, T_KEEP, T_VOLUME_FRACTION, T_ITERATIONS, T_RUN = range(5)
 T_STEP, B_STEP = 12, 11
 T_SURFACE, T_SOLID, T_DENSITY, T_ELEMENT, T_COMPLIANCE, T_VOLUME, T_CONVERGED, T_HISTORY, T_LOG, T_STEP_OUT, T_ALPACA_MODEL = range(11)
@@ -368,7 +366,21 @@ NODE, MEMBERS, MATERIALS, SUPPORTS, END_LOADS = range(5)
 # The model, its optimisations and their designs, in a grid of their own to the right.
 MODEL, OPTIMISE, RESULTS, PREVIEW, SHOWN_COL = range(5)
 ASSEMBLED, SIMP_RUN, BESO_RUN, MULTI_RUN, ANALYSED = range(5)
-SHOWN_ROW = {"SIMP": SIMP_RUN, "BESO": BESO_RUN, "Multi-material": MULTI_RUN}
+SHOWN_ROW = {"SIMP": SIMP_RUN, "BESO": BESO_RUN, "Multi-Material": MULTI_RUN}
+
+
+def switch_unit(c, unit):
+    """Puts a switcher component on another of its units, as its drop-down does. It sets its unit's
+    parameters aside as it switches, and writes to Rhino's command line when one still has a parent -
+    which outside Rhino is not there to write to - so the parents are cleared first."""
+    c = getattr(c, "__implementation__", c)
+    for param in list(c.Params.Input) + list(c.Params.Output):
+        if param.Attributes is not None:
+            param.Attributes.Parent = None
+    c.SwitchUnit(unit, False, False)
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+    return c
 
 
 # ---------------------------------------------------------------- the two nodes
@@ -436,9 +448,9 @@ JOINT = {
     "loads_group": "4 - The column held at its foot and loaded at its head; each beam's shear and hogging moment",
 }
 
-# Where each method's design is drawn, side by side along x, 2 m apart: Multi-Material Topology draws its own, in
-# its materials' colours, where the model is; the other two are moved to either side.
-SHOWN = [("SIMP", -2.0), ("Multi-material", 0.0), ("BESO", 2.0)]
+# Where each method's design is drawn, side by side along x, 2 m apart, SIMP on the left: Multi-Material draws its
+# own, in its materials' colours, where the model is; the other two are moved to the left of it.
+SHOWN = [("SIMP", -4.0), ("BESO", -2.0), ("Multi-Material", 0.0)]
 
 
 def length(a, b):
@@ -526,7 +538,7 @@ def build(doc):
     stub_bricks = component(g, MESH_TO_BRICK, "Mesh Series to Brick", None, BRICKS_, MEMBERS)
     wire(inp(stub_bricks, 0), out(stub_moved))
 
-    # Steel, the bricks of the node and of the members, and the second material Multi-Material Topology may use.
+    # Steel, the bricks of the node and of the members, and the second material Multi-Material may use.
     steel_values = [text(g, "Steel", "S355", NAMES, NODE),
                     text(g, "E [kN/m2]", "210000000", NAMES, NODE),
                     text(g, "G [kN/m2]", "80769231", NAMES, NODE),
@@ -637,7 +649,8 @@ def build(doc):
     beso_iterations = slider(m, "Iterations", 10, 300, 300, 0, MODEL, BESO_RUN)
     beso_run = toggle(m, "Run BESO", False, MODEL, BESO_RUN, gap=10)
     beso_step = slider(m, "Step BESO", 0, 300, 300, 0, MODEL, BESO_RUN, gap=10)
-    beso = emit(BESO, "BESO Topology")
+    beso = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), BESO_UNIT)
+    beso.NickName = "BESO"
     open_menus(beso)
     m.put(beso, OPTIMISE, BESO_RUN)
     faint(wire(inp(beso, T_MODEL), out(assemble)))
@@ -650,9 +663,10 @@ def build(doc):
     steel_share = slider(m, "Steel share", 0.01, 0.3, case["shares"][0], 2, MODEL, MULTI_RUN)
     other_share = slider(m, second[0].split(" ")[0] + " share", 0.01, 0.5, case["shares"][1], 2, MODEL, MULTI_RUN, gap=10)
     multi_iterations = slider(m, "Iterations", 10, 500, 300, 0, MODEL, MULTI_RUN, gap=10)
-    multi_run = toggle(m, "Run Multi-material", False, MODEL, MULTI_RUN, gap=10)
-    multi_step = slider(m, "Step Multi-material", 0, 500, 500, 0, MODEL, MULTI_RUN, gap=10)
-    multi = emit(MULTI_TOPOLOGY, "Multi-Material Topology")
+    multi_run = toggle(m, "Run Multi-Material", False, MODEL, MULTI_RUN, gap=10)
+    multi_step = slider(m, "Step Multi-Material", 0, 500, 500, 0, MODEL, MULTI_RUN, gap=10)
+    multi = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), MULTI_UNIT)
+    multi.NickName = "Multi-Material"
     open_menus(multi)
     m.put(multi, OPTIMISE, MULTI_RUN)
     faint(wire(inp(multi, M_MODEL), out(assemble)))
@@ -666,10 +680,10 @@ def build(doc):
     readouts = [
         readout(m, "Compliance SIMP", out(simp, T_COMPLIANCE), RESULTS, SIMP_RUN, width=160.0, height=100.0),
         readout(m, "Compliance BESO", out(beso, T_COMPLIANCE), RESULTS, BESO_RUN, width=160.0, height=100.0),
-        readout(m, "Compliance Multi-material", out(multi, M_COMPLIANCE), RESULTS, MULTI_RUN, width=160.0, height=100.0),
+        readout(m, "Compliance Multi-Material", out(multi, M_COMPLIANCE), RESULTS, MULTI_RUN, width=160.0, height=100.0),
     ]
 
-    # 7 - The three designs side by side, each named: SIMP's and BESO's moved to either side of the model.
+    # 7 - The three designs side by side, each named: SIMP's and BESO's moved to the left of the model.
     shown = [multi]
     for label, dx in SHOWN:
         source = {"SIMP": simp, "BESO": beso}.get(label)
@@ -680,9 +694,9 @@ def build(doc):
             shift = vector(m, UNIT_X, "Along x", dx, PREVIEW, SHOWN_ROW[label], gap=10)
             wire(inp(moved, 1), out(shift))
             shown += [moved, shift]
-        # Upright, facing -y: read from the front.
+        # Upright, facing -y: read from the front, under the design (above it, it ran into the post or the column).
         place = component(m, XZ_PLANE, "XZ Plane", label + " name", PREVIEW, SHOWN_ROW[label], gap=10)
-        point(inp(place, 0), dx + 0.5, 0.5, 1.4)
+        point(inp(place, 0), dx + 0.5, -0.2, -0.5)
         tag = component(m, TEXT_TAG, "Text Tag 3D", label + " name", SHOWN_COL, SHOWN_ROW[label])
         wire(inp(tag, 0), out(place))
         inp(tag, 1).PersistentData.Clear()
@@ -694,7 +708,7 @@ def build(doc):
     # once its run has stopped; each draws where the model is.
     settings = component(m, ANALYSIS_SETTINGS, "Analysis Settings", None, MODEL, ANALYSED)
     analysed = [settings]
-    for label, c, model_out in (("SIMP", simp, T_ALPACA_MODEL), ("BESO", beso, T_ALPACA_MODEL), ("Multi-material", multi, M_ALPACA_MODEL)):
+    for label, c, model_out in (("SIMP", simp, T_ALPACA_MODEL), ("BESO", beso, T_ALPACA_MODEL), ("Multi-Material", multi, M_ALPACA_MODEL)):
         run = component(m, RUN_ANALYSIS, "Run Analysis", "Analyse " + label, MODEL, ANALYSED, gap=10)
         wire(inp(run, 0), out(c, model_out))
         faint(wire(inp(run, 1), out(settings)))
@@ -719,7 +733,7 @@ def build(doc):
           [plan, plan_mesh, levels_count, levels, lift, level_meshes, node_bricks, node_name, node], ORANGE)
     group(doc, "3 - The members: stubs 0.2 m long, named Member, kept whatever the optimisation finds",
           sizes + [stub_plans, along, across, high, stub_meshes, stub_levels, stub_lift, stub_moved, stub_bricks, member_name, member], ORANGE)
-    group(doc, "Steel, and " + second[0].split(" ")[0].lower() + " for Multi-Material Topology",
+    group(doc, "Steel, and " + second[0].split(" ")[0].lower() + " for Multi-Material",
           [steel, other] + steel_values + second_values, PURPLE)
     group(doc, case["loads_group"],
           held_parts + [held, free, support] + load_parts + [how_many, share, end_load, pattern, load_names] + shares, GREEN)
@@ -727,7 +741,7 @@ def build(doc):
     group(doc, "6 - Three ways: set one Run to true at a time",
           [keep, fraction, simp_iterations, simp_run, simp_step, simp, beso_iterations, beso_run, beso_step, beso,
            steel_share, other_share, multi_iterations, multi_run, multi_step, multi] + readouts, GREY)
-    group(doc, "7 - The three designs side by side: SIMP, Multi-material where the model is, BESO", shown[1:], BLUE)
+    group(doc, "7 - The three designs side by side: SIMP, BESO, and Multi-Material where the model is", shown[1:], BLUE)
     group(doc, "8 - Each design analysed: enable its Run Analysis and Legend once its run has stopped, one at a time",
           analysed, PURPLE)
 
@@ -742,18 +756,19 @@ def build(doc):
          case["title"] + " - topology optimisation three ways.\n\n"
          "The design domain is a cube of steel bricks, 1 m a side. The members that meet at it are stubs of bricks, "
          "0.2 m long, named Member and kept solid through Keep; they are held or loaded at their ends (group 4). "
-         "The same model goes to all three of Alpaca4d's topology optimisations:\n"
-         "- Topology Optimisation (SIMP): densities between 0 and 1, the quickest;\n"
-         "- BESO Topology: every brick solid or void, the volume coming down from the whole cube - drag Step BESO "
+         "The same model goes to the three methods of Topology Optimisation:\n"
+         "- SIMP: densities between 0 and 1;\n"
+         "- BESO: every brick solid or void, the volume coming down from the whole cube - drag Step BESO "
          "to see the node at every volume;\n"
-         "- Multi-Material Topology: steel and " + second[0].split(" ")[0].lower() + ", each up to its share.\n\n"
-         "1. Set one Run to true at a time: each run goes on its own thread, and its design draws beside the others "
-         "(group 7), SIMP on the left, BESO in the middle, Multi-material on the right.\n"
+         "- Multi-Material: steel and " + second[0].split(" ")[0].lower() + ", each up to its share.\n\n"
+         "1. Set Run SIMP, Run BESO or Run Multi-Material to true, or all three: each run goes on its own thread, and "
+         "its design draws beside the others (group 7), SIMP on the left, BESO in the middle, Multi-Material on the "
+         "right, where the model is.\n"
          "2. Drag a Step slider back to watch that run again.\n"
          "3. Once a run has stopped, enable its Run Analysis and Legend in group 8 to see its design in Von Mises "
          "stress, where the model is; disable them before analysing another.\n"
-         "4. Bricks per 10 cm 2 gives 8 000 bricks: SIMP and BESO take about a minute each on an M2 Pro, "
-         "Multi-Material Topology a few. 1 is quick to try; 3, 27 000 bricks, is fine and slow.\n\n"
+         "4. Bricks per 10 cm 2 gives 8 000 bricks: SIMP and BESO take a minute or two each on an M2 Pro, "
+         "Multi-Material a few. 1 is quick to try; 3, 27 000 bricks, is fine and slow.\n\n"
          "Above 500 elements the three need a license.",
          300, -150, 640, 400)
 

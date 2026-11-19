@@ -1,18 +1,25 @@
 #! python3
-# The Topology Optimisation example: where a bridge needs its steel, found in a block of bricks.
+# The bridge example: where a bridge needs its material, found in a block of bricks by the three methods of
+# Topology Optimisation side by side - SIMP, BESO and Multi-Material.
 #
 # make.sh, in the folder above, writes TopologyBridge.gh straight from this script, without Rhino. It also runs
 # in Rhino with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor (open this file
 # and press Run) or with _-RunPythonScript; in Rhino 7 with _RunPythonScript.
 #
 # The design domain is a block 16 m long, 2 m wide and 4 m high, in steel, of SSP Bricks: Bricks per
-# metre sets how fine. Its top layer is the deck, which carries a load all over and is kept solid
-# whatever the optimisation finds - Topology Optimisation's Keep names it by its ElementId. The block
-# is pinned along both ends of its bottom. Run finds the fifth of the block below the deck that
-# carries the deck best. At 3 bricks per metre, 3 456 bricks, that is an arch from support to
-# support rising into the deck at mid-span, with a column up to the deck near each end: 77
-# iterations, 14 s on an M2 Pro. At 2 the deck is a 0.5 m slab of solid steel and stiff enough to
-# span most of the way itself, and the steel goes into two legs that shorten its span instead.
+# metre sets how fine. Its top layer is the deck, which carries 10 kN/m2 and is kept solid whatever the
+# optimisation finds - Keep names it by its ElementId. The block is pinned along both ends of its bottom.
+# The same model goes to three Topology Optimisation components, each with its own Run and Step:
+#
+#   SIMP            a fifth of the block below the deck, densities between 0 and 1: an arch from support to
+#                   support rising into the deck, with a column near each end (77 iterations at 3 bricks per metre);
+#   BESO            the block carved down to a fifth, every brick solid or void all along: two raking legs into
+#                   the deck, with a column near each end;
+#   Multi-Material  steel (E = 210 GPa) or concrete (E = 33 GPa) brick by brick, at most 5% of the block below
+#                   the deck in steel and 15% in concrete: concrete legs, a steel arch slung under the deck.
+#
+# The three designs draw one above the other, Multi-Material where the model is; each can be analysed as a
+# model of its own. Alpaca4d.Test/TopologyMethods/example.sh builds and runs it in Rhino.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -21,7 +28,7 @@ import Rhino
 import Grasshopper
 from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParamWireDisplay
 from Grasshopper.Kernel.Special import GH_NumberSlider, GH_Group, GH_Panel, GH_BooleanToggle
-from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Point
+from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Point, GH_String
 from Grasshopper.GUI.Base import GH_SliderAccuracy
 from Rhino.Geometry import Point3d
 from System.Drawing import PointF, RectangleF, Color
@@ -36,6 +43,8 @@ RECTANGLE_3PT = "9BC98A1D-2ECC-407E-948A-09A09ED3E69D"      # Curve > Primitive 
 MESH_PLANE = "8ADBF481-7589-4A40-B490-006531EA001D"         # Mesh > Primitive > Mesh Plane
 DECONSTRUCT_MESH = "BA2D8F57-0738-42B4-B5A5-FE4D853517EB"   # Mesh > Analysis > Deconstruct Mesh
 MOVE = "E9EB1DCF-92F6-4D4D-84AE-96222D60F56B"               # Transform > Euclidean > Move
+TEXT_TAG = "5A41528B-12B9-40DC-A3F2-842034D267C4"           # Display > Dimensions > Text Tag 3D
+XZ_PLANE = "8CC3A196-F6A0-49EA-9ED9-0CB343A3AE64"           # Vector > Plane > XZ Plane
 
 # Alpaca4d
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
@@ -46,16 +55,22 @@ POINT_LOAD = "069017B3-4A2F-40FE-87BA-126100908BC8"         # Point Load
 LOAD_PATTERN = "C4E8F9A2-B5D3-4E6F-A7B8-9C0D1E2F3A4B"       # Load Pattern
 ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
-TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation
+TOPOLOGY = "8F3C2A61-5D4E-4B7A-9C1E-2B6D7A0F4E93"           # Topology Optimisation, its Method one of these:
+BESO_UNIT, MULTI_UNIT = "BesoTopology", "MultiMaterialTopology"
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
-# Topology Optimisation's inputs and outputs, by position.
+# Topology Optimisation's inputs and outputs, by position, for each Method. SIMP's Step is registered last, after
+# its Settings menu's inputs; BESO's has one input fewer before it.
 T_MODEL, T_KEEP, T_VOLUME_FRACTION, T_ITERATIONS, T_RUN = range(5)
-T_STEP = 12                                                 # registered last, after the Settings menu's
+T_STEP, B_STEP = 12, 11
 T_SURFACE, T_SOLID, T_DENSITY, T_ELEMENT, T_COMPLIANCE, T_VOLUME, T_CONVERGED, T_HISTORY, T_LOG = range(9)
-T_ALPACA_MODEL = 10                                         # after Step, registered last too
+T_ALPACA_MODEL = 10
+M_MODEL, M_KEEP, M_MATERIALS, M_FRACTIONS, M_ITERATIONS, M_RUN = range(6)
+M_STEP = 14
+(M_SURFACE, M_COLOUR, M_SOLID, M_MATERIAL, M_DENSITY, M_ELEMENT, M_COMPLIANCE, M_VOLUME, M_CONVERGED, M_HISTORY,
+ M_LOG, M_STEP_OUT, M_ALPACA_MODEL) = range(13)
 # Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
 # stresses, Brick stresses, Reactions; and the brick stresses: s11, s22, s33, s12, s23, s13, Von Mises.
 BRICK_STRESSES, VON_MISES = 6, 6
@@ -70,6 +85,10 @@ GREY = Color.FromArgb(40, 42, 45, 49)
 
 SPAN, WIDTH, HEIGHT = 16.0, 2.0, 4.0    # the design domain, m
 DECK_LOAD = 10.0                         # kN/m2 over the whole deck
+FRACTION = 0.2                           # SIMP's and BESO's share of the block below the deck
+STEEL_SHARE, CONCRETE_SHARE = 0.05, 0.15 # Multi-Material's, a fifth in all
+# Where each design is drawn, up from the model: one above the other, 3 m apart, Multi-Material where the model is.
+SHOWN = [("SIMP", 2 * (HEIGHT + 3.0)), ("BESO", HEIGHT + 3.0), ("Multi-Material", 0.0)]
 
 
 # ---------------------------------------------------------------- building blocks
@@ -184,6 +203,20 @@ def emit(guid, what):
     obj = getattr(obj, "__implementation__", obj)
     obj.CreateAttributes()
     return obj
+
+
+def switch_unit(c, unit):
+    """Puts a switcher component on another of its units, as its drop-down does. It sets its unit's
+    parameters aside as it switches, and writes to Rhino's command line when one still has a parent -
+    which outside Rhino is not there to write to - so the parents are cleared first."""
+    c = getattr(c, "__implementation__", c)
+    for param in list(c.Params.Input) + list(c.Params.Output):
+        if param.Attributes is not None:
+            param.Attributes.Parent = None
+    c.SwitchUnit(unit, False, False)
+    c.Attributes.ExpireLayout()
+    c.Attributes.PerformLayout()
+    return c
 
 
 def component(grid, guid, what, nickname, col, row=None, gap=0):
@@ -355,9 +388,9 @@ INPUTS, NUMBERS, SERIES_, POINTS, MESHES, BRICKS_, NAMES, ELEMENTS, LOADS, PATTE
 # ...and rows, one per part of the model.
 DOMAIN, DECK, BEARINGS, DECK_LOADS = range(4)
 
-# The model and its optimisation, in a grid of their own to the right.
-MODEL, OPTIMISE, RESULTS = range(3)
-ASSEMBLED, RUN, HISTORY, ANALYSED = range(4)
+# The model, its optimisations and their designs, in a grid of their own to the right: a row for each method.
+MODEL, OPTIMISE, RESULTS, PREVIEW, SHOWN_COL = range(5)
+ASSEMBLED, SIMP_RUN, BESO_RUN, MULTI_RUN, ANALYSED = range(5)
 
 
 def build(doc):
@@ -419,7 +452,15 @@ def build(doc):
     wire(inp(domain, 1), out(steel))
     wire(inp(domain, 3), domain_name)
 
-    deck_name = text(g, "ElementId", "Deck", ELEMENTS, DECK)
+    concrete_values = [text(g, "Concrete", "C30/37", NAMES, DECK),
+                       text(g, "E [kN/m2]", "33000000", NAMES, DECK),
+                       text(g, "G [kN/m2]", "13750000", NAMES, DECK),
+                       text(g, "Poisson", "0.2", NAMES, DECK),
+                       text(g, "Density [kg/m3]", "2500", NAMES, DECK)]
+    concrete = component(g, ND_MATERIAL, "nD", "Concrete", ELEMENTS, DECK)
+    for i, source in enumerate(concrete_values):
+        wire(inp(concrete, i), source)
+    deck_name = text(g, "ElementId", "Deck", ELEMENTS, DECK, gap=10)
     deck = component(g, BRICK, "SSP Brick", "Deck", LOADS, DECK)
     wire(inp(deck, 0), out(deck_bricks))
     faint(wire(inp(deck, 1), out(steel)))
@@ -462,7 +503,7 @@ def build(doc):
 
     right = g.arrange(0, 0, stages=(NUMBERS, NAMES, ELEMENTS))
 
-    # 5 - Assembled, and the optimisation: Run to start it.
+    # 5 - Assembled, and 6 - the three optimisations, each with its own Run and Step.
     m = Grid(doc)
     assemble = component(m, ASSEMBLE, "Assemble Model", None, MODEL, ASSEMBLED)
     flat(wire(inp(assemble, 0), out(domain), out(deck)))
@@ -472,45 +513,107 @@ def build(doc):
     wire(inp(view, 0), out(assemble))
     view.Locked = True
 
-    keep = text(m, "Keep", "Deck", MODEL, RUN)
-    fraction = slider(m, "VolumeFraction", 0.05, 0.5, 0.2, 2, MODEL, RUN, gap=10)
-    iterations = slider(m, "Iterations", 10, 300, 100, 0, MODEL, RUN, gap=10)
-    run = toggle(m, "Run", False, MODEL, RUN, gap=10)
-    # Up against its end, Step shows the latest design; drag it back to watch the run again.
-    step = slider(m, "Step", 0, 300, 300, 0, MODEL, RUN, gap=10)
-    topology = emit(TOPOLOGY, "Topology Optimisation")
-    open_menus(topology)
-    m.put(topology, OPTIMISE, RUN)
-    faint(wire(inp(topology, T_MODEL), out(assemble)))
-    wire(inp(topology, T_KEEP), keep)
-    wire(inp(topology, T_VOLUME_FRACTION), fraction)
-    wire(inp(topology, T_ITERATIONS), iterations)
-    wire(inp(topology, T_RUN), run)
-    wire(inp(topology, T_STEP), step)
+    keep = text(m, "Keep", "Deck", MODEL, SIMP_RUN)
+    fraction = slider(m, "VolumeFraction", 0.05, 0.5, FRACTION, 2, MODEL, SIMP_RUN, gap=10)
 
-    compliance = readout(m, "Compliance", out(topology, T_COMPLIANCE), RESULTS, RUN, width=160.0, height=120.0)
-    converged = readout(m, "Converged", out(topology, T_CONVERGED), RESULTS, RUN, gap=10)
-    history = readout(m, "History", out(topology, T_HISTORY), RESULTS, HISTORY, width=520.0, height=120.0)
+    # Up against its end, a Step slider shows the latest design; drag it back to watch the run again.
+    simp_iterations = slider(m, "Iterations", 10, 300, 100, 0, MODEL, SIMP_RUN, gap=10)
+    simp_run = toggle(m, "Run SIMP", False, MODEL, SIMP_RUN, gap=10)
+    simp_step = slider(m, "Step SIMP", 0, 300, 300, 0, MODEL, SIMP_RUN, gap=10)
+    simp = emit(TOPOLOGY, "Topology Optimisation")
+    simp.NickName = "SIMP"
+    open_menus(simp)
+    m.put(simp, OPTIMISE, SIMP_RUN)
+    faint(wire(inp(simp, T_MODEL), out(assemble)))
+    wire(inp(simp, T_KEEP), keep)
+    wire(inp(simp, T_VOLUME_FRACTION), fraction)
+    wire(inp(simp, T_ITERATIONS), simp_iterations)
+    wire(inp(simp, T_RUN), simp_run)
+    wire(inp(simp, T_STEP), simp_step)
 
-    # 7 - The design as a model of its own, analysed. Locked to start with: enabled, it analyses every
-    # design Step shows, and dragging Step would wait on every one.
+    beso_iterations = slider(m, "Iterations", 10, 300, 200, 0, MODEL, BESO_RUN)
+    beso_run = toggle(m, "Run BESO", False, MODEL, BESO_RUN, gap=10)
+    beso_step = slider(m, "Step BESO", 0, 300, 300, 0, MODEL, BESO_RUN, gap=10)
+    beso = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), BESO_UNIT)
+    beso.NickName = "BESO"
+    open_menus(beso)
+    m.put(beso, OPTIMISE, BESO_RUN)
+    faint(wire(inp(beso, T_MODEL), out(assemble)))
+    faint(wire(inp(beso, T_KEEP), keep))
+    faint(wire(inp(beso, T_VOLUME_FRACTION), fraction))
+    wire(inp(beso, T_ITERATIONS), beso_iterations)
+    wire(inp(beso, T_RUN), beso_run)
+    wire(inp(beso, B_STEP), beso_step)
+
+    steel_share = slider(m, "Steel share", 0.01, 0.3, STEEL_SHARE, 2, MODEL, MULTI_RUN)
+    concrete_share = slider(m, "Concrete share", 0.01, 0.5, CONCRETE_SHARE, 2, MODEL, MULTI_RUN, gap=10)
+    multi_iterations = slider(m, "Iterations", 10, 500, 300, 0, MODEL, MULTI_RUN, gap=10)
+    multi_run = toggle(m, "Run Multi-Material", False, MODEL, MULTI_RUN, gap=10)
+    multi_step = slider(m, "Step Multi-Material", 0, 500, 500, 0, MODEL, MULTI_RUN, gap=10)
+    multi = switch_unit(emit(TOPOLOGY, "Topology Optimisation"), MULTI_UNIT)
+    multi.NickName = "Multi-Material"
+    open_menus(multi)
+    m.put(multi, OPTIMISE, MULTI_RUN)
+    faint(wire(inp(multi, M_MODEL), out(assemble)))
+    faint(wire(inp(multi, M_KEEP), keep))
+    faint(wire(inp(multi, M_MATERIALS), out(steel), out(concrete)))
+    wire(inp(multi, M_FRACTIONS), steel_share, concrete_share)
+    wire(inp(multi, M_ITERATIONS), multi_iterations)
+    wire(inp(multi, M_RUN), multi_run)
+    wire(inp(multi, M_STEP), multi_step)
+
+    readouts = []
+    for label, c, compliance_out, converged_out, row in (("SIMP", simp, T_COMPLIANCE, T_CONVERGED, SIMP_RUN),
+                                                         ("BESO", beso, T_COMPLIANCE, T_CONVERGED, BESO_RUN),
+                                                         ("Multi-Material", multi, M_COMPLIANCE, M_CONVERGED, MULTI_RUN)):
+        readouts.append(readout(m, "Compliance " + label, out(c, compliance_out), RESULTS, row, width=160.0, height=100.0))
+        readouts.append(readout(m, "Converged " + label, out(c, converged_out), RESULTS, row, gap=10, width=160.0))
+
+    # 7 - The three designs one above the other, each named: SIMP's and BESO's moved up; Multi-Material draws its
+    # own, in its materials' colours, where the model is.
+    shown = []
+    for label, up in SHOWN:
+        row = {"SIMP": SIMP_RUN, "BESO": BESO_RUN, "Multi-Material": MULTI_RUN}[label]
+        source = {"SIMP": simp, "BESO": beso}.get(label)
+        if source is not None:
+            source.Hidden = True
+            moved = component(m, MOVE, "Move", label + " above", PREVIEW, row)
+            wire(inp(moved, 0), out(source, T_SURFACE))
+            lift = vector(m, UNIT_Z, "Up", up, PREVIEW, row, gap=10)
+            wire(inp(moved, 1), out(lift))
+            shown += [moved, lift]
+        # Upright, facing -y: read from the front, to the left of the design.
+        place = component(m, XZ_PLANE, "XZ Plane", label + " name", PREVIEW, row, gap=10)
+        point(inp(place, 0), -7.5, 0.0, up + HEIGHT / 2.0 - 0.4)
+        tag = component(m, TEXT_TAG, "Text Tag 3D", label + " name", SHOWN_COL, row)
+        wire(inp(tag, 0), out(place))
+        inp(tag, 1).PersistentData.Clear()
+        inp(tag, 1).PersistentData.Append(GH_String(label))
+        number(inp(tag, 2), 0.8)
+        shown += [place, tag]
+
+    # 8 - Each design as a model of its own, analysed. Locked to start with: enabled, it analyses every design its
+    # Step shows, and dragging Step would wait on every one. Each draws where the model is.
     settings = component(m, ANALYSIS_SETTINGS, "Analysis Settings", None, MODEL, ANALYSED)
-    analysis = component(m, RUN_ANALYSIS, "Run Analysis", None, MODEL, ANALYSED, gap=10)
-    wire(inp(analysis, 0), out(topology, T_ALPACA_MODEL))
-    wire(inp(analysis, 1), out(settings))
-    analysis.Locked = True
-    results = component(m, MODEL_VIEW, "Model View", None, OPTIMISE, ANALYSED)
-    wire(inp(results, 0), out(analysis))
-    widget(results, "_ckExtruded").Active = False
-    widget(results, "_ckReleases").Active = False
-    show_result(results, BRICK_STRESSES, VON_MISES)
-    legend = component(m, LEGEND, "Legend", None, RESULTS, ANALYSED)
-    legend.Locked = True    # with nothing analysed it would draw an empty legend
-    legend_title = text(m, "Title", "Von Mises stress [MPa]", RESULTS, ANALYSED, width=160.0)
-    wire(inp(legend, 0), legend_title)
-    wire(inp(legend, 1), out(results, 3))
-    wire(inp(legend, 2), out(results, 4))
-    shown = readout(m, "What is drawn", out(results, 2), RESULTS, ANALYSED, gap=10, width=300.0, height=40.0)
+    analysed = [settings]
+    for label, c, model_out in (("SIMP", simp, T_ALPACA_MODEL), ("BESO", beso, T_ALPACA_MODEL),
+                                ("Multi-Material", multi, M_ALPACA_MODEL)):
+        analysis = component(m, RUN_ANALYSIS, "Run Analysis", "Analyse " + label, MODEL, ANALYSED, gap=10)
+        wire(inp(analysis, 0), out(c, model_out))
+        faint(wire(inp(analysis, 1), out(settings)))
+        analysis.Locked = True
+        results = component(m, MODEL_VIEW, "Model View", "Stress " + label, OPTIMISE, ANALYSED, gap=10)
+        wire(inp(results, 0), out(analysis))
+        widget(results, "_ckExtruded").Active = False
+        widget(results, "_ckReleases").Active = False
+        show_result(results, BRICK_STRESSES, VON_MISES)
+        legend = component(m, LEGEND, "Legend", "Legend " + label, RESULTS, ANALYSED, gap=10)
+        legend.Locked = True    # with nothing analysed it would draw an empty legend
+        title = text(m, "Title", "Von Mises stress [MPa], " + label, RESULTS, ANALYSED, width=240.0)
+        wire(inp(legend, 0), title)
+        wire(inp(legend, 1), out(results, 3))
+        wire(inp(legend, 2), out(results, 4))
+        analysed += [analysis, results, legend, title]
 
     m.arrange(right + 160, 0)
 
@@ -518,44 +621,48 @@ def build(doc):
     group(doc, "2 - The design domain, 16 x 2 x 4 m, and the deck on top, in layers of bricks",
           [plan, plan_mesh, domain_levels, domain_lift, domain_meshes, domain_bricks,
            deck_levels, deck_lift, deck_meshes, deck_bricks], ORANGE)
-    group(doc, "3 - Steel, and the bricks named Domain and Deck", [steel, domain_name, domain, deck_name, deck] + steel_values, PURPLE)
+    group(doc, "3 - Steel, and concrete for Multi-Material; the bricks named Domain and Deck, of steel",
+          [steel, concrete, domain_name, domain, deck_name, deck] + steel_values + concrete_values, PURPLE)
     group(doc, "4 - Pinned ends, 10 kN/m2 on the deck",
           [ends, ys, held, free, support, top_lift, top, top_nodes, node_count, share, down, deck_load, pattern], GREEN)
     group(doc, "5 - Assemble Model (enable Model View to see the domain)", [assemble, view], BLUE)
-    group(doc, "6 - Topology Optimisation: set Run to true", [keep, fraction, iterations, run, step, topology, compliance, converged, history], GREY)
-    group(doc, "7 - The design, analysed: once the run has stopped, enable Run Analysis and Legend",
-          [settings, analysis, results, legend, legend_title, shown], PURPLE)
+    group(doc, "6 - Three ways: set a Run to true; each run goes on its own",
+          [keep, fraction, simp_iterations, simp_run, simp_step, simp, beso_iterations, beso_run, beso_step, beso,
+           steel_share, concrete_share, multi_iterations, multi_run, multi_step, multi] + readouts, GREY)
+    group(doc, "7 - The three designs one above the other: SIMP, BESO, Multi-Material where the model is", shown, BLUE)
+    group(doc, "8 - Each design analysed: once its run has stopped, enable its Run Analysis and Legend, one at a time",
+          analysed, PURPLE)
 
-    # Only the optimised surface, and the design's stresses once analysed, draw in Rhino, not the
-    # construction geometry behind them.
-    drawn = set(str(o.InstanceGuid) for o in (topology, view, results, legend))
+    # Only the designs, their names, and the stresses once analysed draw in Rhino, not the construction geometry
+    # behind them.
+    drawn = set(str(o.InstanceGuid) for o in shown + analysed + [view, multi])
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
         if hasattr(obj, "Hidden") and str(obj.InstanceGuid) not in drawn:
             obj.Hidden = True
 
-    note(doc, "Topology Optimisation",
-         "Bridge - a Topology Optimisation example.\n\n"
-         "The design domain is a steel block 16 m long, 2 m wide and 4 m high, pinned along both ends of its "
-         "bottom. Its top layer is the deck: it carries 10 kN/m2 and is kept solid, by its ElementId, through "
-         "Keep. The optimisation finds the fifth of the rest that carries the deck stiffest: an arch from "
-         "support to support rising into the deck at mid-span, with a column up to the deck near each end.\n\n"
-         "1. Set Run to true. The run goes on its own thread: the Surface preview and the outputs follow it, "
-         "about once a second, and Rhino stays free.\n"
-         "2. Set Run to false to pause, true to go on; raise Iterations to go further. Change anything else - "
-         "VolumeFraction, Bricks per metre - and the run starts again.\n"
-         "3. Drag Step back to watch the run again, design by design: every iteration is kept.\n"
-         "4. Bricks per metre 3 gives 3 456 bricks, about 15 s on an M2 Pro; 4 gives 8 192, under a minute. At 2 "
-         "the deck is a 0.5 m slab of solid steel, stiff enough to span most of the way, and the steel goes into "
-         "two legs that shorten its span instead of an arch.\n"
-         "5. Once the run has stopped, enable Run Analysis and Legend (select both, right-click, Enable): "
-         "AlpacaModel is the design as a model of its own - the solid bricks at full stiffness, the void ones gone, "
-         "with the supports and loads that stand on them - and the Model View after Run Analysis colours it by Von "
-         "Mises stress. Disable Run Analysis again before dragging Step, or every design shown is analysed.\n\n"
-         "Each SSP Brick is solved as OpenSees' eight point brick: the SSP Brick fixes part of its stiffness "
-         "when it is built, so it cannot be softened. A void brick keeps a billionth of its stiffness; nothing "
-         "is cut out of the mesh. Topology Optimisation needs a license.",
-         0, -450, 620, 380)
+    note(doc, "Bridge, three ways",
+         "Bridge - topology optimisation three ways.\n\n"
+         "The design domain is a steel block 16 m long, 2 m wide and 4 m high, pinned along both ends of its bottom. Its "
+         "top layer is the deck: it carries 10 kN/m2 and is kept solid, by its ElementId, through Keep. The same model "
+         "goes to the three methods of Topology Optimisation:\n"
+         "- SIMP: densities between 0 and 1, a fifth of the block below the deck - an arch rising into the deck, with a "
+         "column near each end;\n"
+         "- BESO: the block carved down to a fifth, every brick solid or void all along - drag Step BESO to see the "
+         "bridge at every volume on the way;\n"
+         "- Multi-Material: steel or concrete brick by brick, at most 5% in steel and 15% in concrete.\n\n"
+         "1. Set Run SIMP, Run BESO or Run Multi-Material to true, or all three. Each run goes on its own thread: its "
+         "design draws in group 7 as it goes, SIMP at the top, Multi-Material where the model is, and Rhino stays free.\n"
+         "2. Set a Run to false to pause it, true to go on. Change anything else - VolumeFraction, the shares, Bricks per "
+         "metre - and the runs start again.\n"
+         "3. Drag a Step slider back to watch that run again, design by design.\n"
+         "4. Once a run has stopped, enable its Run Analysis and Legend in group 8 (select both, right-click, Enable): "
+         "its AlpacaModel is the design as a model of its own, and the Model View after it colours it by Von Mises "
+         "stress, where the model is. Disable them before dragging its Step, or every design shown is analysed.\n"
+         "5. Bricks per metre 3 gives 3 456 bricks; 1, 128 bricks, runs without a license.\n\n"
+         "Each SSP Brick is solved as OpenSees' eight point brick, and a void brick keeps a billionth of the steel's "
+         "stiffness. Above 500 bricks Topology Optimisation needs a license.",
+         0, -520, 660, 450)
 
 
 def main():
@@ -563,7 +670,7 @@ def main():
     build(doc)
     doc.NewSolution(False)
     Grasshopper.Instances.ActiveCanvas.Refresh()
-    print("Topology bridge built. Set Run to true on Topology Optimisation to start.")
+    print("Bridge built. Set Run SIMP, Run BESO or Run Multi-Material to true to start.")
 
 
 if __name__ == "__main__":
