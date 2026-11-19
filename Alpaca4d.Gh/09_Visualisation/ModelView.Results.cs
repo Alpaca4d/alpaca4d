@@ -174,8 +174,9 @@ namespace Alpaca4d.Gh
         /// </summary>
         private void BuildModel(ElementFilter filter, Dictionary<int, Vector3d> displacement)
         {
-            foreach (var beam in _model.Beams)
+            for (int i = 0; i < _model.Beams.Count; i++)
             {
+                var beam = _model.Beams[i];
                 var start = Move(beam.Curve.PointAtStart, beam.INode, displacement);
                 var end = Move(beam.Curve.PointAtEnd, beam.JNode, displacement);
 
@@ -185,7 +186,8 @@ namespace Alpaca4d.Gh
                     continue;
                 }
 
-                var colour = _colours.Of(beam);
+                // Coloured by its buckling length, when the Buckling menu has them on; see ModelView.Buckling.cs.
+                var colour = _bucklingColours != null ? _bucklingColours[i] : _colours.Of(beam);
                 Plain(beam, start, end, colour, colour);
             }
 

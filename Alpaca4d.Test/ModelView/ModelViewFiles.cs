@@ -173,7 +173,9 @@ class ModelViewFilesTest
                   "Extruded, Element edges and End Releases start on");
 
             var menus = Field<GH_MenuCollection>(view.Attributes, "_collection").Menus.Select(m => m.Name).ToList();
-            Check(string.Join(", ", menus) == "Results, Elements, Loads, Supports", $"menus: Results, then the old Model View's three ({string.Join(", ", menus)})");
+            Check(string.Join(", ", menus) == "Results, Elements, Loads, Supports, Buckling",
+                  $"menus: Results, the old Model View's three, then Buckling ({string.Join(", ", menus)})");
+            Check(!Field<MenuCheckBox>(view, "_ckBuckling").Active, "Buckling lengths start off");
 
             Check(view.ComponentGuid != new Guid("5EDB6364-D458-43D6-81E9-324DECA1FEA6")
                   && view.ComponentGuid != new Guid("4D8A0F26-3B71-4E59-9C84-A2F70D51B6E3"),
