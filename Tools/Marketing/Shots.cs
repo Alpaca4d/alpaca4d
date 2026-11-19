@@ -3316,23 +3316,38 @@ public static class Shots
         }
     }
 
-    /// <summary>Series over times in r, symmetric about zero, each drawn up to t; labels name them, top right, with their value now.</summary>
+    /// <summary>
+    /// Series over times in r, symmetric about zero, each drawn up to t; labels name them, top right, with their value now.
+    /// tick: a time label every tick seconds, rather than every 2 s or 5 s, each times timeScale in timeUnit - 1000 and
+    /// "ms" for something over in a fraction of a second - and the time now in timeFormat.
+    /// </summary>
     static void TimeChart(Graphics g, RectangleF r, double[] times, List<double[]> series, double t, string title,
-                          Color[] colours, string[] labels, string unit, string format, float s, bool seconds)
+                          Color[] colours, string[] labels, string unit, string format, float s, bool seconds,
+                          double tick = 0, double timeScale = 1, string timeUnit = "s", string timeFormat = "0.0")
     {
         double end = times[times.Length - 1], top = Nice(series.Max(v => v.Max(Math.Abs)) * 1.05);
+        // A series that never goes below zero, a pulse of load, stands on zero rather than about it.
+        bool positive = series.All(v => v.All(x => x >= 0));
         Func<double, float> X = x => r.Left + (float)(x / end) * r.Width;
-        Func<double, float> Y = y => r.Top + r.Height / 2 - (float)(y / top) * r.Height / 2;
+        Func<double, float> Y = positive ? (Func<double, float>)(y => r.Bottom - (float)(y / top) * r.Height)
+                                         : y => r.Top + r.Height / 2 - (float)(y / top) * r.Height / 2;
         int now = Math.Max(0, Math.Min(times.Length - 1, (int)Math.Round((t - times[0]) / Math.Max(1e-9, times[1] - times[0]))));
         using (var big = new Font(ChartFont, 42 * s, GraphicsUnit.Pixel))
         using (var small = new Font(ChartFont, 32 * s, GraphicsUnit.Pixel))
         using (var axis = new Pen(ChartAxis, 2 * s))
         using (var ink = new SolidBrush(DarkTech))
         {
-            Axes(g, r, top, format, Y, small, axis, ink, s);
+            Axes(g, r, top, format, Y, small, axis, ink, s, positive);
             // A second label every 2 s, or every 5 s where they would crowd.
             int every = r.Width / end < 70 * s ? 5 : 2;
-            if (seconds)
+            if (seconds && tick > 0)
+                for (int i = 0; i * tick <= end + 1e-9; i++)
+                {
+                    var label = (i * tick * timeScale).ToString("0.##", Inv) + " " + timeUnit;
+                    var size = g.MeasureString(label, small);
+                    g.DrawString(label, small, ink, X(i * tick) - size.Width / 2, r.Bottom + 12 * s);
+                }
+            else if (seconds)
                 for (int second = 0; second <= (int)end; second += every)
                 {
                     var label = second + " s";
@@ -3366,7 +3381,7 @@ public static class Shots
             for (int i = series.Count - 1; i >= 0; i--)
             {
                 var value = series[i][now].ToString(format, Inv) + " " + unit;
-                var text = labels == null ? value + "      t = " + times[now].ToString("0.0", Inv) + " s" : labels[i] + "  " + value;
+                var text = labels == null ? value + "      t = " + (times[now] * timeScale).ToString(timeFormat, Inv) + " " + timeUnit : labels[i] + "  " + value;
                 var size = g.MeasureString(text, big);
                 right -= size.Width;
                 using (var brush = new SolidBrush(labels == null ? DarkTech : colours[i % colours.Length]))
@@ -3414,12 +3429,14 @@ public static class Shots
     }
 
     /// <summary>Zero and the top either side, as lines across r, labelled on the left.</summary>
-    static void Axes(Graphics g, RectangleF r, double top, string format, Func<double, float> Y, Font font, Pen pen, Brush ink, float s)
+    static void Axes(Graphics g, RectangleF r, double top, string format, Func<double, float> Y, Font font, Pen pen, Brush ink, float s,
+                     bool positive = false)
     {
-        foreach (double v in new[] { top, 0.0, -top })
+        foreach (double v in positive ? new[] { top, top / 2, 0.0 } : new[] { top, 0.0, -top })
         {
             g.DrawLine(pen, r.Left, Y(v), r.Right, Y(v));
-            var label = v.ToString(format, Inv);
+            // Half of a top of 25 is 12.5, not the 13 a whole-number format would round it to.
+            var label = v.ToString(positive && format == "0" && v != Math.Round(v) ? "0.#" : format, Inv);
             var size = g.MeasureString(label, font);
             g.DrawString(label, font, ink, r.Left - size.Width - 14 * s, Y(v) - size.Height / 2);
         }
