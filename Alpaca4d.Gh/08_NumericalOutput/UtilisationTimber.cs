@@ -223,12 +223,11 @@ namespace Alpaca4d.Gh
                 Set(outputs, "Report", results.Select(u => u.Details ?? new TimberReport(u.Report) { Max = u.Max, Governing = u.Governing }));
             outputs.Same(Output("Element"), kept.Select(i => beams[i]));
 
-            bool defaultLengths = lengthsY.Count == 0 || lengthsZ.Count == 0 || lengthsLT.Count == 0;
-            ExplainTimber(results, kept, beams, defaultLengths, alpacaModel, serviceClasses.Count == 0);
+            ExplainTimber(results, kept, beams, alpacaModel, serviceClasses.Count == 0);
         }
 
         /// <summary>Says, once per solve, which beams were left out and why, and what k_mod was worked out from.</summary>
-        private void ExplainTimber(List<MemberUtilisation> results, List<int> kept, IReadOnlyList<IBeam> beams, bool defaultLengths,
+        private void ExplainTimber(List<MemberUtilisation> results, List<int> kept, IReadOnlyList<IBeam> beams,
                                    Alpaca4d.Model model, bool defaultServiceClass)
         {
             string Tags(IEnumerable<int> positions)
@@ -258,11 +257,6 @@ namespace Alpaca4d.Gh
 
             if (!results.Any(u => u.Checked))
                 return;
-
-            if (defaultLengths)
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    "Buckling lengths left empty are each beam's own length, node to node, held at both ends: a member drawn " +
-                    "as several beams, a sway column or a cantilever needs its lengths given.");
 
             AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                 "k_mod from the shortest load duration of each combination" +
