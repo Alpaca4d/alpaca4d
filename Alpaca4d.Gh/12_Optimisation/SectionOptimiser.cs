@@ -131,7 +131,7 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthLT", "LengthLT",
-                $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
+                $"Lateral restraint spacing, for lateral-torsional buckling [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
