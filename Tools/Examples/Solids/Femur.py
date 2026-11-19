@@ -1,6 +1,6 @@
 #! python3
 # The tetrahedron example on a bone: a femur held at the knee, with the force of the hip on its head,
-# in four thousand tetrahedra.
+# in tetrahedra Mesh Solid makes from its surface.
 #
 # make.sh, in the folder above, writes Femur.gh straight from this script, without Rhino. It also runs in Rhino
 # with Grasshopper and Alpaca4d installed - in Rhino 8 from the ScriptEditor (open this file and press
@@ -8,14 +8,15 @@
 #
 # The bone is the Standardised Femur, the surface of a composite femur put forward by Viceconti et al.
 # (J. Biomech. 1996) as the reference geometry for finite element studies of the femur, published by
-# the University of Sheffield under CC BY 4.0. Grasshopper has no tetrahedral mesher, so the
-# tetrahedra come in as a tetrahedral mesher hands them out, nodes and four node numbers per
-# tetrahedron, read from Femur.txt next to this script and kept in the definition. FemurMesh.py made
-# that file with gmsh.
+# the University of Sheffield under CC BY 4.0. Its closed surface - the outer faces of the
+# tetrahedra in Femur.txt next to this script, which FemurMesh.py made with gmsh - is kept in the
+# definition as nodes and triangles. Mesh Solid fills it with tetrahedra there, finer along the neck,
+# where the bone bends most; it runs gmsh, which each user installs.
 #
 # The elements are Ten Node Tetrahedra, which bend, and need an OpenSees built from the master branch
 # since 16 October 2026. Every node in the bottom 2 cm is held, as a bone potted for a test is; the
-# force is shared among the nodes on the top of the head.
+# force is shared among the nodes on the top of the head. A Natural Vibration Analysis gives its
+# modes.
 #
 # Written for both Python 3 (Rhino 8) and IronPython 2.7 (Rhino 7): no f-strings, ASCII only.
 
@@ -24,16 +25,17 @@ import Rhino
 import Grasshopper
 from Grasshopper.Kernel import GH_Document, GH_DataMapping, GH_ParamWireDisplay
 from Grasshopper.Kernel.Data import GH_Path
-from Grasshopper.Kernel.Special import GH_Group, GH_Panel, GH_BooleanToggle
-from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Boolean, GH_Point, GH_MeshFace
+from Grasshopper.Kernel.Special import GH_Group, GH_Panel, GH_BooleanToggle, GH_NumberSlider
+from Grasshopper.GUI.Base import GH_SliderAccuracy
+from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_Boolean, GH_Point, GH_MeshFace, GH_Colour
 from Rhino.Geometry import Point3d, MeshFace
 from System.Drawing import PointF, RectangleF, Color
 from System.Reflection import BindingFlags
 
 # Grasshopper
 POINT = "FBAC3E32-F100-4292-8692-77240A42FD1A"              # Params > Geometry > Point
-INTEGER = "2E3AB970-8545-46BB-836C-1C11E5610BCE"            # Params > Primitive > Integer
 MESH_FACE = "E02B3DA5-543A-46AC-A867-0BA6B0A524DE"          # Params > Geometry > Mesh Face
+LINE = "4C4E56EB-2F04-43F9-95A3-CC46A14F495A"               # Curve > Primitive > Line
 LIST_ITEM = "59DAF374-BC21-4A5E-8282-5504FB7AE9AE"          # Sets > List > List Item
 LIST_LENGTH = "1817FD29-20AE-4503-B542-F0FB651E67D7"        # Sets > List > List Length
 SORT_LIST = "6F93D366-919F-4DDA-A35E-BA03DD62799B"          # Sets > List > Sort List
@@ -48,6 +50,8 @@ VECTOR_XYZ = "56B92EAB-D121-43F7-94D3-6CD8F0DDEAD8"         # Vector > Vector > 
 MULTIPLY = "63FFF845-7C61-4DFB-BA12-44D481B4BF0F"           # Vector > Vector > Multiply
 
 # Alpaca4d
+MESH_SOLID = "8C2E4A71-5B9D-4F36-A1E8-2D7C6B3F9E05"         # Mesh Solid
+MESH_REFINEMENT = "3F6B2C1E-8D4A-4E7B-9C2F-5A1D7E8B4C63"    # Mesh Refinement
 ND_MATERIAL = "B40E1124-E203-4E1A-8962-2A6FB8D751A5"        # nD (ElasticIsotropic)
 TEN_NODE = "1F38CDFC-F909-4F3F-969E-9E2C63F9A321"           # Ten Node Tetrahedron
 SUPPORT = "C4E1D7A2-58B6-4F03-8E2A-1B9F6D3A7C05"            # Support, Rigid
@@ -57,6 +61,7 @@ ASSEMBLE = "B6978C42-7B88-4F1A-A5DF-85EF89F154F9"           # Assemble Model
 MODEL_VIEW = "F6D1EFD4-82A3-4A0F-B4B7-6DD0EE9FCADE"         # Model View
 ANALYSIS_SETTINGS = "9AE62757-69CC-4023-92EB-E8E1AA164AD0"  # Analysis Settings
 RUN_ANALYSIS = "8C1F5A3E-2D74-4B96-A0E8-7F3B19D6C452"       # Run Analysis
+NATURAL_VIBRATION = "3B7D2E95-6A41-4C8F-9E1D-5F0A8C27B6D3"  # Natural Vibration Analysis
 LEGEND = "A6B3B5C9-DB8D-4B6A-9E7E-63C6D2E2F9F5"             # Legend
 
 # Faint group colours from Alpaca4d's palette, one per stage of the definition.
@@ -75,9 +80,13 @@ HEAD = 0.015                # m: the force is shared among the nodes this close 
 # the -X side of the shaft).
 HIP_FORCE = (0.45, 0.0, -1.949)
 TOLERANCE = 0.0001          # m: two points nearer than this are one node
-# The four faces of a tetrahedron, by its corners. Ten Node Tetrahedron reads only the corners and
-# puts them in order itself, so any four faces would do; these make a closed mesh.
-FACES = ((0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0))
+SIZE = 0.008                # m: the tetrahedra's size
+# The femoral neck, from the middle of the head down to where it meets the shaft: the tetrahedra are
+# NECK_SIZE along it, growing back to SIZE by NECK_REACH from it.
+NECK = ((-0.045, -0.004, 0.427), (-0.005, -0.004, 0.395))
+NECK_SIZE, NECK_REACH = 0.003, 0.03
+MODES = 6                   # how many modes to solve for
+MODE_COLOURS = ["#B9D0F6", "#4288F7", "#9E35DA", "#EB6C3F"]
 # Model View's results, from 1: Displacement, Beam forces, Beam stresses, Shell forces, Shell
 # stresses, Brick stresses, Reactions; and the displacements: Magnitude, Ux, Uy, Uz.
 DISPLACEMENT, MAGNITUDE = 1, 0
@@ -94,6 +103,43 @@ def read_tetrahedra():
     tets = int(lines[1 + count].split()[1])
     tetrahedra = [tuple(int(v) for v in line.split()) for line in lines[2 + count:2 + count + tets]]
     return nodes, tetrahedra
+
+
+def outer_surface(nodes, tetrahedra):
+    """The faces of the tetrahedra that only one of them has - the bone's closed surface - each turned
+    out, and the nodes they use, numbered afresh from 0."""
+    faces = {}
+    for a, b, c, d in tetrahedra:
+        p, q, r, s_ = [nodes[n] for n in (a, b, c, d)]
+        u, v, w = [[x[i] - p[i] for i in range(3)] for x in (q, r, s_)]
+        if u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]) < 0:
+            b, c = c, b
+        for face in ((a, c, b), (a, d, c), (a, b, d), (b, c, d)):
+            key = tuple(sorted(face))
+            faces[key] = None if key in faces else face
+    outer = [f for f in faces.values() if f is not None]
+    used = {}
+    for f in outer:
+        for n in f:
+            if n not in used:
+                used[n] = len(used)
+    points = [None] * len(used)
+    for n, i in used.items():
+        points[i] = nodes[n]
+    return points, [tuple(used[n] for n in f) for f in outer]
+
+
+def colours(param, stops, count):
+    """A colour scale typed into an unwired input: count colours spread evenly between the stops."""
+    rgb = [tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in stops]
+    param.PersistentData.Clear()
+    for k in range(count):
+        t = k / float(count - 1) * (len(rgb) - 1)
+        i = min(int(t), len(rgb) - 2)
+        f = t - i
+        c = [int(round(rgb[i][j] + (rgb[i + 1][j] - rgb[i][j]) * f)) for j in range(3)]
+        param.PersistentData.Append(GH_Colour(Color.FromArgb(255, c[0], c[1], c[2])))
+    return param
 
 
 def volume(nodes, tetrahedra):
@@ -314,6 +360,19 @@ def group(doc, name, objects, colour):
     return g
 
 
+def slider(grid, name, lo, hi, value, col, row=None, gap=0):
+    """A whole number slider."""
+    s = GH_NumberSlider()
+    s.CreateAttributes()
+    s.NickName = name
+    s.Slider.Type = GH_SliderAccuracy.Integer
+    s.Slider.DecimalPlaces = 0
+    s.Slider.Minimum = System.Decimal(float(lo))
+    s.Slider.Maximum = System.Decimal(float(hi))
+    s.Slider.Value = System.Decimal(float(value))
+    return grid.put(s, col, row, gap)
+
+
 def widget(obj, field):
     """One of an Alpaca4d component's menu controls, which it keeps to itself."""
     return obj.GetType().GetField(field, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(obj)
@@ -332,42 +391,55 @@ def show_result(view, show, component):
 # ---------------------------------------------------------------- the femur
 
 # Columns, in the order the data flows...
-DATA_, CORNERS, MESHES, NAMES, MATERIAL, ELEMENTS, HEIGHT, TEST, KEEP, UNIQUE, SHARE, LOADS, PATTERN = range(13)
+DATA_, SURFACE, MESHES, NAMES, MATERIAL, ELEMENTS, HEIGHT, TEST, KEEP, UNIQUE, SHARE, LOADS, PATTERN = range(13)
 # ...and rows, one per part of the model.
 TETS, KNEE, HIP = range(3)
 
 # The model and its analysis, in a grid of their own to the right.
 MODEL, VIEW, SHOWN = range(3)
-ASSEMBLED, ANALYSED = range(2)
+ASSEMBLED, ANALYSED, MODAL = range(3)
 
 
 def build(doc):
     nodes, tetrahedra = read_tetrahedra()
+    surface_nodes, surface_triangles = outer_surface(nodes, tetrahedra)
     g = Grid(doc)
 
-    # 1 - The femur in tetrahedra, as a tetrahedral mesher hands them out: the nodes, and four node
-    # numbers per tetrahedron, one branch each. Each tetrahedron's corners made into a mesh.
-    node_points = component(g, POINT, "Point", "Nodes", DATA_, TETS)
+    # 1 - The femur's closed surface, as nodes and triangles, made into a mesh; Mesh Solid fills it with
+    # tetrahedra of SIZE, NECK_SIZE along the neck.
+    node_points = component(g, POINT, "Point", "Surface nodes", DATA_, TETS)
     node_points.PersistentData.Clear()
-    for x, y, z in nodes:
+    for x, y, z in surface_nodes:
         node_points.PersistentData.Append(GH_Point(Point3d(x, y, z)))
-    corner_numbers = component(g, INTEGER, "Integer", "Tetrahedra", DATA_, TETS)
-    corner_numbers.PersistentData.Clear()
-    for i, tet in enumerate(tetrahedra):
-        path = GH_Path(i)
-        for n in tet:
-            corner_numbers.PersistentData.Append(GH_Integer(n), path)
-    faces = component(g, MESH_FACE, "Mesh Face", "Four faces", DATA_, TETS)
+    faces = component(g, MESH_FACE, "Mesh Face", "Surface triangles", DATA_, TETS)
     faces.PersistentData.Clear()
-    for a, b, c in FACES:
+    for a, b, c in surface_triangles:
         faces.PersistentData.Append(GH_MeshFace(MeshFace(a, b, c)))
+    surface = component(g, CONSTRUCT_MESH, "Construct Mesh", "The bone's surface", SURFACE, TETS)
+    wire(inp(surface, 0), node_points)
+    wire(inp(surface, 1), faces)
 
-    corners = component(g, LIST_ITEM, "List Item", "Corners", CORNERS, TETS)
-    wire(inp(corners, 0), node_points)
-    wire(inp(corners, 1), corner_numbers)
-    tet_meshes = component(g, CONSTRUCT_MESH, "Construct Mesh", "Tetrahedra", MESHES, TETS)
-    wire(inp(tet_meshes, 0), out(corners))
-    wire(inp(tet_meshes, 1), faces)
+    neck_ends = component(g, POINT, "Point", "Neck", DATA_, TETS)
+    neck_ends.PersistentData.Clear()
+    for x, y, z in NECK:
+        neck_ends.PersistentData.Append(GH_Point(Point3d(x, y, z)))
+    start = component(g, LIST_ITEM, "List Item", "Head", SURFACE, TETS)
+    wire(inp(start, 0), neck_ends)
+    end = component(g, LIST_ITEM, "List Item", "Shaft", SURFACE, TETS)
+    wire(inp(end, 0), neck_ends)
+    inp(end, 1).PersistentData.Clear()
+    inp(end, 1).PersistentData.Append(GH_Integer(1))
+    neck = component(g, LINE, "Line", "Neck", SURFACE, TETS)
+    wire(inp(neck, 0), out(start))
+    wire(inp(neck, 1), out(end))
+    refinement = component(g, MESH_REFINEMENT, "Mesh Refinement", "Finer along the neck", MESHES, TETS)
+    wire(inp(refinement, 0), out(neck))
+    number(inp(refinement, 1), NECK_SIZE)
+    number(inp(refinement, 2), NECK_REACH)
+    tet_meshes = component(g, MESH_SOLID, "Mesh Solid", "Tetrahedra", MESHES, TETS)
+    wire(inp(tet_meshes, 0), out(surface))
+    number(inp(tet_meshes, 1), SIZE)
+    wire(inp(tet_meshes, 2), out(refinement))
 
     # 2 - Bone, and the ten node tetrahedra.
     bone_values = [text(g, "Bone", "Cortical bone", NAMES, TETS),
@@ -454,6 +526,8 @@ def build(doc):
     flat(wire(inp(assemble, 0), out(ten)))
     flat(wire(inp(assemble, 1), out(support)))
     flat(wire(inp(assemble, 2), out(pattern)))
+    # Smaller than the tetrahedra: the default, 1 cm, would weld their nodes together.
+    number(inp(assemble, 5), TOLERANCE)
     view = component(m, MODEL_VIEW, "Model View", None, VIEW, ASSEMBLED)
     wire(inp(view, 0), out(assemble))
 
@@ -476,37 +550,56 @@ def build(doc):
     info = readout(m, "What is drawn", out(results, 2), SHOWN, ANALYSED, width=300.0, height=40.0)
     log = readout(m, "OpenSees log", out(run, 1), SHOWN, ANALYSED, width=300.0, height=140.0)
 
+    # 7 - The first MODES modes, and the one Step picks drawn over the bone.
+    vibration = component(m, NATURAL_VIBRATION, "Natural Vibration Analysis", None, MODEL, MODAL)
+    wire(inp(vibration, 0), out(assemble))
+    inp(vibration, 1).PersistentData.Clear()
+    inp(vibration, 1).PersistentData.Append(GH_Integer(MODES))
+    mode = slider(m, "Step, the mode from 0", 0, MODES - 1, 0, MODEL, MODAL)
+    modal = component(m, MODEL_VIEW, "Model View", "Mode shape", VIEW, MODAL)
+    wire(inp(modal, 0), out(vibration))
+    wire(inp(modal, 1), mode)
+    colours(inp(modal, 3), MODE_COLOURS, 9)
+    widget(modal, "_ckDeformed").Active = True
+    widget(modal, "_ckExtruded").Active = False
+    widget(modal, "_ckReleases").Active = False
+    show_result(modal, DISPLACEMENT, MAGNITUDE)
+    frequencies = readout(m, "Frequencies [Hz]", out(vibration, 3), SHOWN, MODAL, width=160.0, height=130.0)
+
     m.arrange(right + 160, 0)
 
-    group(doc, "1 - The femur in tetrahedra: nodes, and four nodes per tetrahedron",
-          [node_points, corner_numbers, faces, corners, tet_meshes], ORANGE)
+    group(doc, "1 - The femur's surface, filled with tetrahedra by Mesh Solid, finer along the neck",
+          [node_points, faces, surface, neck_ends, start, end, neck, refinement, tet_meshes], ORANGE)
     group(doc, "2 - Bone, and Ten Node Tetrahedra: they need an OpenSees from master",
           [bone, ten] + bone_values, PURPLE)
     group(doc, "3 - Held at the knee: every node in the bottom 2 cm, edge nodes included",
           [model_nodes, height, low, knee, knee_nodes, held, free, support], GREEN)
     group(doc, "4 - The hip's force, 2 kN, shared among the nodes on the top of the head",
           [by_height, top, away, close, head, head_nodes, count, share, hip, each, load, pattern], RED)
-    group(doc, "5 - Assemble Model", [assemble, view], BLUE)
+    group(doc, "5 - Assemble Model, its Tolerance 0.1 mm, below the tetrahedra's size", [assemble, view], BLUE)
     group(doc, "6 - Solve, and the displacement over the bone, 20 times",
           [settings, run, results, legend, legend_title, info, log], GREY)
+    group(doc, "7 - Its modes: Natural Vibration, and Step picks the mode drawn",
+          [vibration, mode, modal, frequencies], PURPLE)
 
     # Only the Model View after Run Analysis draws the bone; the one after Assemble Model and the
     # construction geometry stay out of the viewport. Show that one's preview to see the elements, the
     # supports and the loads.
     for obj in doc.Objects:
         obj = getattr(obj, "__implementation__", obj)
-        if hasattr(obj, "Hidden") and obj.InstanceGuid != results.InstanceGuid and obj.InstanceGuid != legend.InstanceGuid:
+        if hasattr(obj, "Hidden") and obj.InstanceGuid not in (results.InstanceGuid, legend.InstanceGuid):
             obj.Hidden = True
 
     note(doc, "Femur",
          "A femur, in tetrahedra.\n\n"
          "The Standardised Femur, 449 mm long: the reference geometry for finite element studies of the "
          "femur (Viceconti et al., J. Biomech. 1996), from the University of Sheffield, CC BY 4.0. "
-         "{0} tetrahedra on {1} corners, {2:.0f} cm3, all of it cortical bone.\n\n"
-         "1. Grasshopper has no tetrahedral mesher, so the tetrahedra come as a mesher writes them: "
-         "the nodes, and four node numbers per tetrahedron. List Item and Construct Mesh make each "
-         "into a four vertex mesh. They were made with gmsh; TetGen, gmsh or any other mesher's "
-         "output goes in the same way.\n"
+         "{0:.0f} cm3, all of it cortical bone.\n\n"
+         "1. The bone's closed surface, {1} triangles, is kept in the definition as nodes and triangles, "
+         "and Construct Mesh makes it a mesh. Mesh Solid fills it with tetrahedra about 8 mm across, "
+         "remeshing the surface as it goes, and 3 mm along the neck, where Mesh Refinement asks: the neck "
+         "is where the bone bends most. Mesh Solid runs gmsh, which you install yourself (Alpaca4d > "
+         "Settings > Download gmsh).\n"
          "2. Ten Node Tetrahedron: four corners and a node in the middle of each edge, so it bends. "
          "It needs an OpenSees built from the master branch since 16 October 2026 (Alpaca4d > "
          "Settings > Set OpenSees Executable).\n"
@@ -515,9 +608,12 @@ def build(doc):
          "every element's ten.\n"
          "4. The hip pushes on the head with about 2.5 times the body's weight when walking: 2 kN, "
          "leaning 13 degrees from the shaft, shared among the nodes within 15 mm of the top of the head.\n"
-         "5. The Model View after Run Analysis draws the displacement, 20 times: the head moves most, "
-         "and the bone bends over the knee. Pick another result from its Results menu.".format(
-             len(tetrahedra), len(nodes), 1e6 * volume(nodes, tetrahedra)),
+         "5. Assemble Model's Tolerance is 0.1 mm: its default, 1 cm, is larger than the tetrahedra and "
+         "would weld their nodes together.\n"
+         "6. The Model View after Run Analysis draws the displacement, 20 times: the head moves most, "
+         "and the bone bends over the knee. Pick another result from its Results menu.\n"
+         "7. Natural Vibration gives the first six modes; Step picks the one drawn.".format(
+             1e6 * volume(nodes, tetrahedra), len(surface_triangles)),
          0, -420, 640, 350)
 
 

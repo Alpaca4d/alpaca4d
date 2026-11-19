@@ -73,6 +73,11 @@ namespace Alpaca4d.Menu
             subMenuSettings.DropDown.Items.Add("Set OpenSees Executable...", null, SetOpenSeesPath);
             subMenuSettings.DropDown.Items.Add("Clear OpenSees Path", null, ClearOpenSeesPath);
             subMenuSettings.DropDown.Items.Add(new ToolStripSeparator());
+            subMenuSettings.DropDown.Items.Add("Download gmsh...", Alpaca4d.Gh.Properties.Resources.External_Link__Alpaca4d_,
+                (sender, e) => OpenBrowser(sender, e, Alpaca4d.Meshing.Gmsh.DownloadPage));
+            subMenuSettings.DropDown.Items.Add("Set gmsh Executable...", null, SetGmshPath);
+            subMenuSettings.DropDown.Items.Add("Clear gmsh Path", null, ClearGmshPath);
+            subMenuSettings.DropDown.Items.Add(new ToolStripSeparator());
             subMenuSettings.DropDown.Items.Add("Display...", null, ShowDisplaySettings);
             menuItem.DropDown.Items.Add(subMenuSettings);
 
@@ -193,6 +198,57 @@ namespace Alpaca4d.Menu
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
+        }
+
+        /// <summary>
+        /// The gmsh Mesh Solid and Mesh Surface run. Without one set, they look where gmsh's installers
+        /// and Homebrew put it; this is for any other place.
+        /// </summary>
+        private static void SetGmshPath(object sender, EventArgs e)
+        {
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Select the gmsh Executable";
+                dialog.Filter = "Executable files (*)|*";
+                dialog.CheckFileExists = true;
+
+                if (dialog.ShowDialog() != DialogResult.OK)
+                    return;
+
+                string path = dialog.FileName;
+                // The app bundle a Mac download unpacks to: the program is inside it.
+                string inBundle = System.IO.Path.Combine(path, "Contents", "MacOS", "gmsh");
+                if (path.EndsWith(".app", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(inBundle))
+                    path = inBundle;
+
+                if (!Alpaca4d.Application.PrepareSolver(path, out string problem))
+                {
+                    MessageBox.Show(problem.Replace("OpenSees", "gmsh"), "Alpaca4d - gmsh is blocked",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var version = Alpaca4d.Meshing.Gmsh.VersionOf(path);
+                if (version == null || version < Alpaca4d.Meshing.Gmsh.MinimumVersion)
+                {
+                    MessageBox.Show(version == null
+                            ? $"\"{path}\" did not say which gmsh it is when asked. Pick the gmsh program itself."
+                            : $"This gmsh is version {version}; Alpaca4d needs {Alpaca4d.Meshing.Gmsh.MinimumVersion} or later.",
+                        "Alpaca4d Settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                AlpacaSettings.GmshPath = path;
+                MessageBox.Show($"gmsh {version} set:\n{path}", "Alpaca4d Settings",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private static void ClearGmshPath(object sender, EventArgs e)
+        {
+            AlpacaSettings.GmshPath = string.Empty;
+            MessageBox.Show("gmsh path cleared: Alpaca4d looks for gmsh itself.", "Alpaca4d Settings",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private static void ClearOpenSeesPath(object sender, EventArgs e)

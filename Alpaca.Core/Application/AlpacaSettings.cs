@@ -40,6 +40,7 @@ namespace Alpaca4d
             System.IO.Path.Combine(Application.UserFolder, "settings.json");
 
         private static string _openSeesPath;
+        private static string _gmshPath;
         private static bool _loaded;
 
         /// <summary>
@@ -86,6 +87,8 @@ namespace Alpaca4d
         private class Stored
         {
             public string OpenSeesPath;
+            /// <summary>Where gmsh is, when the user set it; empty to have it looked for.</summary>
+            public string GmshPath;
 
             /// <summary><see cref="FileVersion"/>; missing from the files written before it.</summary>
             public int Version;
@@ -107,6 +110,27 @@ namespace Alpaca4d
                 if (!_loaded)
                     Load();
                 _openSeesPath = value;
+                Save();
+            }
+        }
+
+        /// <summary>
+        /// The gmsh the meshers run, as the user set it. Empty when they set none, and Alpaca4d looks
+        /// for one itself (Meshing.Gmsh.Find).
+        /// </summary>
+        public static string GmshPath
+        {
+            get
+            {
+                if (!_loaded)
+                    Load();
+                return _gmshPath;
+            }
+            set
+            {
+                if (!_loaded)
+                    Load();
+                _gmshPath = value;
                 Save();
             }
         }
@@ -145,6 +169,7 @@ namespace Alpaca4d
             // From the defaults, so whatever the file leaves out or gets wrong is the default and
             // not what happened to be held before.
             _openSeesPath = null;
+            _gmshPath = null;
             foreach (var entry in Defaults)
                 _colours[entry.Key] = entry.Value;
 
@@ -168,6 +193,7 @@ namespace Alpaca4d
                     return;
 
                 _openSeesPath = stored.OpenSeesPath;
+                _gmshPath = stored.GmshPath;
 
                 if (stored.Colours != null)
                 {
@@ -218,6 +244,7 @@ namespace Alpaca4d
                 var stored = new Stored
                 {
                     OpenSeesPath = _openSeesPath,
+                    GmshPath = string.IsNullOrEmpty(_gmshPath) ? null : _gmshPath,
                     Version = FileVersion,
                     Colours = new Dictionary<string, string>()
                 };

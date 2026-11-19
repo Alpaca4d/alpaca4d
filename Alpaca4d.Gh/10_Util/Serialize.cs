@@ -80,7 +80,7 @@ namespace Alpaca4d.Gh
             DA.SetDataList(0, tclText);
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
+        public override GH_Exposure Exposure => GH_Exposure.quarternary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Serialize;
 
