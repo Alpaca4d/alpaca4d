@@ -34,6 +34,10 @@ namespace Alpaca4d.Gh
         {
             Instances.CanvasCreated += MenuLoad.OnStartup;
 
+            // Files saved by an older Alpaca4d hold its parameter descriptions: show this version's.
+            ParameterDescriptions.Watch();
+            Instances.CanvasCreated += canvas => ParameterDescriptions.Watch();
+
             Grasshopper.Instances.ComponentServer.AddCategoryIcon("Alpaca4d", Alpaca4d.Gh.Properties.Resources.Logo);
             Grasshopper.Instances.ComponentServer.AddCategorySymbolName("Alpaca4d", 'A');
             return Grasshopper.Kernel.GH_LoadingInstruction.Proceed;
