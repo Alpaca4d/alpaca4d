@@ -74,6 +74,26 @@ namespace Alpaca4d.Element
             string tclText = $"geomTransf {Type} {Id} {TclNumber.Write(LocalZ.X)} {TclNumber.Write(LocalZ.Y)} {TclNumber.Write(LocalZ.Z)}\n";
             return tclText;
         }
+
+        /// <summary>
+        /// A transformation's type from a word, as a beam's GeomTransf input takes it: Linear, PDelta
+        /// or Corotational, in any case, "P-Delta" and "Corot" too. False for anything else.
+        /// </summary>
+        public static bool TryParseType(string text, out GeomTransfType type)
+        {
+            type = GeomTransfType.Linear;
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+            var word = new string(text.Where(char.IsLetter).ToArray()).ToLowerInvariant();
+            switch (word)
+            {
+                case "linear": type = GeomTransfType.Linear; return true;
+                case "pdelta": type = GeomTransfType.PDelta; return true;
+                case "corotational":
+                case "corot": type = GeomTransfType.Corotational; return true;
+                default: return false;
+            }
+        }
     }
 
     public enum GeomTransfType
