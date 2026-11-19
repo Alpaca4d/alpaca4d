@@ -167,6 +167,7 @@ public static class Shots
                     case "bundled": case "braced": case "buttressed": case "outrigger": case "diagrid":
                         list = Earthquakes("towers", scene); break;
                     case "silo": list = SiloScene(); break;
+                    case "waveroof": list = WaveRoofHallScene(); break;
                     case "plates": list = Plates(); break;
                     case "kangaroo": list = Kangaroo(); break;
                     case "nerviflatslab": list = NerviFlatSlab(); break;
@@ -3474,6 +3475,50 @@ public static class Shots
     /// load's pulse, and how the points it watches move. publish.sh puts the charts beside the frames: the silo is
     /// taller than it is wide.
     /// </summary>
+    /// <summary>
+    /// The wave roof hall, glulam arches on a steel frame: the hall in its materials - the timber in wood, the
+    /// steel grey - from a corner and above; then SLS 1, the snow, deformed over the hall at rest with its Legend,
+    /// and the GIF of it sagging, the camera turning a little; then its utilisation over the six ULS combinations,
+    /// as drawn and as the Section Optimiser sized it, side by side.
+    /// </summary>
+    static List<(string, Func<bool>)> WaveRoofHallScene() => new List<(string, Func<bool>)>
+    {
+        Do("wave-roof-hall", () =>
+        {
+            Open("WaveRoofHall.gh");
+            foreach (var c in doc.Objects.OfType<IGH_ActiveObject>().Where(o => o.RuntimeMessageLevel != GH_RuntimeMessageLevel.Blank))
+                Messages(c);
+            var eye = new Vector3d(-1.0, -1.3, 0.7);
+            var materials = Find<IGH_Component>("Steel and timber");
+            var deformed = Find<IGH_Component>("Combination deformed");
+            var legend = Find<IGH_Component>("Combination deformed legend");
+            var rest = Find<IGH_Component>("Wave roof hall at rest");
+            Log("  " + Info(deformed));
+            Canvas("wave-roof-hall-canvas");
+
+            ShowOnly(materials);
+            doc.NewSolution(false);
+            Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), "wave-roof-hall-materials", 2);
+
+            ShowOnly(deformed, legend, rest);
+            doc.NewSolution(false);
+            Shoot(Aim(Grown(Drawn(), 0.05), eye, Vector3d.ZAxis), "wave-roof-hall-deformed", WithLegend);
+            Deforming(deformed, eye, "wave-roof-hall-deforming-frames", 40, 20);
+
+            // The utilisation over the six ULS combinations, as drawn on the left and sized on the right, from in
+            // front and above, so the two halls stand side by side.
+            var drawn = Find<IGH_Component>("Utilisation as drawn");
+            var sized = Find<IGH_Component>("Utilisation sized");
+            var used = Find<IGH_Component>("Utilisation legend");
+            foreach (var optimiser in doc.Objects.OfType<IGH_Component>().Where(c => c.Name.StartsWith("Section Optimiser")))
+                Messages(optimiser);
+            ShowOnly(drawn, sized, used);
+            doc.NewSolution(false);
+            Shoot(Aim(Grown(Drawn(), 0.04), new Vector3d(0.0, -1.0, 0.8), Vector3d.ZAxis), "wave-roof-hall-utilisation", WithLegend);
+            Close();
+        }),
+    };
+
     static List<(string, Func<bool>)> SiloScene() => new List<(string, Func<bool>)>
     {
         Do("open", () =>

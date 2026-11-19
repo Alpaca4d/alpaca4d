@@ -6,7 +6,7 @@
 #
 #   1  HE 300 B-like, S355:  N = -400 kN, Vy = 30 kN, so Mz = 90 kNm at the fixed end
 #   2  RHS 200 x 100 x 10, S275:  N = +100 kN, Vz = 5 kN, so My = 15 kNm
-#   3  a glulam rectangle, which has no steel grade and is left unchecked
+#   3  a glulam rectangle, which the timber check takes (Alpaca4d.Test/TimberCheck)
 wipe
 model BasicBuilder -ndm 3 -ndf 6
 

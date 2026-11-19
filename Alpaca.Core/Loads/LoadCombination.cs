@@ -214,7 +214,8 @@ namespace Alpaca4d.Loads
                 patterns.Add(new LoadPattern
                 {
                     Id = pattern.Id, PatternType = pattern.PatternType, TimeSeries = pattern.TimeSeries,
-                    Load = pattern.Load, Factor = pattern.Factor * factor, Name = pattern.Name
+                    Load = pattern.Load, Factor = pattern.Factor * factor, Name = pattern.Name,
+                    Duration = pattern.Duration
                 });
                 // Written as the pattern is named: "g" typed for "G".
                 terms.Add((pattern.Name.Trim(), factor));

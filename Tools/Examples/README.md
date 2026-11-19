@@ -12,7 +12,7 @@ are here at the top.
 | Folder | What is in it |
 | --- | --- |
 | `Playground/` | The ten lessons of the website's Playground and the docs' Learn, each with its start (`*Start.gh`) |
-| `Structures/` | `Structures.py`'s definitions - the conventional structures, the earthquakes, the footbridge's and the tank's modes, the response spectrum sticks, the compressed shell, the pushover building - and the footfall stairs, the reciprocal vault, the high-tension tower, the multi-storey building and the silo under a dust explosion and a tractor's impact, which use its helpers |
+| `Structures/` | `Structures.py`'s definitions - the conventional structures, the earthquakes, the footbridge's and the tank's modes, the response spectrum sticks, the compressed shell, the pushover building - and the footfall stairs, the reciprocal vault, the high-tension tower, the multi-storey building, the silo under a dust explosion and a tractor's impact, and the wave roof hall - glulam arches on a steel frame, each checked to its own Eurocode and sized together by one Section Optimiser - which use its helpers |
 | `Design/` | Section and member design: the Utilisation, Interaction Domain and Moment Curvature examples, and the tree column's cast node in shells (Connection Design) |
 | `Optimisation/` | The Section Optimiser examples, the Explorer's footbridge study and the twisted ring |
 | `Topology/` | Topology Optimisation, each example by its three methods - SIMP, BESO and Multi-Material - side by side |
@@ -58,6 +58,7 @@ script too:
     STRUCTURE=canopy ./make.sh Structures/Structures.py RoofCanopy.gh
     STRUCTURE=facade ./make.sh Structures/Structures.py VerticalTrussFacade.gh
     STRUCTURE=vault ./make.sh Structures/Structures.py BarrelVault.gh
+    ./make.sh Structures/WaveRoofHall.py         # timber arches on a steel frame: EC5 and EC3 checks, and the Section Optimiser over the ULS combinations
     STRUCTURE=windtruss ./make.sh Structures/Structures.py HorizontalTrussFacade.gh
     STRUCTURE=girder ./make.sh Structures/Structures.py GirderBridgeEarthquake.gh       # five structures shaken by
     STRUCTURE=cablestayed ./make.sh Structures/Structures.py CableStayedBridgeEarthquake.gh   #   El Centro 1940

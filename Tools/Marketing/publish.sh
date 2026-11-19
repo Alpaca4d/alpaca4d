@@ -784,6 +784,17 @@ plasticity() {
   done
 }
 
+# The wave roof hall, steel and timber, into its example's folder only: the hall in its materials first, SLS 1
+# deformed second, its utilisation as drawn and sized third, and the GIF of it sagging under the snow.
+waveroof() {
+  local s=wave-roof-hall e=$M/../examples/wave-roof-hall
+  mkdir -p "$e"
+  trim waveroof/$s-materials "$e/$s.png" 0 12
+  trim waveroof/$s-deformed "$e/$s-2.png" 0 12
+  trim waveroof/$s-utilisation "$e/$s-3.png" 0 12
+  $P anim "$OUT/waveroof/$s-deforming-frames" "$e/$s-deforming" 40 900 15 0
+}
+
 # The silo under its two events, a dust explosion inside it and a tractor reversing into a leg: the impact's still,
 # the example's first picture; for each event its still beside its charts, and the GIF of it through the event, each
 # frame beside its charts. Into the example's folder only: no copies in marketing/ unless they are asked for.
@@ -799,7 +810,7 @@ silo() {
   $P besidecharts "$OUT/silo/$s-impact-frames" "$OUT/silo/$s-impact-charts" "$e/$s-impact" 40 700 15 0
 }
 
-ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything silo"
+ALL="cow femur slave bricks mixed bridge tower benchmarks lines2d bridgelines twospan curvedbeam beamgrid howto structures earthquakes plates kangaroo nerviflatslab nerviumbrella musmeci cornerslab roundumbrella roundslab candela groinvault palazzetto isler hexshell printing printedstructure printedtwisted printedwall printeddome printedleaning printedleaningflat footbridge spectrum shell momentcurvature tank quakebuildings quaketowers twisting leaning curving crescent bundled braced buttressed outrigger diagrid pushover reciprocalvault perforatedbeam plasticity footfallstair footfallhelical footfallstraight rebuilt high-tension-tower multi-storey-building meshloft-meshbrick connection-design custom-script deconstruct-anything silo waveroof"
 scenes=${*:-}
 if [ -z "$scenes" ]; then
   for scene in $ALL; do [ -d "$OUT/$scene" ] && scenes="$scenes $scene"; done

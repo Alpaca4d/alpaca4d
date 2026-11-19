@@ -23,7 +23,7 @@ namespace Alpaca4d.Design
     /// <summary>
     /// What the check needs to know about a member that neither its section nor its forces can say:
     /// how long it is between the points that hold it, and where its load acts. A length of zero or
-    /// less is the member's own.
+    /// less is the member's own. The timber check reads it too, and its service class besides.
     /// </summary>
     public class SteelMember
     {
@@ -45,6 +45,9 @@ namespace Alpaca4d.Design
 
         /// <summary>The member belongs to a frame that buckles by swaying: Cm = 0.9 about both axes, Table B.3.</summary>
         public bool Sway;
+
+        /// <summary>Timber: the EN 1995-1-1 service class (2.3.1.3), 1 to 3, which sets k_mod with the loads' duration. 1 unless given.</summary>
+        public int ServiceClass = 1;
 
         public SteelMember() { }
 
@@ -666,6 +669,8 @@ namespace Alpaca4d.Design
             double worst = 0.0;
             bool classFour = false, unknown = false;
             Func<string> worstDetail = null;
+            // Whether a piece was weighed yet: the detail is only written with the report on, so it cannot tell.
+            bool weighed = false;
 
             foreach (var piece in pieces)
             {
@@ -717,8 +722,9 @@ namespace Alpaca4d.Design
                     result.CmLT = piece.Uniform ? 1.0 : Cm(piece.Moment);
                 }
 
-                if (value > worst || worstDetail == null)
+                if (value > worst || !weighed)
                 {
+                    weighed = true;
                     worst = value;
                     if (describe)
                     {
@@ -933,7 +939,7 @@ namespace Alpaca4d.Design
         }
 
         /// <summary>Where the sections sit, 0 to 1: as given, or evenly from end to end.</summary>
-        private static IReadOnlyList<double> Positions(int count, IReadOnlyList<double> stations)
+        internal static IReadOnlyList<double> Positions(int count, IReadOnlyList<double> stations)
         {
             if (stations != null && stations.Count == count)
                 return stations;
@@ -949,7 +955,7 @@ namespace Alpaca4d.Design
         /// lands on them. Where it does not, the sections do not lie on one, and the check says so and
         /// takes the safe side.
         /// </summary>
-        private struct Diagram
+        internal struct Diagram
         {
             public double C0, C1, C2;
             public bool Parabola;
@@ -1068,7 +1074,7 @@ namespace Alpaca4d.Design
         /// The report, written only when one was asked for. Every line arrives as a function, so a
         /// report that is off formats nothing.
         /// </summary>
-        private class Report
+        internal class Report
         {
             private readonly StringBuilder _text;
 
@@ -1099,7 +1105,7 @@ namespace Alpaca4d.Design
         private static string G(double x) => x.ToString("G4", CultureInfo.InvariantCulture);
 
         /// <summary>The largest of one utilisation along the member, where it is and what made it.</summary>
-        private class Worst
+        internal class Worst
         {
             public double Value = 0.0;
             public int At = 0;

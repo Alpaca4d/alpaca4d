@@ -20,6 +20,10 @@ namespace Alpaca4d.Gh
 
         private EvaluationUnit _unit;
 
+        /// <summary>The Duration menu's drop-down: "Not set", then EN 1995-1-1's classes, permanent first.</summary>
+        private MenuDropDown _duration;
+        private const string NotSet = "Not set";
+
         public override void registerEvaluationUnits(EvaluationUnitManager mngr)
         {
             EvaluationUnit evaluationUnit = new EvaluationUnit(name(), display_name(), "Plain Load Pattern");
@@ -44,7 +48,31 @@ namespace Alpaca4d.Gh
             evaluationUnit.RegisterInputParam(new Param_String(), "Name", "Name",
                 "The load case's name, as Load Combination and Mass from Loads call the pattern. Empty: no name.", GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
+
+            // The load-duration class, for timber's k_mod: a drop-down in a menu folded away, since
+            // only the timber check reads it. Saved with the unit, as its menus are; a file from
+            // before it opens with Not set.
+            var menu = new GH_ExtendableMenu(0, "PlainPattern_Duration")
+            {
+                Name = "Duration",
+                Header = "Load duration, for timber's k_mod (EN 1995-1-1 2.3.1.2)"
+            };
+            var panel = new MenuPanel(0, "PlainPattern_DurationPanel") { Header = "Duration" };
+            _duration = new MenuDropDown(0, "Duration", "Duration") { VisibleItemCount = LoadDurations.Names.Length + 1 };
+            _duration.AddItem(NotSet, NotSet);
+            foreach (var duration in LoadDurations.Names)
+                _duration.AddItem(duration, duration);
+            _duration.ValueChanged += (sender, e) => _unit?.Component?.ExpireSolution(true);
+            panel.AddControl(_duration);
+            menu.AddControl(panel);
+            evaluationUnit.AddMenu(menu);
         }
+
+        /// <summary>The class the Duration menu shows, or null for Not set.</summary>
+        private LoadDuration? Duration =>
+            _duration == null || _duration.Value <= 0 || _duration.Value > LoadDurations.Names.Length
+                ? (LoadDuration?)null
+                : (LoadDuration)(_duration.Value - 1);
 
         /// <summary>
         /// Copies and files made before the defaults were taken out still carry them, as text that
@@ -86,6 +114,7 @@ namespace Alpaca4d.Gh
             var load = new Alpaca4d.Loads.LoadPattern(PatternType.Plain, timeSeries, loads, factor)
             {
                 Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
+                Duration = this.Duration,
             };
 
             DA.SetData(0, load);

@@ -489,7 +489,8 @@ namespace Alpaca4d.Design
         {
             rebuild = rebuild ?? ((original, each) => original.WithBeamSections(each));
             options = options ?? new SizingOptions();
-            var settings = options.Design ?? new DesignSettings { Report = false };
+            var given = options.Design ?? new DesignSettings { Report = false };
+            var settings = given.For(model);
             int count = model.Beams.Count;
 
             var groupOf = Enumerable.Repeat(-1, count).ToArray();
@@ -511,8 +512,10 @@ namespace Alpaca4d.Design
                 double analysisSeconds = watch.Elapsed.TotalSeconds;
                 watch.Restart();
 
-                var steps = StepsOf(analysed, options.Steps);
-                var forces = steps.Select(step => Utilisations.Forces(analysed, step)).ToList();
+                // What each beam is checked under: every ultimate combination the analysis solved, each
+                // with its own settings - for timber, its k_mod - or the model's patterns all at once.
+                var cases = Cases(analysed, options.Steps, given);
+                var steps = cases.SelectMany(c => c.Steps).Distinct().ToList();
                 var checks = new SteelSections();
                 int fullChecks = 0, screened = 0;
 
@@ -521,7 +524,7 @@ namespace Alpaca4d.Design
                 var ownMax = new double?[count];
                 ForEach(count, options.Parallel, i =>
                 {
-                    (ownMax[i], own[i]) = Envelope(analysed.Beams[i], sections[i], forces, i, options.Members, settings, checks);
+                    (ownMax[i], own[i]) = Envelope(analysed.Beams[i], sections[i], cases, i, options.Members, checks);
                     Interlocked.Increment(ref fullChecks);
                 });
 
@@ -540,14 +543,14 @@ namespace Alpaca4d.Design
                             if (ReferenceEquals(group.Sections[c], analysedDesign[i]))
                                 return ownMax[i];
                             Interlocked.Increment(ref fullChecks);
-                            return Envelope(analysed.Beams[i], group.Sections[c], forces, i, options.Members, settings, checks).max;
+                            return Envelope(analysed.Beams[i], group.Sections[c], cases, i, options.Members, checks).max;
                         },
                         (b, c) =>
                         {
                             int i = group.Beams[b];
                             if (ReferenceEquals(group.Sections[c], analysedDesign[i]))
                                 return 0.0;
-                            double bound = forces.Max(step => Utilisations.LowerBound(group.Sections[c], step[i], settings, checks));
+                            double bound = cases.Max(one => one.Forces.Max(step => Utilisations.LowerBound(group.Sections[c], step[i], one.Settings, checks)));
                             if (bound > options.Target)
                                 Interlocked.Increment(ref screened);
                             return bound;
@@ -702,29 +705,71 @@ namespace Alpaca4d.Design
         }
 
         /// <summary>
-        /// A beam with a section, at every step: the largest utilisation, null when any step could not be
-        /// checked, and the check of the step that governs.
+        /// One set of forces a beam is checked under: the steps of one analysis - an ultimate load
+        /// combination, or the model with all its patterns - with the settings of its check.
+        /// </summary>
+        internal sealed class LoadCase
+        {
+            public string Name;
+            public List<int> Steps;
+            /// <summary>Per step, per beam, the forces at each integration section.</summary>
+            public List<List<List<SectionForces>>> Forces;
+            public DesignSettings Settings;
+        }
+
+        /// <summary>
+        /// What the beams are checked under: every ultimate combination of <paramref name="analysed"/>
+        /// that solved - ULS, accidental or seismic - each with <paramref name="given"/> filled in for its
+        /// own patterns (the duration of its loads, whether it is accidental); or, with no combinations,
+        /// the model as it is, its patterns all at once.
+        /// </summary>
+        internal static List<LoadCase> Cases(Model analysed, IReadOnlyList<int> asked, DesignSettings given)
+        {
+            var models = analysed.CombinationResults != null && analysed.CombinationResults.Count > 0
+                ? analysed.CombinationResults.Where(m => m.CombinationFailure == null && m.Combination != null && m.Combination.IsUltimate).ToList()
+                : new List<Model> { analysed };
+            if (models.Count == 0)
+                throw new Exception("No ultimate load combination solved, so there is nothing to size for.");
+
+            return models.Select(m =>
+            {
+                var steps = StepsOf(m, asked);
+                return new LoadCase
+                {
+                    Name = m.Combination?.Name,
+                    Steps = steps,
+                    Forces = steps.Select(step => Utilisations.Forces(m, step)).ToList(),
+                    Settings = given.For(m),
+                };
+            }).ToList();
+        }
+
+        /// <summary>
+        /// A beam with a section, under every load case at every step: the largest utilisation, null when
+        /// any could not be checked, and the check that governs.
         /// </summary>
         private static (double? max, MemberUtilisation governing) Envelope(IBeam beam, IUniaxialSection section,
-                                                                          List<List<List<SectionForces>>> forces, int i,
-                                                                          IReadOnlyList<SteelMember> members, DesignSettings settings,
-                                                                          SteelSections checks)
+                                                                          IReadOnlyList<LoadCase> cases, int i,
+                                                                          IReadOnlyList<SteelMember> members, SteelSections checks)
         {
             var member = members != null && i < members.Count ? members[i] : null;
             double? max = null;
             MemberUtilisation governing = null;
 
-            foreach (var step in forces)
+            foreach (var one in cases)
             {
-                var check = Utilisations.Check(beam, section, step[i], member, settings, checks);
-                var value = check.Max;
-                if (!value.HasValue || double.IsNaN(value.Value))
-                    return (null, check);
-
-                if (!max.HasValue || value.Value > max.Value)
+                foreach (var step in one.Forces)
                 {
-                    max = value;
-                    governing = check;
+                    var check = Utilisations.Check(beam, section, step[i], member, one.Settings, checks);
+                    var value = check.Max;
+                    if (!value.HasValue || double.IsNaN(value.Value))
+                        return (null, check);
+
+                    if (!max.HasValue || value.Value > max.Value)
+                    {
+                        max = value;
+                        governing = check;
+                    }
                 }
             }
 

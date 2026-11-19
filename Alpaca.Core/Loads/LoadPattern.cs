@@ -30,6 +30,12 @@ namespace Alpaca4d.Loads
         /// <summary>An optional name - the load case an imported pattern holds, say. OpenSees never sees it.</summary>
         public string Name { get; set; }
 
+        /// <summary>
+        /// How long its loads act, EN 1995-1-1's load-duration class, for timber's k_mod. OpenSees
+        /// never sees it. Null when not given, which the timber check takes as permanent.
+        /// </summary>
+        public LoadDuration? Duration { get; set; }
+
         // for UniformExcitation
         public Direction Dof { get; set; } = Direction.X;
         public double Velocity { get; set; } = 0.0;

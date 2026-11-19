@@ -22,7 +22,9 @@ namespace Alpaca4d.Gh
     /// Each analysis is static, in one step, solved as Analysis Settings solves one by default: what
     /// a sizing needs, so nothing about it is asked for but how the equations are solved.
     ///
-    /// A switcher with a single unit, as Utilisation is, for the sake of its two folded menus: Design,
+    /// One component for steel and timber alike: each section is checked by its own material.
+    ///
+    /// A switcher with a single unit, as Utilisation once was, for the sake of its two folded menus: Design,
     /// for how the members are made and held - set once and left alone - and for the governing check,
     /// groups, history and log; and Analysis, for the system of equations and the algorithm.
     /// </summary>
@@ -30,7 +32,8 @@ namespace Alpaca4d.Gh
     {
         private const string Help =
             "Sizes beams from lists of sections. It analyses the model, checks every beam that takes part with every section of " +
-            "its list on the forces the beam carried - EN 1993-1-1, as Utilisation does - puts it on the first section of the " +
+            "its list on the forces the beam carried - steel to EN 1993-1-1 and timber to EN 1995-1-1, as Utilisation's types do, " +
+            "each section by its own material - puts it on the first section of the " +
             "list that keeps its utilisation at or below MaxUtilisation, and analyses again, as the new sections change the " +
             "self-weight and, in a statically indeterminate structure, where the forces go. It stops when no section changes, or " +
             "after Iterations analyses.\n" +
@@ -41,8 +44,9 @@ namespace Alpaca4d.Gh
             "Every beam takes part unless ElementId says which. Those left out keep their sections, and are still checked.\n" +
             "A beam can move back up its list as well as down it. When a design comes round again the iterations after it only let " +
             "beams move on down their lists, which ends.\n" +
-            "Each analysis is static, in one step. Buckling lengths, fabrication and partial factors are in the Design menu, the " +
-            "solver in the Analysis menu. Steel only, as the check is. Press Escape to stop after the iteration under way.";
+            "Each analysis is static, in one step. Buckling lengths, fabrication, partial factors and timber's service class are in the " +
+            "Design menu, the solver in the Analysis menu. Timber's k_mod comes from the shortest Duration of the load patterns. " +
+            "Press Escape to stop after the iteration under way.";
 
         public SectionOptimiser()
           : base("Section Optimiser (Alpaca4d)", "Section Optimiser", Help, "Alpaca4d", "12_Optimisation")
@@ -66,6 +70,8 @@ namespace Alpaca4d.Gh
         private const int FabricationInput = 5, GammaM0Input = 6, GammaM1Input = 7;
         private const int LengthYInput = 8, LengthZInput = 9, LengthLTInput = 10, LoadInput = 11, SwayInput = 12;
         private const int SystemInput = 13, AlgorithmInput = 14;
+        // Timber's, last so that saved files keep their inputs in place; in the Design menu.
+        private const int ServiceClassInput = 15, GammaMInput = 16;
 
         private const string DefaultSystem = "Auto", DefaultAlgorithm = "Newton";
 
@@ -76,7 +82,7 @@ namespace Alpaca4d.Gh
             mngr.RegisterUnit(unit);
 
             unit.RegisterInputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
-                "The assembled model, from Assemble Model. Its beams start from the sections they have.",
+                "The assembled model, from Assemble Model - or Load Combination, to size over its ULS combinations.",
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_GenericObject(), "DesignGroups", "DesignGroups",
@@ -149,6 +155,16 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item, new GH_String(DefaultAlgorithm));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
+            unit.RegisterInputParam(new Param_Integer(), "ServiceClass", "ServiceClass",
+                "Timber: service class 1, 2 or 3, for k_mod (EN 1995-1-1 2.3.1.3). One, or one per beam in model order. Empty: 1.",
+                GH_ParamAccess.list);
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+            unit.RegisterInputParam(new Param_Number(), "γM", "γM",
+                "Timber: material partial factor. Empty: Table 2.3, 1.3 solid timber, 1.25 glulam.",
+                GH_ParamAccess.item);
+            unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
             unit.RegisterOutputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
                 "The last design, analysed: feed it to Utilisation, Beam Forces or Model View, or to Natural Vibration or Linear Buckling " +
                 "for the modes or the buckling of the last design. Empty when the first analysis failed.");
@@ -173,10 +189,12 @@ namespace Alpaca4d.Gh
             var design = new GH_ExtendableMenu(0, "SectionOptimiser_Design")
             {
                 Name = "Design",
-                Header = "Fabrication, partial factors, buckling lengths, load position and sway; governing check, groups, history and log"
+                Header = "Fabrication, partial factors, buckling lengths, load position, sway and timber's service class; governing check, groups, history and log"
             };
             for (int i = FabricationInput; i <= SwayInput; i++)
                 design.RegisterInputPlug(unit.Inputs[i]);
+            design.RegisterInputPlug(unit.Inputs[ServiceClassInput]);
+            design.RegisterInputPlug(unit.Inputs[GammaMInput]);
             foreach (var name in new[] { "Governing", "Group", "History", "log" })
                 design.RegisterOutputPlug(unit.Outputs.First(plug => plug.Parameter.Name == name));
             unit.AddMenu(design);
@@ -240,12 +258,20 @@ namespace Alpaca4d.Gh
             var sways = new List<bool>();
             string fabricationText = "Rolled";
             double gammaM0 = 1.0, gammaM1 = 1.0;
+            var serviceClasses = new List<int>();
+            double gammaM = 0.0;
 
             if (!DA.GetData(ModelInput, ref model)) return;
-            if (model?.Combinations?.Count > 0)
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    $"The model has {model.Combinations.Count} load combinations, which Section Optimiser does not solve yet: it sizes the members " +
-                    "under every load pattern at once, at its full size. Factor the patterns for the combination to size for, or connect the model Assemble Model hands on.");
+            int ultimateCount = model?.Combinations?.Count(c => c.IsUltimate) ?? 0;
+            if (model?.Combinations?.Count > 0 && ultimateCount == 0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "The model's load combinations are all serviceability ones: give it an ULS, accidental or seismic one to size the members for.");
+                return;
+            }
+            if (ultimateCount > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    $"Sized over the model's {ultimateCount} ultimate load combinations, each solved in each iteration, the worst governing each beam.");
             DA.GetDataList(GroupsInput, groupItems);
             var filter = ElementFilterInput.Read(DA, FilterInput, this);
             DA.GetData(MaxUtilisationInput, ref maxUtilisation);
@@ -260,6 +286,8 @@ namespace Alpaca4d.Gh
             DA.GetData(GammaM1Input, ref gammaM1);
             DA.GetData(SystemInput, ref system);
             DA.GetData(AlgorithmInput, ref algorithm);
+            DA.GetDataList(ServiceClassInput, serviceClasses);
+            bool gammaMGiven = DA.GetData(GammaMInput, ref gammaM);
 
             if (model == null || model.Beams.Count == 0)
             {
@@ -289,9 +317,15 @@ namespace Alpaca4d.Gh
                 return;
             }
 
-            if (gammaM0 <= 0.0 || gammaM1 <= 0.0)
+            if (gammaM0 <= 0.0 || gammaM1 <= 0.0 || (gammaMGiven && gammaM <= 0.0))
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "γM0 and γM1 have to be positive.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "γM0, γM1 and γM have to be positive.");
+                return;
+            }
+
+            if (serviceClasses.Any(sc => sc < 1 || sc > 3))
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "A service class is 1, 2 or 3.");
                 return;
             }
 
@@ -311,7 +345,8 @@ namespace Alpaca4d.Gh
                 !UtilisationBase.Spread(this, lengthsZ, beams.Count, "LengthZ", out var eachZ) ||
                 !UtilisationBase.Spread(this, lengthsLT, beams.Count, "LengthLT", out var eachLT) ||
                 !UtilisationBase.Spread(this, loads, beams.Count, "Load", out var eachLoad) ||
-                !UtilisationBase.Spread(this, sways, beams.Count, "Sway", out var eachSway))
+                !UtilisationBase.Spread(this, sways, beams.Count, "Sway", out var eachSway) ||
+                !UtilisationBase.Spread(this, serviceClasses, beams.Count, "ServiceClass", out var eachClass))
                 return;
 
             if (lengthsY.Concat(lengthsZ).Concat(lengthsLT).Any(x => x <= 0.0))
@@ -371,13 +406,19 @@ namespace Alpaca4d.Gh
                 if (eachLT[i].HasValue) member.LateralTorsionalLength = eachLT[i].Value;
                 if (eachLoad[i].HasValue) member.Load = eachLoad[i].Value;
                 if (eachSway[i].HasValue) member.Sway = eachSway[i].Value;
+                if (eachClass[i].HasValue) member.ServiceClass = eachClass[i].Value;
             }
 
             var options = new SizingOptions
             {
                 Target = maxUtilisation,
                 MaxRounds = iterations,
-                Design = new DesignSettings { Fabrication = fabrication, GammaM0 = gammaM0, GammaM1 = gammaM1, Report = false },
+                // Each section by its own material: steel to EN 1993-1-1, timber to EN 1995-1-1.
+                Design = new DesignSettings
+                {
+                    Fabrication = fabrication, GammaM0 = gammaM0, GammaM1 = gammaM1, Report = false,
+                    GammaM = gammaMGiven ? gammaM : (double?)null,
+                },
                 Members = members,
             };
 
@@ -419,13 +460,48 @@ namespace Alpaca4d.Gh
         /// </summary>
         private Model Analyse(Model assembled, Settings settings, AnalysisFiles files, out string log)
         {
+            // With load combinations, each ultimate one solved on its own, as Run Analysis solves them, and
+            // one model handed on that holds them all: the sizing checks every beam under each, with each
+            // one's settings - for timber, the k_mod of its loads.
+            var ultimate = (assembled.Combinations ?? new List<Alpaca4d.Loads.LoadCombination>()).Where(c => c.IsUltimate).ToList();
+            if (ultimate.Count == 0)
+                return AnalyseOne(assembled, assembled, settings, files, "SectionOptimiser", out log);
+
+            var text = new System.Text.StringBuilder();
+            var results = new List<Model>();
+            for (int k = 0; k < ultimate.Count; k++)
+            {
+                var combination = ultimate[k];
+                var one = combination.Apply(assembled, out string problem);
+                if (one == null)
+                    throw new Exception($"{combination.Name}: {problem}");
+                string part = new string(combination.Name.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
+                string runLog;
+                try
+                {
+                    results.Add(AnalyseOne(one, assembled, settings, files, $"SectionOptimiser_{k}_{part}", out runLog));
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"{combination.Name}: {ex.Message}");
+                }
+                text.AppendLine($"---- {combination.Name}: {combination.Formula} ----").AppendLine(runLog).AppendLine();
+            }
+            log = text.ToString().TrimEnd();
+            var handed = results[0].ShallowCopy();
+            handed.CombinationResults = results;
+            handed.Combinations = assembled.Combinations;
+            return handed;
+        }
+
+        /// <summary>One OpenSees run of <paramref name="model"/>: the assembled model, or one combination of it.</summary>
+        private static Model AnalyseOne(Model model, Model assembled, Settings settings, AnalysisFiles files, string stem, out string log)
+        {
             // The results file is read again by whatever the AlpacaModel output feeds, after the
             // solution; OwnFile names it after this optimiser as well as the run, so that a second
             // optimiser in the document - one per element and one uniform, say - leaves it alone.
-            string stem = "SectionOptimiser";
-
-            var run = assembled.ShallowCopy();
-            run.Tcl = new List<string>(assembled.Tcl);
+            var run = model.ShallowCopy();
+            run.Tcl = new List<string>(model.Tcl);
             run.BeforeAnalysis = assembled;
             run.FileName = files.OwnFile(stem, ".tcl");
             run.Settings = settings;
@@ -448,6 +524,7 @@ namespace Alpaca4d.Gh
             if (failure != null)
                 throw new Exception(failure);
 
+            run.IsAnalysed = true;
             return run;
         }
 

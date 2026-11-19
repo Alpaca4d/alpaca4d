@@ -54,7 +54,8 @@ no bending it is 6.3.1, and it reads zero.
 
 `IUniaxialMaterial.Grade`. Material Library Elastic stamps it from its JSON - built in or custom -
 and a material made by hand is recognised by its name: "S355", "S355JR", "s355 j2" all find S355.
-Anything else is `Unknown` and left unchecked, with a warning. fy follows Table 3.1, including the
+A name that is a timber class ("C24", "GL24h") goes to the timber check, EN 1995-1-1
+(`Alpaca4d.Test/TimberCheck`). Anything else is `Unknown` and left unchecked, with a warning. fy follows Table 3.1, including the
 lower values for plates thicker than 40 mm, now in `steel_properties.json` as `fy_40_80`.
 
 ## Axes
@@ -134,7 +135,7 @@ Members are worked by hand:
 - 6.3.3 for an HE 300 B with Cm, sway and a longer buckling length.
 
 Last is the whole chain: an MPCO file written the way Alpaca4d writes beams, read and checked, with a
-steel I, a steel box in S275 and a glulam beam that is reported and left unchecked.
+steel I, a steel box in S275 and a glulam beam that goes to the timber check instead.
 
 Needs a built `Alpaca4d.Core`, a C# compiler and a net48 RhinoCommon. OpenSees on `PATH` (or at
 `$OPENSEES`) is optional: without it the whole-chain check is skipped.

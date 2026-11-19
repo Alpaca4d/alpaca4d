@@ -6,6 +6,35 @@
     "C18":              {"fm_k":18.0,"fv_k":3.40,"fc_0_k":18.0,"fc_90_k":2.2,"ft_0_k":10.0,"ft_90_k":0.40,"rho_k":320,"rho_mean":380,"E_mean":9000, "E0_05":6000,"G_mean":560,"type":"Solid_Timber","material_type": "Timber"},
     "C20":              {"fm_k":20.0,"fv_k":3.60,"fc_0_k":19.0,"fc_90_k":2.3,"ft_0_k":11.5,"ft_90_k":0.40,"rho_k":330,"rho_mean":400,"E_mean":9500, "E0_05":6400,"G_mean":590,"type":"Solid_Timber","material_type": "Timber"},
     "C22":              {"fm_k":22.0,"fv_k":3.80,"fc_0_k":20.0,"fc_90_k":2.4,"ft_0_k":13.0,"ft_90_k":0.40,"rho_k":340,"rho_mean":410,"E_mean":10000,"E0_05":6700,"G_mean":630,"type":"Solid_Timber","material_type": "Timber"},
-    "C24":              {"fm_k":24.0,"fv_k":4.00,"fc_0_k":21.0,"fc_90_k":2.5,"ft_0_k":14.5,"ft_90_k":0.40,"rho_k":350,"rho_mean":410,"E_mean":10500,"E0_05":7400,"G_mean":690,"type":"Solid_Timber","material_type": "Timber"}
+    "C24":              {"fm_k":24.0,"fv_k":4.00,"fc_0_k":21.0,"fc_90_k":2.5,"ft_0_k":14.5,"ft_90_k":0.40,"rho_k":350,"rho_mean":420,"E_mean":11000,"E0_05":7400,"G_mean":690,"type":"Solid_Timber","material_type": "Timber"},
+    "C27":              {"fm_k":27.0,"fv_k":4.00,"fc_0_k":22.0,"fc_90_k":2.5,"ft_0_k":16.50,"ft_90_k":0.40,"rho_k":360,"rho_mean":430,"E_mean":11500, "E0_05":7700,"G_mean":720,"type":"Solid_Timber","material_type": "Timber"},
+    "C30":              {"fm_k":30.0,"fv_k":4.00,"fc_0_k":24.0,"fc_90_k":2.7,"ft_0_k":19.00,"ft_90_k":0.40,"rho_k":380,"rho_mean":460,"E_mean":12000, "E0_05":8000,"G_mean":750,"type":"Solid_Timber","material_type": "Timber"},
+    "C35":              {"fm_k":35.0,"fv_k":4.00,"fc_0_k":25.0,"fc_90_k":2.7,"ft_0_k":22.50,"ft_90_k":0.40,"rho_k":390,"rho_mean":470,"E_mean":13000, "E0_05":8700,"G_mean":810,"type":"Solid_Timber","material_type": "Timber"},
+    "C40":              {"fm_k":40.0,"fv_k":4.00,"fc_0_k":27.0,"fc_90_k":2.8,"ft_0_k":26.00,"ft_90_k":0.40,"rho_k":400,"rho_mean":480,"E_mean":14000, "E0_05":9400,"G_mean":880,"type":"Solid_Timber","material_type": "Timber"},
+    "C45":              {"fm_k":45.0,"fv_k":4.00,"fc_0_k":29.0,"fc_90_k":2.9,"ft_0_k":30.00,"ft_90_k":0.40,"rho_k":410,"rho_mean":490,"E_mean":15000, "E0_05":10100,"G_mean":940,"type":"Solid_Timber","material_type": "Timber"},
+    "C50":              {"fm_k":50.0,"fv_k":4.00,"fc_0_k":30.0,"fc_90_k":3.0,"ft_0_k":33.50,"ft_90_k":0.40,"rho_k":430,"rho_mean":520,"E_mean":16000, "E0_05":10700,"G_mean":1000,"type":"Solid_Timber","material_type": "Timber"},
+
+    "D30":              {"fm_k":30.0,"fv_k":3.90,"fc_0_k":24.0,"fc_90_k":5.3,"ft_0_k":18.00,"ft_90_k":0.60,"rho_k":530,"rho_mean":640,"E_mean":11000, "E0_05":9200,"G_mean":690,"type":"Solid_Timber","material_type": "Timber"},
+    "D35":              {"fm_k":35.0,"fv_k":4.10,"fc_0_k":25.0,"fc_90_k":5.4,"ft_0_k":21.00,"ft_90_k":0.60,"rho_k":540,"rho_mean":650,"E_mean":12000, "E0_05":10100,"G_mean":750,"type":"Solid_Timber","material_type": "Timber"},
+    "D40":              {"fm_k":40.0,"fv_k":4.20,"fc_0_k":27.0,"fc_90_k":5.5,"ft_0_k":24.00,"ft_90_k":0.60,"rho_k":550,"rho_mean":660,"E_mean":13000, "E0_05":10900,"G_mean":810,"type":"Solid_Timber","material_type": "Timber"},
+    "D50":              {"fm_k":50.0,"fv_k":4.50,"fc_0_k":29.0,"fc_90_k":6.2,"ft_0_k":30.00,"ft_90_k":0.60,"rho_k":620,"rho_mean":740,"E_mean":14000, "E0_05":11800,"G_mean":880,"type":"Solid_Timber","material_type": "Timber"},
+    "D60":              {"fm_k":60.0,"fv_k":4.80,"fc_0_k":33.0,"fc_90_k":10.5,"ft_0_k":36.00,"ft_90_k":0.60,"rho_k":700,"rho_mean":840,"E_mean":17000, "E0_05":14300,"G_mean":1060,"type":"Solid_Timber","material_type": "Timber"},
+    "D70":              {"fm_k":70.0,"fv_k":5.00,"fc_0_k":36.0,"fc_90_k":12.0,"ft_0_k":42.00,"ft_90_k":0.60,"rho_k":800,"rho_mean":960,"E_mean":20000, "E0_05":16800,"G_mean":1250,"type":"Solid_Timber","material_type": "Timber"},
+
+    "GL20h":            {"fm_k":20.0,"fv_k":3.50,"fc_0_k":20.0,"fc_90_k":2.5,"ft_0_k":16.00,"ft_90_k":0.50,"rho_k":340,"rho_mean":370,"E_mean":8400, "E0_05":7000,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL22h":            {"fm_k":22.0,"fv_k":3.50,"fc_0_k":22.0,"fc_90_k":2.5,"ft_0_k":17.60,"ft_90_k":0.50,"rho_k":370,"rho_mean":410,"E_mean":10500, "E0_05":8800,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL24h":            {"fm_k":24.0,"fv_k":3.50,"fc_0_k":24.0,"fc_90_k":2.5,"ft_0_k":19.20,"ft_90_k":0.50,"rho_k":385,"rho_mean":420,"E_mean":11500, "E0_05":9600,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL26h":            {"fm_k":26.0,"fv_k":3.50,"fc_0_k":26.0,"fc_90_k":2.5,"ft_0_k":20.80,"ft_90_k":0.50,"rho_k":405,"rho_mean":445,"E_mean":12100, "E0_05":10100,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL28h":            {"fm_k":28.0,"fv_k":3.50,"fc_0_k":28.0,"fc_90_k":2.5,"ft_0_k":22.30,"ft_90_k":0.50,"rho_k":425,"rho_mean":460,"E_mean":12600, "E0_05":10500,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL30h":            {"fm_k":30.0,"fv_k":3.50,"fc_0_k":30.0,"fc_90_k":2.5,"ft_0_k":24.00,"ft_90_k":0.50,"rho_k":430,"rho_mean":480,"E_mean":13600, "E0_05":11300,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL32h":            {"fm_k":32.0,"fv_k":3.50,"fc_0_k":32.0,"fc_90_k":2.5,"ft_0_k":25.60,"ft_90_k":0.50,"rho_k":440,"rho_mean":490,"E_mean":14200, "E0_05":11800,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+
+    "GL20c":            {"fm_k":20.0,"fv_k":3.50,"fc_0_k":18.5,"fc_90_k":2.5,"ft_0_k":15.00,"ft_90_k":0.50,"rho_k":355,"rho_mean":390,"E_mean":10400, "E0_05":8600,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL22c":            {"fm_k":22.0,"fv_k":3.50,"fc_0_k":20.0,"fc_90_k":2.5,"ft_0_k":16.00,"ft_90_k":0.50,"rho_k":355,"rho_mean":390,"E_mean":10400, "E0_05":8600,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL24c":            {"fm_k":24.0,"fv_k":3.50,"fc_0_k":21.5,"fc_90_k":2.5,"ft_0_k":17.00,"ft_90_k":0.50,"rho_k":365,"rho_mean":400,"E_mean":11000, "E0_05":9100,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL26c":            {"fm_k":26.0,"fv_k":3.50,"fc_0_k":23.5,"fc_90_k":2.5,"ft_0_k":19.00,"ft_90_k":0.50,"rho_k":385,"rho_mean":420,"E_mean":12000, "E0_05":10000,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL28c":            {"fm_k":28.0,"fv_k":3.50,"fc_0_k":24.0,"fc_90_k":2.5,"ft_0_k":19.50,"ft_90_k":0.50,"rho_k":390,"rho_mean":420,"E_mean":12500, "E0_05":10400,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL30c":            {"fm_k":30.0,"fv_k":3.50,"fc_0_k":24.5,"fc_90_k":2.5,"ft_0_k":19.50,"ft_90_k":0.50,"rho_k":390,"rho_mean":430,"E_mean":13000, "E0_05":10800,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"},
+    "GL32c":            {"fm_k":32.0,"fv_k":3.50,"fc_0_k":24.5,"fc_90_k":2.5,"ft_0_k":19.50,"ft_90_k":0.50,"rho_k":400,"rho_mean":440,"E_mean":13500, "E0_05":11200,"G_mean":650,"G_05":540,"type":"Glulam","material_type": "Timber"}
 }
 
