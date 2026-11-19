@@ -12,7 +12,7 @@ are here at the top.
 | Folder | What is in it |
 | --- | --- |
 | `Playground/` | The ten lessons of the website's Playground and the docs' Learn, each with its start (`*Start.gh`) |
-| `Structures/` | `Structures.py`'s definitions - the conventional structures, the earthquakes, the footbridge's and the tank's modes, the response spectrum sticks, the compressed shell, the pushover building - and the footfall stairs, the reciprocal vault, the high-tension tower and the multi-storey building, which use its helpers |
+| `Structures/` | `Structures.py`'s definitions - the conventional structures, the earthquakes, the footbridge's and the tank's modes, the response spectrum sticks, the compressed shell, the pushover building - and the footfall stairs, the reciprocal vault, the high-tension tower, the multi-storey building and the silo under a dust explosion and a tractor's impact, which use its helpers |
 | `Design/` | Section and member design: the Utilisation, Interaction Domain and Moment Curvature examples, and the tree column's cast node in shells (Connection Design) |
 | `Optimisation/` | The Section Optimiser examples, the Explorer's footbridge study and the twisted ring |
 | `Topology/` | Topology Optimisation, Multi-Material Topology and BESO, and the nodes in space |
@@ -86,6 +86,8 @@ script too:
     ./make.sh Structures/FootfallStair.py       # footfall on a U-shaped steel stair with two landings (SCI P354)
     STAIR=helical ./make.sh Structures/FootfallStair.py FootfallHelicalStair.gh     # a helical stair, all shells, curved parapets
     STAIR=straight ./make.sh Structures/FootfallStair.py FootfallStraightStair.gh   # 36 steps in a line, held only at its ends
+    ./make.sh Structures/Silo.py SiloExplosionImpact.gh   # a glass fibre silo on steel legs: a dust explosion inside
+                                                #   it and a tractor reversing into a leg, each a transient analysis
 
     # Design/
     ./make.sh Design/SteelCantilever.py         # the Utilisation example
