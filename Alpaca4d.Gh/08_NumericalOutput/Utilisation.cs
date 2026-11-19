@@ -13,9 +13,11 @@ using Alpaca4d.UIWidgets;
 namespace Alpaca4d.Gh
 {
     /// <summary>
-    /// Checks every beam against the design code of its material. The component is <see cref="Utilisation"/>;
+    /// Checks beams against the design code of their material: a Steel type, to EN 1993-1-1, and a
+    /// Timber type, to EN 1995-1-1 (UtilisationTimber.cs), each with the inputs and outputs of its
+    /// code, and each checking its own material alone. The component is <see cref="Utilisation"/>;
     /// this is everything it shares with <see cref="Utilisation_obsolete"/>, the one saved definitions
-    /// from before lateral-torsional buckling and 6.3.3 still hold.
+    /// from before lateral-torsional buckling and 6.3.3 still hold, which has the Steel type alone.
     ///
     /// A switcher with a single unit, for the sake of its menus: what is set once per project and then
     /// left alone - fabrication, partial factors, whether to write a report - and what says more about
@@ -25,17 +27,20 @@ namespace Alpaca4d.Gh
     /// Every parameter belongs to the unit, outputs included: only a unit's parameters can be plugs
     /// of a menu, and the component's own would come first and fix the order.
     /// </summary>
-    public abstract class UtilisationBase : GH_SwitcherComponent
+    public abstract partial class UtilisationBase : GH_SwitcherComponent
     {
         private const string Help =
-            "Checks every beam against the design code of its material and reports how much of each " +
-            "resistance it uses: 1 is exactly at the limit.\n" +
+            "Checks beams against the design code of their material and reports how much of each " +
+            "resistance it uses: 1 is exactly at the limit. Pick the material below the component: Steel or Timber.\n" +
             "Steel, to EN 1993-1-1: cross-section class, then axial force, shear, torsion, bending, and " +
             "bending with axial force and shear (6.2); flexural buckling about both axes (6.3.1); " +
             "lateral-torsional buckling (6.3.2), with M_cr worked out on each beam's own moment diagram; and " +
             "bending with compression as a member (6.3.3, by Annex B). Not yet: torsional buckling and Class 4 sections.\n" +
-            "The steel grade comes from the beam's material: make it with Material Library Elastic, or " +
-            "name it after its grade (\"S355\").\n" +
+            "Timber, to EN 1995-1-1: tension, compression, bending, shear and torsion (6.1), with axial force (6.2), " +
+            "column buckling (6.3.2) and lateral-torsional buckling (6.3.3), with k_mod from the service class and the " +
+            "duration of the loads, set in each Load Pattern's Duration menu.\n" +
+            "The grade comes from the beam's material: make it with Material Library Elastic, or " +
+            "name it after its grade (\"S355\", \"C24\", \"GL24h\").\n" +
             "One item per beam, in the order of the Element output. A check that could not be made is " +
             "empty, never zero, and leaves Max empty too.\n" +
             "Fabrication, the partial factors and the report - and the Type, Class and Governing outputs - " +
@@ -44,8 +49,8 @@ namespace Alpaca4d.Gh
         protected UtilisationBase()
           : base("Utilisation (Alpaca4d)", "Utilisation", Help, "Alpaca4d", "08_NumericalOutput")
         {
-            // Draw a Description Underneath the component
-            this.Message = Alpaca4d.Gh.ComponentMessage.MyMessage(this);
+            // Below the component: the material it checks, as SwitchUnit writes it.
+            this.Message = $"{ActiveUnit?.DisplayName ?? this.NickName}\n{this.Category}";
         }
 
         /// <summary>
@@ -68,9 +73,29 @@ namespace Alpaca4d.Gh
         // Only Utilisation has it, last of all: Utilisation_obsolete has none of the inputs from LengthZ on.
         private const int CombinationInput = 12;
 
+        /// <summary>The units, by name. Steel keeps the name the one unit had, so saved definitions open on it.</summary>
+        private const string SteelUnit = "Utilisation", TimberUnit = "UtilisationTimber";
+
+        public override string UnitMenuName => "Material";
+        public override string UnitMenuHeader => "Select the material";
+        protected override string DefaultEvaluationUnit => SteelUnit;
+
+        protected override void SwitchUnit(EvaluationUnit unit, bool recompute = true, bool recordEvent = true)
+        {
+            base.SwitchUnit(unit, recompute, recordEvent);
+            this.Message = $"{ActiveUnit?.DisplayName ?? this.NickName}\n{this.Category}";
+        }
+
         protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
         {
-            var unit = new EvaluationUnit("Utilisation", "Utilisation", "Check beams against the design code of their material.");
+            RegisterSteel(mngr);
+            if (this.MemberInputs)
+                RegisterTimber(mngr);
+        }
+
+        private void RegisterSteel(EvaluationUnitManager mngr)
+        {
+            var unit = new EvaluationUnit(SteelUnit, "Steel", "Check steel beams to EN 1993-1-1.");
             unit.Icon = Alpaca4d.Gh.Properties.Resources.Utilisation__Alpaca4d_;
             mngr.RegisterUnit(unit);
 
@@ -198,7 +223,10 @@ namespace Alpaca4d.Gh
             var alpacaModel = new Alpaca4d.Model();
             if (!DA.GetData(ModelInput, ref alpacaModel)) return;
             if (!AnalysedModel.Check(this, alpacaModel)) return;
-            ResultCombinations.Read(this, DA, CombinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+            if (unit?.Name == TimberUnit)
+                ResultCombinations.Read(this, DA, Input("Combination"), alpacaModel, (model, outputs) => ReadTimber(DA, model, outputs));
+            else
+                ResultCombinations.Read(this, DA, CombinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
         }
 
         /// <summary>The check of one analysed model - the model itself, or one of its load combinations.</summary>
@@ -292,7 +320,7 @@ namespace Alpaca4d.Gh
             try
             {
                 all = Utilisations.Of(alpacaModel, step, members,
-                                      new DesignSettings { Fabrication = fabrication, GammaM0 = gammaM0, GammaM1 = gammaM1, Report = report });
+                                      new DesignSettings { Fabrication = fabrication, GammaM0 = gammaM0, GammaM1 = gammaM1, Report = report, Family = "Steel" });
             }
             catch (Exception ex)
             {
@@ -378,10 +406,12 @@ namespace Alpaca4d.Gh
                     $"{classFour.Count} beam(s) are Class 4 and are not checked at all: Class 4 needs effective section properties " +
                     $"(EN 1993-1-5), which are not covered yet (element {Tags(classFour)}). See their Report for the part that sets it.");
 
-            var shapeless = Enumerable.Range(0, results.Count).Where(j => results[j].Type != "Unknown" && !results[j].Checked && results[j].Class == null).ToList();
+            var shapeless = Enumerable.Range(0, results.Count).Where(j => results[j].Type == "Steel" && !results[j].Checked && results[j].Class == null).ToList();
             if (shapeless.Count > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
                     $"{shapeless.Count} beam(s) use a section with no shape - an Elastic Section - and are not checked (element {Tags(shapeless)}).");
+
+            OtherMaterial(results, "Steel", Tags);
 
             bool MemberMissing(MemberUtilisation u) => u.Missing.Any(name => name.StartsWith("Buckling") || name == "LTB" || name.StartsWith("Interaction"));
 
