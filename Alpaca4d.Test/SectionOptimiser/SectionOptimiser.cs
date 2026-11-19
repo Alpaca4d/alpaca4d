@@ -315,6 +315,38 @@ class SectionOptimiserTest
 
         Check(cases > 1000 && wrong == 0, $"{cases} random sets of forces on IPEs, HEAs, HEBs, HEMs, CHSs, RHSs and pairs of angles: never above, by {worstGap:G3} at most");
         Check(caught > failing / 2, $"and it rules out {caught} of the {failing} that fail the whole check, without it");
+
+        // Timber: the bound takes service class 1's k_mod, the largest, so it holds in any service class.
+        int timberCases = 0, timberWrong = 0, timberFailing = 0, timberCaught = 0;
+        double timberGap = double.NegativeInfinity;
+        foreach (var name in new[] { "C24", "GL24h", "GL30c", "D40" })
+        {
+            var timber = TimberGrade.Find(name);
+            var material2 = new UniaxialMaterialElastic(name, timber.E0Mean * 1000, timber.E0Mean * 1000, 0, timber.GMean * 1000, 0.3, timber.RhoMean) { Grade = timber };
+            foreach (var size in new[] { new[] { 0.045, 0.145 }, new[] { 0.09, 0.27 }, new[] { 0.14, 0.6 }, new[] { 0.2, 0.2 } })
+            {
+                var section = TimberSection.Of(new RectangleCS(name, size[0], size[1], material2), out _);
+                double fm = timber.FmK * 1000 * section.Wz, fc = timber.Fc0K * 1000 * section.A, fv = timber.FvK * 1000 * section.A;
+                for (int n = 0; n < 40; n++)
+                {
+                    Func<double, double> share = scale => random.NextDouble() < 0.3 ? 0.0 : (random.NextDouble() * 1.6 - 0.8) * scale;
+                    double pN = share(fc), pV = share(fv), pMy = share(fm * section.Wy / section.Wz), pMz = share(fm);
+                    var forces = Enumerable.Range(0, 5).Select(_ => { double along = random.NextDouble();
+                        return new SectionForces(pN, pV * along, pV * (1 - along), 0, pMy * along, pMz * (1 - along)); }).ToList();
+                    var settings = new DesignSettings { Report = false, Duration = (Alpaca4d.Loads.LoadDuration)(n % 5) };
+                    var member = new SteelMember(1.0 + 7.0 * random.NextDouble()) { ServiceClass = 1 + n % 3 };
+                    var max = TimberCheck.Run(section, timber, forces, member, settings).Max;
+                    if (!max.HasValue) continue;
+                    double bound = TimberCheck.LowerBound(section, timber, forces, settings);
+                    timberCases++;
+                    timberGap = Math.Max(timberGap, bound - max.Value);
+                    if (bound > max.Value * (1.0 + 1e-12) + 1e-12) timberWrong++;
+                    if (max.Value > 1.0) { timberFailing++; if (bound > 1.0) timberCaught++; }
+                }
+            }
+        }
+        Check(timberCases > 500 && timberWrong == 0, $"{timberCases} random sets of forces on C24, GL24h, GL30c and D40 rectangles, every duration and service class: never above, by {timberGap:G3} at most");
+        Check(timberCaught > timberFailing / 3, $"and it rules out {timberCaught} of the {timberFailing} timber ones that fail the whole check");
     }
 
     // ---------------------------------------------------------------- the rounds
@@ -473,6 +505,55 @@ class SectionOptimiserTest
         Check(circle.Sections[1] == Catalogue[6], "the beam in no group keeps its section");
         Check(circle.Group[0] == 0 && circle.Group[1] == -1, "and the groups say so");
 
+        // Timber, in the same optimiser: a list of GL24h sections, 200 wide, 400 to 1000 deep.
+        var glulam = new UniaxialMaterialElastic("GL24h", 11.5e6, 11.5e6, 0, 0.65e6, 0.3, 420) { Grade = TimberGrade.Find("GL24h") };
+        var timberList = new[] { 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0 }.Select(h => (IUniaxialSection)new RectangleCS($"GL24h 200x{h * 1000:0}", 0.2, h, glulam)).ToList();
+        var timberGroup = new DesignGroup { Name = "Glulam", ElementIds = catalogue.ElementIds, Sections = timberList, Uniform = false };
+        var timberStart = Design(heavy, new[] { timberList.Last(), timberList.Last() });
+        var oneTimber = First(heavy, 0, 1.0, timberList);
+        var twoTimber = First(heavy, 1, 1.0, timberList);
+        var sizedTimber = Size(timberStart, timberGroup, 1.0, design => Always(design, heavy));
+        Check(oneTimber != null && twoTimber != null && sizedTimber.Sections[0] == oneTimber && sizedTimber.Sections[1] == twoTimber,
+              $"glulam: each beam on the first that holds, {sizedTimber.Sections[0]}, {sizedTimber.Sections[1]}");
+        Check(sizedTimber.Converged && sizedTimber.Utilisation.All(u => u.HasValue && u.Value <= 1.0),
+              $"converged, at {string.Join(", ", sizedTimber.Utilisation.Select(u => u?.ToString("0.###")))}");
+        Check(sizedTimber.Governing.All(g => g == "BendingZ" || g == "LTB" || g == "Combined"), $"governed by bending: {string.Join(", ", sizedTimber.Governing)}");
+
+        // Steel and timber in one list: the optimiser takes the first that holds, whatever it is made of.
+        var both = new DesignGroup { ElementIds = catalogue.ElementIds, Sections = timberList.Take(3).Concat(Catalogue).ToList(), Uniform = false };
+        var sizedBoth = Size(start, both, 1.0, design => Always(design, heavy));
+        var oneBoth = First(heavy, 0, 1.0, both.Sections);
+        var twoBoth = First(heavy, 1, 1.0, both.Sections);
+        Check(sizedBoth.Sections[0] == oneBoth && sizedBoth.Sections[1] == twoBoth,
+              $"a list of glulam then steel: {sizedBoth.Sections[0]} for beam 1, {sizedBoth.Sections[1]} for beam 2");
+
+        // Load combinations: an analysis that hands on a model of combinations, each read from its own file as
+        // a solved run would be - the worst ULS one governs each beam, and the SLS ones play no part.
+        Func<string[], Alpaca4d.Loads.CombinationKind[], Func<Model, Model>> combinations = (files, kinds) => design =>
+        {
+            var handed = design.ShallowCopy();
+            handed.CombinationResults = files.Select((file, k) =>
+            {
+                var solved = design.ShallowCopy();
+                solved.Recorders = new List<IRecorder> { new Recorder { FileName = file } };
+                solved.Combination = new Alpaca4d.Loads.LoadCombination { Name = "C" + k, Kind = kinds[k] };
+                return solved;
+            }).ToList();
+            return handed;
+        };
+        var uls = Alpaca4d.Loads.CombinationKind.ULS;
+        var sls = Alpaca4d.Loads.CombinationKind.SLSCharacteristic;
+        var worst = Size(start, Apart(catalogue), 1.0, combinations(new[] { light, heavy }, new[] { uls, uls }));
+        Check(worst.Sections[0] == one && worst.Sections[1] == two, $"two ULS combinations, light and heavy: the heavy governs, {worst.Sections[0]}, {worst.Sections[1]}");
+        var lightOnly = Size(start, Apart(catalogue), 1.0, design => Always(design, light));
+        var ignored = Size(start, Apart(catalogue), 1.0, combinations(new[] { light, heavy }, new[] { uls, sls }));
+        Check(ignored.Sections[0] == lightOnly.Sections[0] && ignored.Sections[1] == lightOnly.Sections[1],
+              $"a heavy SLS combination beside a light ULS one: sized for the ULS alone, {ignored.Sections[0]}, {ignored.Sections[1]}");
+        bool refused = false;
+        try { Size(start, Apart(catalogue), 1.0, combinations(new[] { heavy }, new[] { sls })); }
+        catch (Exception ex) { refused = ex.Message.Contains("No ultimate load combination"); }
+        Check(refused, "only SLS combinations: nothing to size for, an error");
+
         Section("Screening and parallel checking change how fast, never what");
 
         var scenarios = new List<KeyValuePair<string, Func<bool, bool, SizingResult>>>
@@ -491,6 +572,10 @@ class SectionOptimiserTest
                 (sc, pa) => Size(fromHea, null, 1.0, design => Always(design, heavy), 10, null, SteelCatalogue.FamilyOf, screen: sc, parallel: pa)),
             new KeyValuePair<string, Func<bool, bool, SizingResult>>("a design that comes round",
                 (sc, pa) => Size(from, pair, 1.0, design => Always(design, design.Beams[0].Section == lightOne ? heavy : light), screen: sc, parallel: pa)),
+            new KeyValuePair<string, Func<bool, bool, SizingResult>>("glulam",
+                (sc, pa) => Size(timberStart, timberGroup, 1.0, design => Always(design, heavy), screen: sc, parallel: pa)),
+            new KeyValuePair<string, Func<bool, bool, SizingResult>>("glulam then steel",
+                (sc, pa) => Size(start, both, 1.0, design => Always(design, heavy), screen: sc, parallel: pa)),
         };
 
         foreach (var scenario in scenarios)

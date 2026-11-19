@@ -96,18 +96,25 @@ namespace Alpaca4d.Gh
                 }
             }
 
-            var notSteel = sections.Where(section => !(DesignGrades.Of(section.Material) is SteelGrade)).ToList();
-            if (notSteel.Count > 0)
+            // Steel and timber are checked, each by its own code; anything else never can be.
+            var ungraded = sections.Where(section => !(DesignGrades.Of(section.Material) is SteelGrade) && !(DesignGrades.Of(section.Material) is TimberGrade)).ToList();
+            if (ungraded.Count > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    $"{notSteel.Count} section(s) have a material with no steel grade, so they cannot be checked and will never be picked " +
-                    $"({Names(notSteel)}). Make the material with Material Library Elastic, or name it after its grade (\"S355\").");
+                    $"{ungraded.Count} section(s) have a material with no design grade, so they cannot be checked and will never be picked " +
+                    $"({Names(ungraded)}). Make the material with Material Library Elastic, or name it after its grade (\"S355\", \"GL24h\").");
 
-            var shapeless = sections.Except(notSteel)
-                                    .Where(section => SteelSection.Of(section, (SteelGrade)DesignGrades.Of(section.Material), Fabrication.Rolled) == null)
+            var shapeless = sections.Where(section => DesignGrades.Of(section.Material) is SteelGrade steel
+                                                          && SteelSection.Of(section, steel, Fabrication.Rolled) == null)
                                     .ToList();
             if (shapeless.Count > 0)
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
                     $"{shapeless.Count} section(s) have no shape to check - an Elastic Section - and will never be picked ({Names(shapeless)}).");
+
+            var notTimberShape = sections.Where(section => DesignGrades.Of(section.Material) is TimberGrade && TimberSection.Of(section, out _) == null).ToList();
+            if (notTimberShape.Count > 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"{notTimberShape.Count} timber section(s) are not a solid rectangle or circle, which is all the timber check covers, " +
+                    $"and will never be picked ({Names(notTimberShape)}).");
 
             DA.SetData(0, new DesignGroup
             {
