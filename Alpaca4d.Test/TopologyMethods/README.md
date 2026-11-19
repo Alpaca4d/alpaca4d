@@ -10,11 +10,12 @@
     ./run.sh bench grasshopper                 # what ../TopologyOptimisation/GrasshopperChecks.cs expects of the new components
     ./run.sh bench node truss 20               # a space-truss node in a 1 m cube of 20 bricks a side, by all three methods
     ./run.sh bench node joint 20               # a beam-column joint, the same way
-    ./example.sh                               # Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, built and run in Rhino
-    ./nodes.sh                                 # Tools/Examples/Topology/TopologyNodes.py's two definitions, against the node benches
+    ./example.sh                               # Tools/Examples/Topology/TopologyBridge.py, its three methods built and run in Rhino (PICTURES=1 draws them)
+    ./nodes.sh                                 # Tools/Examples/Topology/TopologyNodes.py's two definitions, against the node benches (PICTURES=1 draws them)
     ./run.sh bench classic cantilever 40 0.4 1.5                  # the mid-loaded cantilever, SIMP at p = 1..5, BESO, Multi-Material
     ./run.sh bench classic lbracket 60 0.4 1.5 simp3 beso multi   # the L-bracket, the three ways
     ./classics.sh                              # Tools/Examples/Topology/TopologyClassics.py's two definitions, against those (PICTURES=1 draws them)
+    ./run.sh bench top3d simply 0.02 1.5       # TopologyBenchmarks' cantilever or simply supported beam by BESO: [rate] [radius, 0 the default]
     ./speed.sh                                 # the speed test: every method timed on the bridge, the joint and the truss node
 
 Needs a built Alpaca4d.Core (Release), mono's `mcs`, a net48 RhinoCommon and an OpenSees on PATH (or

@@ -104,6 +104,25 @@ static class TopologyMethods
     }
 
     /// <summary>
+    /// top3d's units' simply supported beam, as Tools/Examples/Topology/TopologyBenchmarks.gh has it: nx long, nz high and ny
+    /// deep, pinned along the bottom edge at x = 0, on rollers free along x along the one at x = nx, and loaded by -1 at
+    /// every node of the top edge at mid-span.
+    /// </summary>
+    static Problem SimplySupported(int nx, int nz, int ny)
+    {
+        var grid = new Grid(nx, ny, nz);
+        var problem = new Problem { Name = "top3d-simply-supported", Grid = grid };
+        for (int j = 0; j <= ny; j++)
+        {
+            problem.Fixes.Add((grid.Node(0, j, 0), "1 1 1"));
+            problem.Fixes.Add((grid.Node(nx, j, 0), "0 1 1"));
+        }
+        for (int j = 0; j <= ny; j++)
+            problem.Loads.Add((grid.Node(nx / 2, j, nz), -1.0));
+        return problem;
+    }
+
+    /// <summary>
     /// esoL.m's case 2, the clamped cantilever, one element deep: nx by nz, held along x = 0 and loaded by -1
     /// at the middle of its free end, at every node through the depth.
     /// </summary>
@@ -702,6 +721,24 @@ static class TopologyMethods
             var settings = new BesoSettings { VolumeFraction = volfrac, EvolutionRate = 0.02, FilterRadius = rmin, MaxIterations = 300 };
             Console.WriteLine($"{problem.Name}: {nx} x {nz} x {ny} = {cells.Count} bricks, volume {volfrac}, rmin {rmin}");
             Run(problem, cells, openSees, folder, analyse => BesoOptimiser.Run(cells, settings, analyse, progress: Print));
+        }
+        else if (name == "top3d")
+        {
+            // Tools/Examples/Topology/TopologyBenchmarks.gh's two problems by BESO, as its component runs them: top3d
+            // cantilever|simply [rate] [radius], 30% of the volume, the radius 0 for the default.
+            bool simply = a.Length > 1 && a[1] == "simply";
+            double er = a.Length > 2 ? double.Parse(a[2], CultureInfo.InvariantCulture) : 0.02;
+            double radius = a.Length > 3 ? double.Parse(a[3], CultureInfo.InvariantCulture) : 0.0;
+            var problem = simply ? SimplySupported(120, 20, 4) : Cantilever(60, 20, 4, "top3d-cantilever");
+            var cells = problem.Grid.Cells(problem.E);
+            using (var analysis = Start(problem, openSees, folder, cells))
+            {
+                var beso = BesoOptimiser.Run(cells, new BesoSettings { VolumeFraction = 0.3, MaxIterations = 200, EvolutionRate = er, FilterRadius = radius }, analysis.Energies);
+                foreach (var it in beso.History.Where(it => it.Iteration % 5 == 0 || it.Iteration == 1))
+                    Console.WriteLine("  " + it);
+                Console.WriteLine($"BESO on {problem.Name} (rate {er}, radius {beso.FilterRadius:0.###}): {beso.History.Count} iterations, converged {beso.Converged}" +
+                                  $"{(beso.BrokeAfter != null ? $", broke after {beso.BrokeAfter}" : "")}, best {beso.History.Min(it => it.Compliance):G6}, last {beso.History.Last().Compliance:G6}");
+            }
         }
         else if (name == "bridge")
         {

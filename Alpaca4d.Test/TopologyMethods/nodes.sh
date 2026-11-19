@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Tools/Examples/Topology/TopologyNodes.py's two definitions - the space-truss node and the beam-column joint - each built
 # by its build(doc) in a running Rhino 8 with its script server started (StartScriptServer), with this build of
-# the plugin. All three optimisations run on each, and their first compliance has to be what ./run.sh bench node
-# gives on its own deck - the proof that the definition models the members, the loads and the supports as meant.
-# Then each design is analysed as group 8 does.
+# the plugin. The three methods of Topology Optimisation - SIMP, BESO and Multi-Material - run together on each, and
+# their first compliance has to be what ./run.sh bench node gives on its own deck - the proof that the definition
+# models the members, the loads and the supports as meant. Then each design is analysed as group 8 does.
+# PICTURES=1 also draws each node's three designs side by side, into the work folder it prints.
 # Needs a Release build of Alpaca4d.Gh, an OpenSees (OPENSEES, or the one on PATH), a license (LICENSE, the
 # user's by default; copied, never written), and RESULTS holding ./run.sh bench node truss 20 and joint 20's
 # node-<case>-20_summary.csv. CASES="truss joint" (both, the default) picks the definitions. RHINO_PIPE=
@@ -29,7 +30,7 @@ cp "$GHDIR"/*.dll "$GHDIR"/*.gha "$work/"
 cp "$LICENSE" "$work/license.bin"
 cp "$RESULTS"/node-truss-20_summary.csv "$RESULTS"/node-joint-20_summary.csv "$work/"
 sed -e "s|__WORK__|$work|" -e "s|__EXAMPLES__|$(cd ../../Tools/Examples/Topology && pwd)|" -e "s|__OPENSEES__|$OPENSEES|" \
-    -e "s|__CASES__|$CASES|" NodesRun.py > "$work/NodesRun.py"
+    -e "s|__CASES__|$CASES|" -e "s|__PICTURES__|${PICTURES:-0}|" NodesRun.py > "$work/NodesRun.py"
 
 if [ -n "$RHINO_PIPE" ]; then
   "$RHINOCODE" --rhino "$RHINO_PIPE" script "$work/NodesRun.py"
@@ -39,4 +40,5 @@ fi
 for _ in $(seq 1 3600); do [ -f "$work/result.txt" ] && break; sleep 1; done
 [ -f "$work/result.txt" ] || { cat "$work/progress.txt" 2>/dev/null; echo "no result: an error is in the newest ~/.rhinocode/logs/rhinocode_<Rhino's pid>"; exit 1; }
 cat "$work/result.txt"
+[ "${PICTURES:-0}" = 1 ] && echo "pictures in $work"
 if grep -q "\[FAIL\]" "$work/result.txt"; then exit 1; fi

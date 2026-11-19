@@ -184,10 +184,26 @@ alone, as the run does when it asks for a solution.
 
 `Tools/Examples/Topology/TopologyBenchmarks.gh` is written by its script, which `make.sh` runs without Rhino.
 `ExampleRun.py` runs the same script's `build(doc)` inside Rhino 8, with its components made from this
-build of the plugin, solves the definition, switches both Run toggles on with Iterations at 30
-(`ITERATIONS`), and compares each problem's compliance at that iteration with the test bench's history
-in `RESULTS`: 1.1e-11 and 2.4e-11 apart on 2026-10-27, in 16 s for both runs together. Then its Step
-slider: 0 shows the uniform start, 10 a design between, and its end the latest again.
+build of the plugin: two problems, each by SIMP, BESO and Multi-Material on one Run toggle. It solves the
+definition, switches both Run toggles on with Iterations at 30 (`ITERATIONS`), and compares each SIMP run's
+compliance at that iteration with the test bench's history in `RESULTS`: 1.1e-11 and 2.4e-11 apart on
+2026-10-27, in 16 s for both runs together. BESO and Multi-Material are checked for errors, solid or void, and
+their shares. Then the cantilever's Step slider: 0 shows the uniform start, 10 a design between, and its end the
+latest again.
+
+`PICTURES=1 ./example.sh` runs all six to their ends instead (`ITERATIONS=0`), compares SIMP's last compliance
+with the definition's panels, and draws each problem's three designs from the front and in 3D, for the website's
+example. On 2026-11-18, with /Applications/OpenSeesLatest-Mumps, all six together on an M2 Pro:
+
+| Problem | SIMP | BESO | Multi-Material |
+| --- | --- | --- | --- |
+| Cantilever | 200 iterations, 2415.81, 68 s | 69, 1694.08, 25 s | 265, 2227.57, 108 s |
+| Simply supported | 200, 1203.026, 113 s | 82, 884.71, 53 s | 263, 1180.25, 224 s |
+
+BESO has top3d's filter radius, 1.5, as the other two. With its own default, two bricks, it cuts the simply
+supported beam through at 37% of the volume and never mends it (compliance 766, then 1950, then 4.6e10:
+`../TopologyMethods/run.sh bench top3d simply`); a radius of 3 breaks it too, and an evolution rate of 1% mends
+it more slowly (160 iterations, 945).
 
 ## The papers
 

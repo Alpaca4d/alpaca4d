@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tools/Examples/Topology/MultiMaterialBridge.py and BesoBridge.py, each built by its own build(doc) in a running Rhino 8
-# with its script server started (StartScriptServer), with this build of the plugin: each runs to its end, at
-# the bricks per metre it opens with, and its design is analysed as the definition does.
-# PICTURES=1 also draws each design in 3D, into the work folder it prints.
+# Tools/Examples/Topology/TopologyBridge.py, built by its own build(doc) in a running Rhino 8 with its script server
+# started (StartScriptServer), with this build of the plugin: its three optimisations - SIMP, BESO and Multi-Material -
+# run together to their ends, at the bricks per metre it opens with, and each design is analysed as the definition
+# does. PICTURES=1 also draws the three designs one above the other, in 3D and from the front, into the work folder
+# it prints.
 # Needs a Release build of Alpaca4d.Gh, an OpenSees (OPENSEES, or the one on PATH) and a license (LICENSE,
 # the user's by default; copied, never written). RHINO_PIPE=rhinocode_remotepipe_<pid> picks one Rhino.
 set -e
@@ -26,8 +27,8 @@ if [ -n "$RHINO_PIPE" ]; then
 else
   "$RHINOCODE" script "$work/ExampleRun.py"
 fi
-for _ in $(seq 1 1800); do [ -f "$work/result.txt" ] && break; sleep 1; done
-[ -f "$work/result.txt" ] || { echo "no result: an error is in the newest ~/.rhinocode/logs/rhinocode_<Rhino's pid>"; exit 1; }
+for _ in $(seq 1 2400); do [ -f "$work/result.txt" ] && break; sleep 1; done
+[ -f "$work/result.txt" ] || { cat "$work/progress.txt" 2>/dev/null; echo "no result: an error is in the newest ~/.rhinocode/logs/rhinocode_<Rhino's pid>"; exit 1; }
 cat "$work/result.txt"
 [ "${PICTURES:-0}" = 1 ] && echo "pictures in $work"
 if grep -q "\[FAIL\]" "$work/result.txt"; then exit 1; fi
