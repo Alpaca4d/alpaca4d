@@ -40,8 +40,7 @@ namespace Alpaca4d.Gh
 
             // Last, as new inputs go: a file saved before it still lines up with the ones before.
             evaluationUnit.RegisterInputParam(new Param_String(), "Name", "Name",
-                "The load case's name - Finishes, Imposed, Wind X. Mass from Loads names a pattern by it, and the export to "
-                + "FEM-Design names its load case. OpenSees never sees it. Left empty, the pattern has no name.", GH_ParamAccess.item);
+                "The load case's name, as Load Combination and Mass from Loads call the pattern. Empty: no name.", GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
         }
 

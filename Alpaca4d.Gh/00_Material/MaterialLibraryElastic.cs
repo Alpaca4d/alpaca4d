@@ -158,8 +158,7 @@ namespace Alpaca4d.Gh
 	}
 
 	private const string ColourDescription =
-		"The colour the material is drawn in when Model View colours the elements by material - every grade of the list, with Grade set to All. " +
-		"Left empty, Model View gives each material a colour of its own.";
+		"The colour the material is drawn in when Model View colours by material, every grade alike. Empty: one per material.";
 
 		protected override void RegisterOutputParams(GH_OutputParamManager pManager)
 		{

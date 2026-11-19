@@ -37,16 +37,13 @@ namespace Alpaca4d.Gh
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = false;
 
             evaluationUnit.RegisterInputParam(new Param_String(), "WorksIn", "WorksIn",
-                "Both, Tension or Compression: which way the bar carries load. A tension-only bar goes slack when pushed, " +
-                "a compression-only one lets go when pulled. Connect a Value List to pick from them.",
+                "Both, Tension or Compression: which way the bar carries load. Connect a Value List to pick.",
                 GH_ParamAccess.item, new GH_String(AxialBehaviour.Both.ToString()));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].EnumInput = Enum.GetNames(typeof(AxialBehaviour)).ToList();
 
             evaluationUnit.RegisterInputParam(new Param_Number(), "Prestress", "Prestress",
-                $"The axial force the bar starts with [{Units.Force}], tension positive. A cable needs it: straight and " +
-                "slack, it has no stiffness across its length. A tension-only bar takes zero or more, a compression-only " +
-                "one zero or less.",
+                $"The axial force the bar starts with [{Units.Force}], tension positive. A straight cable needs some, or it has no lateral stiffness.",
                 GH_ParamAccess.item, new GH_Number(0.0));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 

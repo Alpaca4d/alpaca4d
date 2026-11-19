@@ -16,14 +16,11 @@ namespace Alpaca4d.Gh
     {
         /// <summary>The NodeTag input on Nodal Displacements.</summary>
         public const string NodeTagFilter =
-            "Report only these nodes, by tag - the number OpenSees knows each node by. Left empty " +
-            "every node is reported, and then a node's tag is its place in the output, from one.";
+            "Only these nodes, by tag. Empty reads every node, in tag order.";
 
         /// <summary>The PointPos input on Reaction Forces.</summary>
         public const string SupportPointFilter =
-            "Report only the supports at these points - the same points you gave the Support " +
-            "component. Left empty every support is reported.\n" +
-            "A point counts as being at a support when it is within the model's tolerance of it.";
+            "Only the supports at these points, as given to Support. Empty reads every support.";
 
         /// <summary>
         /// The NodeTag output on Reaction Forces. Nodal Displacements needs no such output - its

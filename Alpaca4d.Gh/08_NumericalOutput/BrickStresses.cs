@@ -40,8 +40,7 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
-                "Read every recorded step instead of one. Each output then becomes a tree with " +
-                "one branch per step, {step}, holding that step's value per element. Step is ignored.",
+                "Read every step: each output becomes a tree, a branch {step} each. Step is then ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
@@ -51,8 +50,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             _axesInput = pManager.ParamCount;
             pManager.AddIntegerParameter("Axes", "Axes",
-                "Which frame to read the six components in: 0 = global, the axes the solver works " +
-                "in; 1 = the element's own, from its node numbering. Plane reports whichever was used.",
+                "Frame of the six components: 0 global, 1 the element's own axes. Plane gives the one used.",
                 GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
         }

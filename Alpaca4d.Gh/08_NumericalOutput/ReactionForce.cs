@@ -33,9 +33,7 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
-                "Read every recorded step instead of one. ReactionForce and ReactionMoment become " +
-                "trees with one branch per step; SupportPosition stays flat, as supports do not " +
-                "move. Step is ignored.",
+                "Read every step: forces and moments become trees, a branch {step} each. Step is then ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);

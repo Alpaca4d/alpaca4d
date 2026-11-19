@@ -37,8 +37,7 @@ namespace Alpaca4d.Gh
         {
             pManager.AddCurveParameter("Curves", "Curves", "The title block's lines: the border, the rules, the boxes.", GH_ParamAccess.list);
             pManager.AddGenericParameter("Text", "Text",
-                "The title block's texts: Rhino text objects or text dots, referenced or made in Grasshopper. Each keeps its place, its height and " +
-                "its justification. A text may hold {page}, {pages}, {title} and {date}.", GH_ParamAccess.list);
+                "The title block's texts: Rhino texts or text dots, each kept as placed. May hold {page}, {pages}, {title} and {date}.", GH_ParamAccess.list);
             pManager.AddTextParameter("Logo", "Logo", "A picture file, a PNG or a JPEG: your office's logo.", GH_ParamAccess.item);
             pManager.AddCurveParameter("Logo Frame", "Logo Frame", "The rectangle the logo fills, as it is on the page.", GH_ParamAccess.item);
             for (int i = 0; i < pManager.ParamCount; i++)

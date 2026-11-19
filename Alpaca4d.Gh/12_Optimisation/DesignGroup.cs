@@ -38,13 +38,10 @@ namespace Alpaca4d.Gh
             pManager.AddTextParameter("Name", "Name", "What to call the group in the optimiser's messages and its Group output.", GH_ParamAccess.item, "");
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("ElementId", "ElementId",
-                "Which beams belong to the group: an ElementId (Col_3), a wildcard over them (Col*), an element tag (47), or a " +
-                "regular expression (regex:^Col), mixed freely in one list. A beam can be in one group only.",
+                "Beams in the group: ElementIds, wildcards (Col_*), tags (47) or regex:^Col. A beam can be in one group only.",
                 GH_ParamAccess.list);
             pManager.AddGenericParameter("Sections", "Sections",
-                "The sections the group's beams may have, from the 01_Section components or Section Library, in the order to try them: " +
-                "the group takes the first that works, so put first the one you would rather have - the lightest, the cheapest, the one " +
-                "in stock. The list is never sorted. Each needs a steel material and a shape to be checked - an Elastic Section cannot be.",
+                "Sections to try, in order: the group takes the first that works. Never sorted, so put your preferred one first.",
                 GH_ParamAccess.list);
             pManager.AddParameter(UniformInput());
         }
@@ -57,8 +54,7 @@ namespace Alpaca4d.Gh
             {
                 Name = UniformName,
                 NickName = UniformName,
-                Description = "True: every beam of the group takes the same section, the first of the list that all of them work with. " +
-                              "False: each beam takes its own, the first of the list that it works with.",
+                Description = "True: one section for the whole group, the first that suits every beam. False: each beam its own.",
                 Access = GH_ParamAccess.item,
                 Optional = true,
             };

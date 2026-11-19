@@ -37,21 +37,17 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
-                "Read every recorded step instead of one. Every output then carries a step index in " +
-                "front of the node's tag, so a branch reads {step; tag}. Step is ignored.",
+                "Read every step: each path gets the step in front, {step; tag}. Step is then ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddPointParameter("Point", "Point",
-                "The nodes to report, by where they are: a point on a beam end picks the node there. " +
-                "A point counts as on a node when it is within the model's tolerance of it.",
+                "Nodes to report, by position: a point within the model's tolerance of a node picks it.",
                 GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("NodeTag", "NodeTag",
-                "The nodes to report, by tag - the number OpenSees knows each node by, as Nodal " +
-                "Displacements and Model View show it. Taken together with Point. Leave both empty " +
-                "to report every node a beam meets.",
+                "Nodes to report, by tag, together with Point. Both empty: every node a beam meets.",
                 GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
         }

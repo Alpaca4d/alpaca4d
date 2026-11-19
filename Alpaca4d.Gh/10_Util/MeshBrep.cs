@@ -21,9 +21,9 @@ namespace Alpaca4d.Gh
         /// <inheritdoc />
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
-            pManager.AddBrepParameter("Breps", "Breps", "Surfaces or polysurfaces to mesh, as one mesh. They are merged where they touch, so a wall standing on a slab shares the nodes along the line where it meets it, and so do the faces of a polysurface along the edges between them.", GH_ParamAccess.list);
+            pManager.AddBrepParameter("Breps", "Breps", "Surfaces or polysurfaces to mesh, as one mesh, merged where they touch so they share nodes there.", GH_ParamAccess.list);
             pManager.AddNumberParameter("Edge Length", "EdgeLength", $"Length the quads' sides aim for [{Units.Length}]. The Brep's edges are all kept, so any shorter than this make smaller quads around them.", GH_ParamAccess.item, 0.5);
-            pManager.AddPointParameter("Points", "Points", "Points the mesh must have a node at, such as supports, columns and point loads. Each one pulls the nearest node onto itself and the quads around it even out again. A point on an edge pulls a node along that edge, and one further than the document tolerance from the Brep is left out with a warning.", GH_ParamAccess.list);
+            pManager.AddPointParameter("Points", "Points", "Points the mesh must have a node at, such as supports and point loads. Each pulls the nearest node onto itself.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 

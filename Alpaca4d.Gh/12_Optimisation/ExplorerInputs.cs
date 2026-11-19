@@ -43,8 +43,7 @@ namespace Alpaca4d.Gh
         private const int FixedOutputs = 2;  // Inputs, Name
 
         private const string SourceDescription =
-            "A number slider, a value list or a panel to step through. Its name becomes the name of its axis in the explorer, so give it one.\n" +
-            "A new input appears when the last one is used.";
+            "A slider, value list or panel to step through. Name it: the name is its axis. Another appears when the last is used.";
         private const string ValueDescription =
             "The value of the input with the same name, for the design being solved. Read a panel's lines from here: the panel itself is not changed.";
 

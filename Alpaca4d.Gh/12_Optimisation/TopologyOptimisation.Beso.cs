@@ -50,8 +50,7 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_String(), "Keep", "Keep",
-                "Solids to keep whatever the optimisation finds - around supports and loads, say. Left empty, every solid is designed.\n" +
-                "Takes an ElementId (Support*), an element tag (47), or a regular expression (regex:^Load), mixed freely in one list.",
+                "Solids to keep whatever the run finds: ElementIds, wildcards (Support*), tags (47) or regex:^Load. Empty designs all.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -61,14 +60,12 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Integer(), "Iterations", "Iterations",
-                "How many iterations at most, counted from the first. Coming down to VolumeFraction takes about log(VolumeFraction) / " +
-                "log(1 - EvolutionRate) iterations - 60 for 0.3 at 2% - and settling ten to thirty more.",
+                "At most this many iterations: reaching 0.3 at a 2% EvolutionRate takes about 60, settling 10 to 30 more.",
                 GH_ParamAccess.item, new GH_Integer(200));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Boolean(), "Run", "Run",
-                "True runs the optimisation, false pauses it: on again, it goes on from where it stopped. A run whose inputs change, " +
-                "Iterations and Tolerance apart, starts again from the beginning.",
+                "True runs the optimisation, false pauses it. Changing any input but Iterations and Tolerance starts it over.",
                 GH_ParamAccess.item, new GH_Boolean(false));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -78,21 +75,17 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "Penalty", "Penalty",
-                "The penalty p of soft-kill BESO: a void element has MinStiffness of its stiffness, and its strain energy counts " +
-                "MinStiffness^((p-1)/p) as much, next to nothing.",
+                "The soft-kill penalty p: a void element's strain energy counts MinStiffness^((p-1)/p) as much, next to nothing.",
                 GH_ParamAccess.item, new GH_Number(3.0));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "FilterRadius", "FilterRadius",
-                $"How far the elements' strain energies are smoothed over [{Units.Length}]: the thinnest member the result can have is " +
-                "about this wide. Left empty, 2 times the typical element size; much wider, a thin member's energy is averaged away " +
-                "with the void around it, and the member can be cut through.",
+                $"How far strain energies are smoothed [{Units.Length}]: about the thinnest member. Empty: 2 element sizes. Much wider can cut members.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "Tolerance", "Tolerance",
-                "Once VolumeFraction is reached, the run stops when the compliances of the last five iterations add up to within this " +
-                "share of the five before. Make it smaller after a run and the run goes on from where it stopped.",
+                "Once at VolumeFraction, the run stops when the last five compliances sum to within this share of the five before.",
                 GH_ParamAccess.item, new GH_Number(0.001));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -102,15 +95,12 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "System", "System",
-                "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "Auto is the default: Mumps on every core when the OpenSees in use has it, BandSPD when it does not.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
+                "How the equations are solved; connect a Value List. Default Auto: Mumps if OpenSees has it, else BandSPD.",
                 GH_ParamAccess.item, new GH_String(DefaultSystem));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Integer(), "Step", "Step",
-                "Which iteration's design to show: 0 the whole block the run starts from, 1 the one after the first iteration, and so on. " +
-                "Left empty, the latest. Every design is kept, so a slider dragged back shows the design of each volume on the way down.",
+                "Which iteration's design to show: 0 the whole block, 1 after the first iteration, and so on. Empty: the latest.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 

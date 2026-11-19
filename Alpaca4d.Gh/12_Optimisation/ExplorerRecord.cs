@@ -66,8 +66,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddTextParameter("Folder", "Folder",
-                $"The folder to save the study in. A relative path is taken from the .gh file's folder. " +
-                $"Left empty, {DefaultFolderName}\\<name of the .gh file> next to the .gh file, or under Documents\\Alpaca4d for a definition not saved yet.", GH_ParamAccess.item);
+                $"The folder to save the study in; a relative path starts at the .gh file. Empty: {DefaultFolderName}\\<file name> beside it.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Inputs", "Inputs", "The inputs of the design, from the Inputs of Explorer Inputs.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
@@ -76,12 +75,10 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("Image", "Image", "Which views to take a picture of, from Explorer Image. Left empty, the active viewport at 800 × 600.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Model", "Model",
-                "What to save as the design's 3D model: the AlpacaModel, or meshes - vertex colours kept - Breps, curves and points. " +
-                "Text dots and text become labels the explorer shows facing the camera. Left empty, no 3D model.", GH_ParamAccess.list);
+                "The design's 3D model: an AlpacaModel, meshes, Breps, curves, points; text dots and text become labels. Empty: none.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddColourParameter("Colours", "Colours", "Colour for each Model item, or one for all of them: a text dot's background, a text's colour. Left empty, meshes keep their vertex colours, " +
-                "an AlpacaModel its elements' colours, and anything picked from Rhino the colour Rhino draws it in, as a text dot keeps its colour in Rhino; " +
-                "dots, text and points made in Grasshopper are dark.", GH_ParamAccess.list);
+            pManager.AddColourParameter("Colours", "Colours",
+                "A colour per Model item, or one for all: a text dot's background, a text's colour. Empty: their own colours.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Write", "Write", "True to save designs.", GH_ParamAccess.item, false);
         }

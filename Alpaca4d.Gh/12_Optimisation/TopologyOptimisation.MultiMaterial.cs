@@ -61,32 +61,26 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_String(), "Keep", "Keep",
-                "Solids to keep as modelled, of their own material, whatever the optimisation finds - around supports and loads, say. " +
-                "Left empty, every solid is designed.\n" +
-                "Takes an ElementId (Support*), an element tag (47), or a regular expression (regex:^Load), mixed freely in one list.",
+                "Solids to keep, in their own material: ElementIds, wildcards (Support*), tags (47) or regex:^Load. Empty designs all.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_GenericObject(), "Materials", "Materials",
-                "The Elastic Isotropic Materials to choose from, two or more. Only their Young's moduli count. Each is drawn in its " +
-                "Colour, or in a colour of the brand palette when it has none.",
+                "The Elastic Isotropic Materials to choose from, two or more, each drawn in its Colour. Only their Young's moduli count.",
                 GH_ParamAccess.list);
 
             unit.RegisterInputParam(new Param_Number(), "VolumeFractions", "VolumeFractions",
-                "The share of the designed solids' volume each material may fill, one per material in the order of Materials; a " +
-                "shorter list repeats its last value. Together at most 1. Left empty, 0.3 shared equally.",
+                "Each material's share of the designed volume, in the order of Materials; together at most 1. Empty: 0.3 shared equally.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Integer(), "Iterations", "Iterations",
-                "How many iterations at most, counted from the first. The projection is at its sharpest from iteration 251, so a run " +
-                "needs about 300, as the paper's. Raise it after a run and the run goes on from where it stopped.",
+                "At most this many iterations. The projection is sharpest from iteration 251, so a run needs about 300.",
                 GH_ParamAccess.item, new GH_Integer(300));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Boolean(), "Run", "Run",
-                "True runs the optimisation, false pauses it: on again, it goes on from where it stopped. A run whose inputs change, " +
-                "Iterations and Tolerance apart, starts again from the beginning.",
+                "True runs the optimisation, false pauses it. Changing any input but Iterations and Tolerance starts it over.",
                 GH_ParamAccess.item, new GH_Boolean(false));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -96,20 +90,17 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "PNorm", "PNorm",
-                "The p of the interpolation's p-norm: the larger, the more an element mixing materials is penalised. The paper's 6 " +
-                "balances a clear result against a steady run; much larger makes the run unsteady.",
+                "The interpolation's p-norm p: the larger, the more a mix of materials is penalised. Much above 6, the run is unsteady.",
                 GH_ParamAccess.item, new GH_Number(6.0));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "FilterRadius", "FilterRadius",
-                $"How far the densities are averaged over [{Units.Length}]: the thinnest member, and the thinnest layer of one material, " +
-                "is about this wide. Left empty, 2 times the typical element size.",
+                $"How far densities are averaged [{Units.Length}]: about the thinnest member, or layer of one material. Empty: 2 element sizes.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "Tolerance", "Tolerance",
-                "Once the projection is at its sharpest, the run stops when the compliances of the last five iterations add up to " +
-                "within this share of the five before. Make it smaller after a run and the run goes on from where it stopped.",
+                "At the sharpest projection, the run stops when the last five compliances sum to within this share of the five before.",
                 GH_ParamAccess.item, new GH_Number(0.001));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -124,21 +115,17 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "Threshold", "Threshold",
-                "The density of its material from which an element counts as that material, for the Surface, Solid, Material and " +
-                "AlpacaModel outputs. It changes nothing in the run.",
+                "The density from which an element counts as that material, for the outputs only: it changes nothing in the run.",
                 GH_ParamAccess.item, new GH_Number(0.5));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "System", "System",
-                "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "Auto is the default: Mumps on every core when the OpenSees in use has it, BandSPD when it does not.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
+                "How the equations are solved; connect a Value List. Default Auto: Mumps if OpenSees has it, else BandSPD.",
                 GH_ParamAccess.item, new GH_String(DefaultSystem));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Integer(), "Step", "Step",
-                "Which iteration's design to show: 0 the one the run starts from, 1 the one after the first iteration, and so on. " +
-                "Left empty, the latest. Connect a slider and drag it to watch the run again; every design is kept, small.",
+                "Which iteration's design to show: 0 the start, 1 after the first iteration, and so on. Empty: the latest.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 

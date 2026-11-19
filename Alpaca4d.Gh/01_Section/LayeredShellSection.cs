@@ -41,15 +41,11 @@ namespace Alpaca4d.Gh
             pManager.AddTextParameter("SectionName", "SecName", "A label for the section, carried on the object and readable through Deconstruct. Nothing in the analysis reads it.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Material", "Material",
-                "Materials the layers are made of, bottom face first. Any nD material, orthotropic " +
-                "included.\n" +
-                "Every layer shares one strain field, so in-plane slip across a soft core is not " +
-                "modelled and the section comes out stiff. Model a laminate that matters as two " +
-                "shells with a shear connection.", GH_ParamAccess.list);
+                "The nD material of each layer, bottom face first. The layers share one strain field, so a soft core does not slip.",
+                GH_ParamAccess.list);
             pManager.AddNumberParameter("Thickness", "Thickness",
-                $"[{Units.Length}] Thickness of each layer, bottom face first, matching Material.\n" +
-                $"A single value against a single material is the whole section, split into " +
-                $"{DefaultLayers} equal layers.", GH_ParamAccess.list);
+                $"Thickness of each layer [{Units.Length}], bottom face first, one per material. " +
+                $"One value with one material: {DefaultLayers} equal layers.", GH_ParamAccess.list);
             pManager.AddParameter(ColourInput.Make(ColourInput.SectionDescription));
         }
 

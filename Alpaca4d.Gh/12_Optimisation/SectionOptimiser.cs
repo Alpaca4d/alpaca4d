@@ -67,8 +67,6 @@ namespace Alpaca4d.Gh
         private const int LengthYInput = 8, LengthZInput = 9, LengthLTInput = 10, LoadInput = 11, SwayInput = 12;
         private const int SystemInput = 13, AlgorithmInput = 14;
 
-        private const string PerBeam = "One value for every beam, or one per beam, in the order of the model's beams.";
-
         private const string DefaultSystem = "Auto", DefaultAlgorithm = "Newton";
 
         protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
@@ -82,16 +80,12 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_GenericObject(), "DesignGroups", "DesignGroups",
-                "Which beams to size from which sections: one Design Group per list. Optional: a beam in no group is sized within " +
-                "the family of the section it starts with in Section Library - an HEA200 among the HEAs - smallest area first.",
+                "Which beams to size from which sections, a Design Group each. Others are sized within their Section Library family.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "ElementId", "ElementId",
-                "Optimise only some of the beams. Left empty, every beam is.\n" +
-                "Takes an ElementId (MyBeam_3), a wildcard over them (MyBeam*, Col_?), an element tag (47), or a regular " +
-                "expression (regex:^Col), mixed freely in one list. The beams it leaves out keep their sections, whatever " +
-                "group they are in, but are still analysed and checked.",
+                "Beams to optimise: ElementIds, wildcards (Col_*), tags (47) or regex:^Col. Empty optimises all.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -106,8 +100,7 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "Fabrication", "Fabrication",
-                "How the sections are made, which sets the buckling curves: Rolled (rolled I-sections, hot-finished hollow sections) " +
-                "or Welded (welded I-sections, cold-formed hollow sections).",
+                "How the sections are made: Rolled (rolled I, hot-finished hollow) or Welded (welded I, cold-formed hollow).",
                 GH_ParamAccess.item, new GH_String("Rolled"));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -122,47 +115,37 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthY", "LengthY",
-                $"Buckling length L_cr about local y - the minor axis of an I [{Units.Length}]. " + PerBeam +
-                " Left empty, each beam's own length, node to node. It stays with the beam whatever its section.",
+                $"Buckling length about local y, an I's minor axis [{Units.Length}]: one, or one per beam in model order. Empty: each beam's length.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthZ", "LengthZ",
-                $"Buckling length L_cr about local z - the major axis of an I [{Units.Length}]. " + PerBeam +
-                " Left empty, each beam's own length, node to node.",
+                $"Buckling length about local z, an I's major axis [{Units.Length}]: one, or one per beam in model order. Empty: each beam's length.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthLT", "LengthLT",
-                $"Distance between lateral restraints, for lateral-torsional buckling [{Units.Length}], as in Utilisation. " + PerBeam +
-                " Left empty, each beam's own length: not safe for a cantilever, whose tip is not held.",
+                $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]. Empty: each beam's length, unsafe for a cantilever.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "Load", "Load",
-                "Where the load along each beam acts on its section, for lateral-torsional buckling: ShearCentre (the default), " +
-                "Destabilising (or Top) or Stabilising (or Bottom). " + PerBeam,
+                "Load height, for lateral-torsional buckling: ShearCentre (default), Destabilising (or Top) or Stabilising (or Bottom).",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Boolean(), "Sway", "Sway",
-                "The beam belongs to a frame that buckles by swaying: Cm = 0.9 about both axes (Table B.3). Off by default. " + PerBeam,
+                "The beam is in a frame that buckles by swaying: Cm = 0.9 about both axes (Table B.3). One, or one per beam.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "System", "System",
-                "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "Auto is the default: Mumps on every core when the OpenSees in use has it, BandSPD when it does not. " +
-                "Reach for UmfPack if a model refuses to solve - it assumes nothing about the matrix.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
+                "How the equations are solved; connect a Value List. Default Auto: Mumps on every core if OpenSees has it, else BandSPD.",
                 GH_ParamAccess.item, new GH_String(DefaultSystem));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "Algorithm", "Algorithm",
-                "How each analysis is iterated to equilibrium. Connect a 'ValueList'.\n" +
-                "Newton is the default. Linear does one solve with no iteration: a little faster on an elastic model, and only " +
-                "right on one.\n" +
-                "Linear, Newton, NewtonLineSearch, ModifiedNewton, KrylovNewton, SecantNewton, BFGS, Broyden",
+                "How each analysis iterates to equilibrium; connect a Value List. Default Newton. Linear: one solve, elastic models only.",
                 GH_ParamAccess.item, new GH_String(DefaultAlgorithm));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 

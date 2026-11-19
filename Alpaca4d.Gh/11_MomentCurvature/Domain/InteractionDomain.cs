@@ -29,9 +29,7 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("FiberSection", "FiberSection", "The section, from Fiber Section.", GH_ParamAccess.item);
 
             pManager.AddNumberParameter("εud", "εud",
-                "Ultimate strain, either way, of every fibre that is not Concrete01: reinforcement and structural steel alike.\n" +
-                "0.01 suits reinforcement. For a steel section, 0.05 gives the plastic resistance (Class 1 and 2) and fy/E the " +
-                "elastic one (Class 3).\nA MinMax bound on the material holds instead where it is tighter.",
+                "Ultimate strain, either way, of every fibre but Concrete01. 0.01 suits reinforcement; steel: 0.05 plastic, fy/E elastic.",
                 GH_ParamAccess.item, 0.01);
 
             pManager.AddNumberParameter("εcu", "εcu",

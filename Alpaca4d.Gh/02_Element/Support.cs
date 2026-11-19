@@ -127,9 +127,8 @@ namespace Alpaca4d.Gh
             mngr.RegisterUnit(unit);
 
             unit.RegisterInputParam(new Param_Plane(), "Position", "Position",
-                $"Point or Plane to restrain [{Units.Length}]. A Point restrains the global axes. " +
-                "A Plane restrains its own axes instead, so the support can be skewed - " +
-                "an inclined roller, a support on a sloping face.", GH_ParamAccess.item);
+                $"Point or Plane to restrain [{Units.Length}]. A Point restrains the global axes, a Plane its own, for a skewed support.",
+                GH_ParamAccess.item);
 
             var descriptions = new[]
             {
@@ -242,9 +241,8 @@ namespace Alpaca4d.Gh
             mngr.RegisterUnit(unit);
 
             unit.RegisterInputParam(new Param_Plane(), "Position", "Position",
-                string.Format(Support.PositionDescription, Units.Length) +
-                " It holds along the plane's Z only, while the node moves against Z: down, for a Point. Turn the plane over " +
-                "for a support that holds only in tension.", GH_ParamAccess.item);
+                $"Point or Plane to support [{Units.Length}]. It holds only while the node moves against the plane's Z: down, for a Point.",
+                GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_Number(), "Stiffness", "Stiffness",
                 $"[{Units.Force}/{Units.Length}]. Left empty it is rigid - as stiff as the supports Alpaca4d skews with.", GH_ParamAccess.item);

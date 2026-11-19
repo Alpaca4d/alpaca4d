@@ -159,8 +159,7 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_String(), "Keep", "Keep",
-                "Solids to keep whatever the optimisation finds - around supports and loads, say. Left empty, every solid is designed.\n" +
-                "Takes an ElementId (Support*), an element tag (47), or a regular expression (regex:^Load), mixed freely in one list.",
+                "Solids to keep whatever the run finds: ElementIds, wildcards (Support*), tags (47) or regex:^Load. Empty designs all.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -170,14 +169,12 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Integer(), "Iterations", "Iterations",
-                "How many iterations at most, counted from the first. A run usually settles in 50 to 200. Raise it after a run " +
-                "and the run goes on from where it stopped; lower it below what has run and it starts again from the beginning.",
+                "At most this many iterations, usually 50 to 200. More after a run goes on; fewer than already run starts over.",
                 GH_ParamAccess.item, new GH_Integer(100));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Boolean(), "Run", "Run",
-                "True runs the optimisation, false pauses it: on again, it goes on from where it stopped. A run whose inputs change, " +
-                "Iterations and Tolerance apart, starts again from the beginning.",
+                "True runs the optimisation, false pauses it. Changing any input but Iterations and Tolerance starts it over.",
                 GH_ParamAccess.item, new GH_Boolean(false));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -187,8 +184,7 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "FilterRadius", "FilterRadius",
-                $"How far an element's density is averaged over [{Units.Length}]: the thinnest member the result can have is about this " +
-                "wide. Left empty, 1.5 times the typical element size, top3d's 1.5 elements.",
+                $"How far densities are averaged [{Units.Length}]: about the thinnest member's width. Empty: 1.5 element sizes.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -214,9 +210,7 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "System", "System",
-                "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "Auto is the default: Mumps on every core when the OpenSees in use has it, BandSPD when it does not.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
+                "How the equations are solved; connect a Value List. Default Auto: Mumps if OpenSees has it, else BandSPD.",
                 GH_ParamAccess.item, new GH_String(DefaultSystem));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -244,8 +238,7 @@ namespace Alpaca4d.Gh
             unit.RegisterOutputParam(new Param_String(), "log", "log", "What OpenSees printed. Read it when the run fails.");
 
             unit.RegisterInputParam(new Param_Integer(), "Step", "Step",
-                "Which iteration's design to show: 0 the one the run starts from, 1 the one after the first iteration, and so on. " +
-                "Left empty, the latest. Connect a slider and drag it to watch the run again; every design is kept, small.",
+                "Which iteration's design to show: 0 the start, 1 after the first iteration, and so on. Empty: the latest.",
                 GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
             unit.RegisterOutputParam(new Param_Integer(), "Step", "Step",

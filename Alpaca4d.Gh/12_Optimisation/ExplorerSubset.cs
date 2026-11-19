@@ -34,13 +34,11 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddIntegerParameter("Divisions", "Divisions",
-                "How many steps to take of each input of Explorer Inputs, one number per input, in order.\n" +
-                "0 takes every step, 1 only the one the input is on now, more takes that many spread evenly from the first step to the last.",
+                "Steps to take of each input, one number per input, in order: 0 every step, 1 the current one, n spread evenly.",
                 GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntervalParameter("Ranges", "Ranges",
-                "Which designs to run, by number, counted from 0 after the divisions: 0 To 499 runs the first five hundred. " +
-                "Give each machine a range of its own to split a study between them.",
+                "Which designs to run, by number from 0, counted after the divisions: 0 To 499 runs the first 500.",
                 GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
         }

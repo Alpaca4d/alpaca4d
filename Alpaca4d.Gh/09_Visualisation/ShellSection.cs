@@ -74,14 +74,10 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddCurveParameter("Curve", "Curve",
-                "Where to cut: a line or polyline drawn on the shells, or beside them to be swept onto them along " +
-                "Direction. Any other curve is followed by a polyline close to it. Its direction sets which way y runs.",
+                "Where to cut: a line or polyline on the shells, or beside them to be swept along Direction. Its direction sets y.",
                 GH_ParamAccess.item);
             pManager.AddVectorParameter("Direction", "Direction",
-                "Which way to sweep the curve to meet the shells. The cut is where the curve, slid both ways along " +
-                "this, crosses them: a line drawn in plan and swept vertically cuts every wall it crosses, top to " +
-                "bottom. Also sets which side is positive: z is the shell's normal on the side this points to.\n" +
-                "Empty: square to the shell nearest the curve's start, on the side its local z points to.",
+                "Which way to sweep the curve onto the shells, and the side z is positive on. Empty: square to the nearest shell.",
                 GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);

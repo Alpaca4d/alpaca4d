@@ -41,19 +41,13 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel",
-                "The model, from Assemble Model, with the loads to buckle it under, or an analysed one, from Run Analysis, Section " +
-                "Optimiser or Natural Vibration. An analysed model is buckled as it was before it was analysed - from Section " +
-                "Optimiser, its last design - under the loads it was assembled with: the forces the analysis found are not used.",
+                "The loaded model, from Assemble Model, or an analysed one, buckled as assembled: the analysis's forces are not used.",
                 GH_ParamAccess.item);
             pManager.AddIntegerParameter("Buckling Modes", "Buckling Modes",
                 "How many of the lowest buckling modes to find.",
                 GH_ParamAccess.item, 1);
             pManager.AddIntegerParameter("Divisions", "Divisions",
-                "How many elements every beam is split into for the analysis; 1 leaves them as they are.\n" +
-                "A PDelta beam only feels the sway of its chord, so a member that buckles on its own, between its " +
-                "ends, needs several: about 85 % / n² too high with n elements to a half wave - 4 elements give 5 %, " +
-                "8 give 1.3 %, and twice the elements a quarter of the error. The sway of a frame needs none. The " +
-                "split model is the one handed on; the one connected is not changed.",
+                "Elements each beam is split into; 1 leaves it whole. Buckling between nodes needs 4 or more; 4 gives a load factor about 5% high.",
                 GH_ParamAccess.item, 1);
             pManager.AddTextParameter("Combination", "Combination",
                 CombinationChoice.Description("buckles the model"),

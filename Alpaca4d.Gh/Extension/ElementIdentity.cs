@@ -12,15 +12,11 @@ namespace Alpaca4d.Gh
     {
         /// <summary>The ElementId input on an element component.</summary>
         public const string ElementIdInput =
-            "Optional name for the element, used to pull its results out later.\n" +
-            "Free text, and yours to repeat: one name over twenty curves labels all twenty, and " +
-            "asking for it returns all twenty. Give a list to name them apart.";
+            "A name to find the element's results by. Several elements can share one.";
 
         /// <summary>The single filter input on a result component.</summary>
         public const string Filter =
-            "Report only some of the elements. Left empty every element is reported.\n" +
-            "Takes an ElementId (MyBeam_3), a wildcard over them (MyBeam*, Col_?), an element tag " +
-            "(47), or a regular expression (regex:^Col), mixed freely in one list.";
+            "Only these elements: ElementIds, wildcards (Col_*), tags (47) or regex:^Col. Empty reads all.";
 
         /// <summary>The Element output on a result component.</summary>
         public const string ElementOutput =

@@ -62,7 +62,7 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
-            pManager.AddTextParameter("Modes", "Modes", "For a table of modes: which - all, a range such as 1-6, or 1,3,5. Left empty, all. For Footfall response, how many nodes, the worst first: 10 if left empty.", GH_ParamAccess.item);
+            pManager.AddTextParameter("Modes", "Modes", "Modes to list: all, 1-6 or 1,3,5. Empty: all. For Footfall response, how many nodes, the worst first; empty 10.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Caption", "Caption", "Written above the table in place of its own caption.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;

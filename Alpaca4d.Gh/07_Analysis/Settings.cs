@@ -39,27 +39,16 @@ namespace Alpaca4d.Gh
             pManager.AddTextParameter("Numberer", "Numberer", "Connect a 'ValueList'\nRCM, AMD, Plain", GH_ParamAccess.item, "RCM");
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("System", "System",
-                "How the system of equations is stored and solved. Connect a 'ValueList'.\n" +
-                "Auto is the default: Mumps when the OpenSees in use has it, BandSPD when it does not.\n" +
-                "Mumps factorises on several cores at once - all of them, unless the component's right-click menu says " +
-                "otherwise: as quick as BandSPD on a small model, and " +
-                "2 to 18 times quicker on a large one (Alpaca4d.Test/SolverChoice), in less memory. Only an OpenSees " +
-                "built with it has it - the official one does not; Alpaca4d says so in the log and solves with BandSPD.\n" +
-                "UmfPack assumes nothing about the matrix: reach for it if a model refuses to solve.\n" +
-                "BandGen, BandSPD, ProfileSPD, SuperLU, UmfPack, SparseSYM, SparseSPD, SparseGeneral, FullGeneral, Mumps, Auto",
+                "How the equations are solved; connect a Value List. Default Auto: Mumps if OpenSees has it, else BandSPD.",
                 GH_ParamAccess.item, "Auto");
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Test", "Test", "Convergence test - what counts as solved, and how many iterations to allow. From the Test component. Defaults to EnergyIncr.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Algorithm", "Algorithm",
-                "How each step is iterated to equilibrium. Connect a 'ValueList'.\n" +
-                "Newton is the default: about 20% slower than Linear on an elastic model, and what " +
-                "lets a yielding one converge at all. Linear does one solve with no iteration - on a " +
-                "nonlinear model it reports success and returns the unconverged first guess.\n" +
-                "Linear, Newton, NewtonLineSearch, ModifiedNewton, KrylovNewton, SecantNewton, BFGS, Broyden",
+                "How each step reaches equilibrium; connect a Value List. Default Newton. Linear does not iterate: wrong if nonlinear.",
                 GH_ParamAccess.item, "Newton");
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddGenericParameter("Integrator", "Integrator", "How to advance from one step to the next, from the Integrator component. Load Control for a static analysis, Newmark or Central Difference for a transient one. Defaults to Load Control with a step of 1.", GH_ParamAccess.item);
+            pManager.AddGenericParameter("Integrator", "Integrator", "How each step advances, from Integrator: Load Control (static), Newmark (transient). Default Load Control, step 1.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("AnalysisType", "AnalysisType", "Connect a 'ValueList'\nStatic, Transient", GH_ParamAccess.item, "Static");
             pManager[pManager.ParamCount - 1].Optional = true;

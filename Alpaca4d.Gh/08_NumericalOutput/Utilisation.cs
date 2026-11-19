@@ -85,22 +85,17 @@ namespace Alpaca4d.Gh
 
             if (this.MemberInputs)
                 unit.RegisterInputParam(new Param_Number(), "LengthY", "LengthY",
-                    $"Buckling length L_cr about local y - the minor axis of an I [{Units.Length}]. " + PerBeam +
-                    " Left empty, each beam's own length, node to node. A member drawn as several beams needs " +
-                    "its whole length here: each beam's own is only a piece of it.",
+                    $"Buckling length about local y, an I's minor axis [{Units.Length}]. Empty: each beam's own; " +
+                    "a member drawn as several beams needs its whole length.",
                     GH_ParamAccess.list);
             else
                 unit.RegisterInputParam(new Param_Number(), "Length", "Length",
-                    $"Buckling length L_cr, the same about both axes [{Units.Length}]. One value for every beam, or " +
-                    "one per beam checked, in the order of the Element output. Left empty, each beam's own " +
-                    "length, node to node.",
+                    $"Buckling length about both axes [{Units.Length}]: one, or one per beam in Element order. Empty: each beam's length.",
                     GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_String(), "Fabrication", "Fabrication",
-                "How the sections were made, which sets the buckling curves (Tables 6.2, 6.4, 6.5) and an I's shear area.\n" +
-                "Rolled: rolled I-sections and hot-finished hollow sections.\n" +
-                "Welded: welded I-sections and cold-formed hollow sections.",
+                "How the sections were made: Rolled (rolled I, hot-finished hollow) or Welded (welded I, cold-formed hollow).",
                 GH_ParamAccess.item, new GH_String("Rolled"));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -123,34 +118,24 @@ namespace Alpaca4d.Gh
             if (this.MemberInputs)
             {
                 unit.RegisterInputParam(new Param_Number(), "LengthZ", "LengthZ",
-                    $"Buckling length L_cr about local z - the major axis of an I [{Units.Length}]. " + PerBeam +
-                    " Left empty, each beam's own length, node to node.",
+                    $"Buckling length about local z, an I's major axis [{Units.Length}]: one, or one per beam in Element order. " +
+                    "Empty: each beam's length.",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
                 unit.RegisterInputParam(new Param_Number(), "LengthLT", "LengthLT",
-                    $"Distance between lateral restraints, for lateral-torsional buckling [{Units.Length}]. Each beam " +
-                    "is taken as held sideways and against twist at both ends and at equal steps no longer than " +
-                    "this in between, and free to rotate and warp at each - fork supports - and every piece is " +
-                    "checked on its own part of the moment diagram. Longer than the beam, it stands for an " +
-                    "unrestrained length the beam is only part of, or a cantilever's effective length, and the " +
-                    "beam's peak moment is taken as uniform over all of it. " + PerBeam +
-                    " Left empty, each beam's own length: not safe for a cantilever, whose tip is not held.",
+                    $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]. " +
+                    "Empty: each beam's length, unsafe for a cantilever.",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
                 unit.RegisterInputParam(new Param_String(), "Load", "Load",
-                    "Where the load along each beam acts on its section, for lateral-torsional buckling.\n" +
-                    "ShearCentre: neither helps nor hinders. The default.\n" +
-                    "Destabilising (or Top): on the face the load comes from - gravity on the top flange, which " +
-                    "the beam carries sideways as it twists.\n" +
-                    "Stabilising (or Bottom): hung from the face it goes towards.\n" + PerBeam,
+                    "Load height, for lateral-torsional buckling: ShearCentre (default), Destabilising (or Top) or Stabilising (or Bottom).",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
                 unit.RegisterInputParam(new Param_Boolean(), "Sway", "Sway",
-                    "The beam belongs to a frame that buckles by swaying: Cm = 0.9 about both axes, as Table B.3 " +
-                    "has it, in place of the factor its moment diagram gives. Off by default. " + PerBeam,
+                    "The beam is in a frame that buckles by swaying: Cm = 0.9 about both axes (Table B.3). One, or one per beam.",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
             }
@@ -198,8 +183,6 @@ namespace Alpaca4d.Gh
                 design.RegisterOutputPlug(unit.Outputs.First(plug => plug.Parameter.Name == name));
             unit.AddMenu(design);
         }
-
-        private const string PerBeam = "One value for every beam, or one per beam checked, in the order of the Element output.";
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {

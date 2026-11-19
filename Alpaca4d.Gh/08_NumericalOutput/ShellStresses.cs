@@ -31,8 +31,7 @@ namespace Alpaca4d.Gh
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The analysed model, from the AlpacaModel output of Run Analysis. Results are read out of the recorder file it points at.", GH_ParamAccess.item);
             pManager.AddBooleanParameter("History", "History",
-                "Read every recorded step instead of one. The outputs then carry a step index in " +
-                "front, so a branch reads {step; element; layer}. Step is ignored.",
+                "Read every step: each path gets the step in front, {step; element; layer}. Step is then ignored.",
                 GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to read.", GH_ParamAccess.item, 0);

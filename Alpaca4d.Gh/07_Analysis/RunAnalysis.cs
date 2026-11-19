@@ -81,7 +81,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The assembled model, from Assemble Model.", GH_ParamAccess.item);
-            pManager.AddGenericParameter("Settings", "Settings", "How to solve: solver, algorithm, integrator and steps. From the Analysis Settings component. It can be left empty only with \"Do not use settings\" ticked in the right-click menu.", GH_ParamAccess.item);
+            pManager.AddGenericParameter("Settings", "Settings", "How to solve, from Analysis Settings. Empty only with \"Do not use settings\" ticked in the right-click menu.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 

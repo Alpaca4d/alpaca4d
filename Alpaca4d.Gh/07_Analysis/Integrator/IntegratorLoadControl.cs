@@ -33,10 +33,7 @@ namespace Alpaca4d.Gh
             // MinLambda and MaxLambda. The load factor the model ends up under is then not
             // Lambda times the number of steps, and nothing reports that it changed.
             evaluationUnit.RegisterInputParam(new Param_Integer(), "NumIter", "NumIter",
-                "Iterations per step to aim for. Leave empty for uniform steps of Lambda. " +
-                "Setting it - together with MinLambda and MaxLambda - turns on adaptive " +
-                "stepping, which reaches a different total load factor than Lambda times the " +
-                "number of steps.",
+                "Iterations per step to aim for. Empty: steps of Lambda. Given, with Min/MaxLambda, steps adapt; the total load differs.",
                 GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 

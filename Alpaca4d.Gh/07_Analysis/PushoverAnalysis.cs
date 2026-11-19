@@ -42,8 +42,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel",
-                "The model, from Assemble Model, with the loads to hold while it is pushed: its self-weight and its floors. They are " +
-                "applied in 10 steps first, at load factor 1. An analysed model is pushed as it was before it was analysed.",
+                "The model, from Assemble Model, with the loads held while pushed, applied first. An analysed one is pushed as assembled.",
                 GH_ParamAccess.item);
             pManager.AddPointParameter("Control Point", "Control Point",
                 $"The point whose displacement drives the push and makes the curve's x: a node of the model, usually on the roof [{Units.Length}].",
@@ -59,12 +58,10 @@ namespace Alpaca4d.Gh
                 "How many steps to reach Target in. A step that does not converge is tried with other algorithms, then in halves.",
                 GH_ParamAccess.item, 100);
             pManager.AddGenericParameter("Lateral Loads", "Lateral Loads",
-                "Point Loads giving the shape of the push: their forces at load factor 1, all scaled together - one per floor, " +
-                "in proportion to its mass or its height, say. Leave empty to push the control point alone, with 1 kN along Direction.",
+                "Point loads that shape the push, all scaled together. Empty pushes the control point alone, 1 kN along Direction.",
                 GH_ParamAccess.list);
             pManager.AddBooleanParameter("P-Delta", "P-Delta",
-                "Gives every beam with a Linear transformation a PDelta one for the push, so the loads held on the columns push " +
-                "them further as the frame sways, and the curve comes down past its peak. Corotational beams are left as they are.",
+                "Make Linear beams PDelta for the push, so the curve can fall past its peak. Corotational beams stay as they are.",
                 GH_ParamAccess.item, true);
             pManager.AddTextParameter("Combination", "Combination",
                 CombinationChoice.Description("pushes the model"),

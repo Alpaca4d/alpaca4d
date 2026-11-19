@@ -83,9 +83,7 @@ namespace Alpaca4d.Gh
             mngr.RegisterUnit(unit);
 
             unit.RegisterInputParam(new Param_GenericObject(), "AlpacaModel", "AlpacaModel",
-                "The model, from Assemble Model, or an analysed one, from Run Analysis, Section Optimiser or Linear Buckling. An analysed " +
-                "model is solved as it was before it was analysed - from Section Optimiser, its last design - and unloaded: what the " +
-                "analysis found does not change the modes.",
+                "The model, from Assemble Model, or an analysed one, solved as assembled and unloaded: no stiffening under load.",
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_Integer(), "Vibration Modes", "Vibration Modes",

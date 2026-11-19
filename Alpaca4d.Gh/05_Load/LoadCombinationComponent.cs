@@ -33,18 +33,15 @@ namespace Alpaca4d.Gh
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel",
                 "The assembled model, from Assemble Model - or from another Load Combination - with its load patterns named in Load Pattern's Name input.", GH_ParamAccess.item);
             pManager.AddTextParameter("Name", "Name",
-                "Each combination's name: ULS 1. The Report, and Model View's Combination input, call it by this name. Left empty, a combination is named by its formula.",
+                "Each combination's name, as Model View and the Report call it. Empty: named by its formula.",
                 GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Type", "Type",
-                "What each combination is checked for: " + string.Join(", ", LoadCombination.KindNames) + ". " +
-                "Left empty, ULS; one type alone is the type of them all, and a shorter list leaves the last ones the type of its last.",
+                "Each combination's type: " + string.Join(", ", LoadCombination.KindNames) + ". Empty: ULS.",
                 GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Combination", "Combination",
-                "Each combination, an item each: the patterns and their factors, joined by +: 1.35 G + 1.5 Q + 0.9 W. " +
-                "Each term is a factor and a Load Pattern's Name, whatever its case: 1.5 Q, 1.5*Q, or Q alone for 1. " +
-                "Write a negative factor as + -1.5 W, as a pattern's name may hold a minus.",
+                "Each combination, an item each: factors and pattern Names joined by +, as 1.35 G + 1.5 Q. Write a negative as + -1.5 W.",
                 GH_ParamAccess.list);
         }
 

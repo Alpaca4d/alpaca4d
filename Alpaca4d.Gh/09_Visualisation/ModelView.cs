@@ -265,22 +265,19 @@ namespace Alpaca4d.Gh
 
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
-            pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The model to draw: from Assemble to see it alone, or from Run Analysis or another analysis to see its results as well. " +
-                "Results are read out of the recorder file the analysed model points at.", GH_ParamAccess.item);
+            pManager.AddGenericParameter("AlpacaModel", "AlpacaModel", "The model to draw: from Assemble, or from an analysis to draw its results too.", GH_ParamAccess.item);
             pManager.AddIntegerParameter("Step", "Step", "Which recorded step to draw, or which mode after a natural vibration or buckling analysis.", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter + "\nWhatever is left out is greyed rather than hidden.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddColourParameter("Colors", "Colors", "Gradient to colour the results with, from the low end to the high. Connect the Colors component for a ready-made one.\nWith Iso-surfaces on, each colour is one band of values.\nBeam force diagrams ignore it and use the colour that belongs to the force.", GH_ParamAccess.list);
+            pManager.AddColourParameter("Colors", "Colors", "Gradient for the results, low to high. Empty: Turbo. Beam force diagrams keep their own colours.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddIntervalParameter("Range", "Range", "Range each gradient is stretched over, in the unit picked for its result: one per result ticked, in the order of the Results menu, " +
-                "beam forces left out as they have no gradient. A result given none fits what is drawn, which is what makes two steps impossible to compare - set it to compare them.", GH_ParamAccess.list);
+            pManager.AddIntervalParameter("Range", "Range", "Range of each gradient, in its unit: one per result ticked, in menu order, beam forces skipped. Empty fits what is drawn.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("LoadPattern", "LP", LoadPatternDescription, GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Combination", "Combination",
-                "Which load combination to draw, of a model that holds them, from Run Analysis: its name - ULS 2 - or its place from 0. " +
-                "Left empty, the first that solved. Its loads are drawn as it applies them, each pattern scaled.", GH_ParamAccess.item);
+                "Load combination to draw, by name (ULS 2) or place from 0. Empty draws the first that solved.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
@@ -289,8 +286,7 @@ namespace Alpaca4d.Gh
         /// name can be typed too, and a generic input reads back the integer an older file saved in it.
         /// </summary>
         private const string LoadPatternDescription =
-            "The load pattern whose loads are drawn: its Name, its Id, or the Load Pattern itself. Left empty, the loads of every pattern are drawn.\n" +
-            "A name is matched whatever its case, and before an Id, so a pattern named \"2\" is found by its name. Patterns that share a name are drawn together.";
+            "Load pattern whose loads are drawn: its Name, its Id or the Load Pattern. Empty draws every pattern.";
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {

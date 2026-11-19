@@ -64,8 +64,7 @@ namespace Alpaca4d.Gh
         }
 
         private const string ColourDescription =
-            "The colour the section is drawn in when Model View colours the elements by section - every section of the list, with Section set to All. " +
-            "Left empty, Model View gives each section a colour of its own.";
+            "The colour the section is drawn in when Model View colours by section, every section alike. Empty: one per section.";
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {

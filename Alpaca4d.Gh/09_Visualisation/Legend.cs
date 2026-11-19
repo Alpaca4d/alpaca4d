@@ -27,11 +27,7 @@ namespace Alpaca4d.Gh
         }
 
         private const string ValuesDescription =
-            "Numbers the labels run from the smallest to the largest of - the Values output of Model View, " +
-            "which follows the Range given to it. To label a range of your own, give its two ends.\n" +
-            "Each branch is a legend of its own, drawn beside the one before: Model View gives a branch per result it draws.\n" +
-            "One value more than there are colours, as Model View gives with Iso-surfaces on, labels the edges between the colours rather than the colours.\n" +
-            "A value for each colour, or each edge, rising, is written as it is: bands that are not evenly spaced keep their numbers.";
+            "Numbers to label, low to high: Model View's Values output, or a range's two ends. Each branch is a legend of its own.";
 
         private const string TitleDescription =
             "Legend title. With a branch of Values per legend, a title per legend, in the order of the branches.";
@@ -42,8 +38,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddNumberParameter("Values", "Values", ValuesDescription, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
-            pManager.AddColourParameter("Colors", "Colors", "Legend colors, from the low end to the high - the Colors output of Model View, so the legend and the model agree. " +
-                "Fewer than two fall back to the default gradient, as in Model View.", GH_ParamAccess.list);
+            pManager.AddColourParameter("Colors", "Colors", "Legend colours, low to high: Model View's Colors output, so the two agree. Fewer than two: Turbo.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Position", "Pos", "0: Left, 1: Right, 2: Bottom Center", GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;

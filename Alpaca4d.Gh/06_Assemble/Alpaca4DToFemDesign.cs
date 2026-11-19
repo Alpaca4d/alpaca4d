@@ -37,8 +37,8 @@ namespace Alpaca4d.Gh
             pManager.AddTextParameter("FilePath", "FilePath", "Where to write the .struxml file. Left empty it is written next to the Grasshopper definition.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("Country", "Country",
-                $"FEM-Design's national annex, whose material library Alpaca's materials are looked up in: {FemDesignExport.CountryCodes}. " +
-                "Left empty it is common, the Eurocode's recommended values.", GH_ParamAccess.item);
+                $"FEM-Design's national annex, for its materials: {FemDesignExport.CountryCodes}. Empty: common, the Eurocode's values.",
+                GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Save", "Save", "Set to true to write the file.", GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;

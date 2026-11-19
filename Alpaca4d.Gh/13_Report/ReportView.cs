@@ -157,11 +157,13 @@ namespace Alpaca4d.Gh
 
         protected virtual bool LegendByDefault => true;
 
-        protected void RegisterCaption(EvaluationUnit unit)
+        /// <param name="whenEmpty">What the description says an empty Caption writes; DefaultCaption when null.</param>
+        protected void RegisterCaption(EvaluationUnit unit, string whenEmpty = null)
         {
+            whenEmpty = whenEmpty ?? DefaultCaption;
             unit.RegisterInputParam(new Param_String(), "Caption", "Caption",
-                "Written under the picture. It takes placeholders, such as {mode}, {frequency:F2}, {factor:F2} or {step}." +
-                (DefaultCaption.Length > 0 ? $" Left empty: {DefaultCaption}" : ""), GH_ParamAccess.item);
+                "Text under the picture, with placeholders in braces." +
+                (whenEmpty.Length > 0 ? $" Empty: {whenEmpty}" : ""), GH_ParamAccess.item);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
         }
 
@@ -170,9 +172,7 @@ namespace Alpaca4d.Gh
         {
             int first = unit.Inputs.Count;
             unit.RegisterInputParam(new Param_String(), "View", "View",
-                "Where the picture is taken from: Iso south-east (the default), Iso south-west, Iso north-east, Iso north-west, Top, Front, Back, " +
-                "Left, Right, Bottom; Current Rhino view, the active view's camera when this component last solved; or Named: and a view saved in " +
-                "the Rhino file. Wire a Value List to it to pick one.", GH_ParamAccess.item, new GH_String(Presets[0].Menu));
+                "Where the picture is taken from: Iso south-east, Top…, Current Rhino view or Named: <view>. Wire a Value List to pick.", GH_ParamAccess.item, new GH_String(Presets[0].Menu));
             unit.RegisterInputParam(new Param_Number(), "Zoom", "Zoom", "Closer than the model fits the picture, above 1, or further, below.", GH_ParamAccess.item, new GH_Number(1.0));
             unit.RegisterInputParam(new Param_Number(), "Width", "Width", "How much of the page's width the picture takes, 0.2 to 1.", GH_ParamAccess.item, new GH_Number(1.0));
             unit.RegisterInputParam(new Param_Number(), "Aspect", "Aspect", "The picture's height over its width, before it is cut down to what is drawn.", GH_ParamAccess.item, new GH_Number(0.62));
@@ -773,11 +773,10 @@ namespace Alpaca4d.Gh
                 "The gradient, from no response to the most: the Colors component's, for one. Left empty, Model View's.", GH_ParamAccess.list);
             Optional(unit);
             unit.RegisterInputParam(new Param_Interval(), "Range", "Range",
-                "The values the gradient spans, of what the model is coloured by. For R, 0 to a limit of P354 Table 5.3 - 8 for a general office, " +
-                "32 for a stair in light use - so that its top colour is the limit; for an acceleration, in mm/s², 5 times that. Left empty, 0 to the largest.",
+                "Values the gradient spans, R or mm/s²: 0 to a P354 limit, such as 8 for an office. Empty: 0 to the largest.",
                 GH_ParamAccess.item);
             Optional(unit);
-            RegisterCaption(unit);
+            RegisterCaption(unit, "the largest of what is coloured, and its node.");
 
             // What the model is coloured by, and in the same frame the table, sorted by it.
             var panel = Panel(unit, "ReportView_Footfall_Results", "Results", "What the picture draws of the footfall, and its table");

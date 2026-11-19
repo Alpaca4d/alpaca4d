@@ -31,8 +31,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddTextParameter("Views", "Views",
-                "Viewports (Perspective, Top, ...) or named views to take, one picture each. A named view is shown in the active viewport while it is taken, and the view is put back after.\n" +
-                "Left empty, the active viewport.", GH_ParamAccess.list);
+                "Viewports (Perspective, Top, ...) or named views, one picture each. Empty: the active viewport.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddIntegerParameter("Width", "Width", "Width of the picture, in pixels.", GH_ParamAccess.item, ExplorerImageSettings.DefaultWidth);
             pManager[pManager.ParamCount - 1].Optional = true;

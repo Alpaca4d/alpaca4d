@@ -30,10 +30,7 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item, 0.0);
 
             pManager.AddNumberParameter("Direction", "Direction",
-                "The moment direction, in degrees from the section's local y axis towards z, -180 to 180: 0 bends it about y, " +
-                "90 about z, and 180 and -90 the other way about each - the other side of a section that is not symmetric, " +
-                "hogging where 0 is sagging. The moment is held to that direction and the curvature across it left free, so a " +
-                "section bent off its axes turns its neutral axis as it needs to.",
+                "Moment direction, in degrees from local y towards z, -180 to 180: 0 bends about y, 90 about z, 180 the other way.",
                 GH_ParamAccess.item, 0.0);
 
             pManager.AddIntegerParameter("NumIncr", "NumIncr",
@@ -41,14 +38,12 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item, 100);
 
             pManager.AddNumberParameter("MaxPhi", "MaxPhi",
-                "The curvature along Direction to push the section to, in rad/m.\nLeave it empty to take it from the section's " +
-                "ultimate state: a fifth past it when the analysis stops there, twice it when it does not.",
+                "Curvature along Direction to reach, in rad/m. Empty: a fifth past the ultimate state; twice it with StopAtUltimate off.",
                 GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
 
             pManager.AddNumberParameter("εud", "εud",
-                "Ultimate strain, either way, of every fibre that is not Concrete01, as in Interaction Domain. A MinMax bound on " +
-                "the material holds instead where it is tighter.",
+                "Ultimate strain, either way, of every fibre but Concrete01, as in Interaction Domain.",
                 GH_ParamAccess.item, 0.01);
 
             pManager.AddNumberParameter("εcu", "εcu",
@@ -57,8 +52,7 @@ namespace Alpaca4d.Gh
             pManager[pManager.ParamCount - 1].Optional = true;
 
             pManager.AddBooleanParameter("StopAtUltimate", "StopAtUltimate",
-                "Stop at the first increment where a fibre reaches its ultimate strain. Turn it off to follow the section past it " +
-                "to MaxPhi - its softening, or a confined core still carrying load; the ultimate state is reported either way.",
+                "Stop where a fibre first reaches its ultimate strain. Off: go on to MaxPhi; the ultimate state is reported either way.",
                 GH_ParamAccess.item, true);
         }
 

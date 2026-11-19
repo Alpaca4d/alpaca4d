@@ -31,10 +31,8 @@ namespace Alpaca4d.Gh
             pManager.AddPointParameter("RetainedPoint", "RetainedPoint", $"The node that leads [{Units.Length}]. It keeps its own degrees of freedom.", GH_ParamAccess.item);
             pManager.AddPointParameter("ConstrainedPoint", "ConstrainedPoint", $"The node that follows [{Units.Length}]. The degrees of freedom listed below stop being its own.", GH_ParamAccess.item);
             pManager.AddIntegerParameter("Dof", "Dof",
-                "Which degrees of freedom to tie. Always global - 1, 2, 3 translation along X, Y " +
-                "and Z, 4, 5, 6 rotation about them. Left empty all six are tied.\n" +
-                "There is no local option: OpenSees ties nodal degrees of freedom, and a node has " +
-                "no axes of its own. For a tie along a skewed axis use a Spring Link.", GH_ParamAccess.list);
+                "Degrees of freedom to tie, always global: 1, 2, 3 along X, Y, Z; 4, 5, 6 rotation about them. Empty ties all six.",
+                GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 

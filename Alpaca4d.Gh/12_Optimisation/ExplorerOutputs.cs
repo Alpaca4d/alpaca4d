@@ -26,8 +26,7 @@ namespace Alpaca4d.Gh
     {
         private const int MaxValuesPerInput = 10;
         private const string ResultDescription =
-            "A result of the design: a number, or a text for a category. The input's name is the column's name, so rename it to say what it is, units included.\n" +
-            "A new input appears when the last one is used.";
+            "A number, or a text for a category. Rename it to name its column: Mass [t]. Another appears when the last is used.";
 
         public ExplorerOutputs()
           : base("Explorer Outputs (Alpaca4d)", "Explorer Outputs",

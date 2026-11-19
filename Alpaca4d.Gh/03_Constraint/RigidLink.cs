@@ -27,10 +27,7 @@ namespace Alpaca4d.Gh
             pManager.AddPointParameter("RetainedPoint", "RetainedPoint", $"The node that leads [{Units.Length}]. It keeps its own degrees of freedom.", GH_ParamAccess.item);
             pManager.AddPointParameter("ConstrainedPoint", "ConstrainedPoint", $"The node that follows [{Units.Length}], as a rigid body about the one above.", GH_ParamAccess.item);
             pManager.AddTextParameter("Type", "Type",
-                "Connect a 'ValueList'.\n" +
-                "beam - a full rigid body, so a rotation of the retained node also moves this one " +
-                "by the offset between them.\n" +
-                "bar - the translations only, with no rotation carried and no offset lever.",
+                "beam: a rigid body, carrying the offset; bar: the translations only. Connect a Value List to pick.",
                 GH_ParamAccess.item, "beam");
             pManager[pManager.ParamCount - 1].Optional = true;
         }

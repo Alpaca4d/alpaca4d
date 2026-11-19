@@ -19,9 +19,7 @@ namespace Alpaca4d.Gh
     {
         /// <summary>The input's description; <paramref name="elements"/> is "beams" or "shells".</summary>
         public static string Description(string elements) =>
-            $"The {elements} to load: the elements themselves, or text naming them as the result filters do - " +
-            "an ElementId (Slab_1), a wildcard (Slab*), an element tag (47) or regex:^Slab.\n" +
-            $"Each item makes one load, so two names that match the same element load it twice. Left empty, all the {elements} are loaded.";
+            $"The {elements} to load, or their ElementIds, wildcards (Slab*), tags (47) or regex:^Slab. Empty loads all; one load per item.";
 
         /// <summary>
         /// What arrived at input <paramref name="index"/>: an element, which comes back in

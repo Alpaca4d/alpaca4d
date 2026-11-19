@@ -28,7 +28,7 @@ namespace Alpaca4d.Gh
             evaluationUnit.RegisterInputParam(new Param_GenericObject(), "GeometricTransformation", "GeomTransf", GeomTransfInput.Description, GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 
-            evaluationUnit.RegisterInputParam(new Param_Vector(), "ZAxis", "ZAxis", "Local z axis, squared off the beam. Left empty it is horizontal, so local y - the depth of an I-section, the Height of a rectangle - points as near straight up as the beam allows, and gravity bends a floor beam about its strong axis (Vy, Mz). A vertical member gets local y along global X.", GH_ParamAccess.item);
+            evaluationUnit.RegisterInputParam(new Param_Vector(), "ZAxis", "ZAxis", "Local z axis, squared off the beam. Empty: horizontal, so the section's depth (local y) points up.", GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 
             evaluationUnit.RegisterInputParam(new Param_GenericObject(), "ReleaseI", "ReleaseI", "Release condition at the I end.", GH_ParamAccess.item);
@@ -57,10 +57,8 @@ namespace Alpaca4d.Gh
         /// </summary>
         private static string LpDescription(string end)
         {
-            return $"Plastic hinge length at the {end} end, as a fraction of the element length L "
-                 + $"(so {Alpaca4d.Element.BeamWithHinges.DefaultLpRatio} means "
-                 + $"{Alpaca4d.Element.BeamWithHinges.DefaultLpRatio:P0} of L). "
-                 + $"Leave empty for {Alpaca4d.Element.BeamWithHinges.DefaultLpRatio}; other values are clamped to "
+            return $"Plastic hinge length at the {end} end, as a fraction of the length L. "
+                 + $"Default {Alpaca4d.Element.BeamWithHinges.DefaultLpRatio}; clamped to "
                  + $"[{Alpaca4d.Element.BeamWithHinges.MinLpRatio}, {Alpaca4d.Element.BeamWithHinges.MaxLpRatio}].";
         }
 

@@ -54,22 +54,17 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter("AlpacaModel", "AlpacaModel",
-                "The models the report is of: from Assemble, Run Analysis, Natural Vibration, Linear Buckling and Pushover Analysis. Report View " +
-                "and Report Result Table hold none: each is drawn or made of the model here of its topic - the model as built, the static analysis, " +
-                "the natural vibration, the stability, the pushover. A template written in JSON names them so too, or by their place here from 0.", GH_ParamAccess.list);
+                "The models to report on, from Assemble and the analyses. Report View and Report Result Table take theirs by topic.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Page", "Page", "The paper, the margins and the title block, from Report Page. Left empty, A4 with a plain header and footer.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddGenericParameter("Content", "Content",
-                "What goes in the report, in order: the outputs of Report Text, Report Table, Report Result Table, Report View and Report Page Break, " +
-                "or a template in JSON, or the path of a .json file. A panel's lines are joined into one text.", GH_ParamAccess.list);
+                "What goes in the report, in order: the report components' outputs, a JSON template or a .json file's path.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             // One list, whatever tree a Merge hands it: a part is not lost to a second solution.
             pManager[pManager.ParamCount - 1].DataMapping = GH_DataMapping.Flatten;
             pManager.AddTextParameter("File", "File",
-                "Where to write the report: a .pdf, or a .docx for Word - the same content, its headings in Word's Heading styles, " +
-                "to paste into a report of your own or change. Left empty, a PDF beside the Grasshopper file, named after it; a folder, in it. " +
-                "The pictures go in a folder beside it.", GH_ParamAccess.item);
+                "Where to write the report: a .pdf, or a .docx for Word. Empty: a PDF beside the .gh file; a folder: in it.", GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("Run", "Run", "True to write the report: a Button, or a Toggle to write it again whenever the models change.", GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;

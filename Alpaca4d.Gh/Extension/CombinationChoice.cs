@@ -18,8 +18,7 @@ namespace Alpaca4d.Gh
     {
         /// <summary>The input's description, for the analysis that <paramref name="does"/> - "buckles it", say.</summary>
         public static string Description(string does) =>
-            $"The load combination the analysis {does} under, for a model that has them, from Load Combination: its name - ULS 2 - or its place from 0. " +
-            "A model with combinations needs one named here. A model without them takes all its load patterns together, each at its own Factor.";
+            $"Load combination the analysis {does} under, by name or place. Needed if the model has any; else all patterns.";
 
         /// <summary>
         /// <paramref name="model"/> loaded with the combination <paramref name="asked"/> names. The model

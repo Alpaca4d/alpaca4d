@@ -110,28 +110,22 @@ namespace Alpaca4d.Gh
                 GH_ParamAccess.item);
 
             unit.RegisterInputParam(new Param_Point(), WalkInput, WalkInput,
-                (full
-                    ? "Where people walk: corridors, circulation, a gym floor. The walker is tried at each, for every Feel point. "
-                    : "Where people walk, and where the response is read: the walker shakes the point it stands on. ") +
-                "Each point takes the model's nearest node: the vertices of the meshes the shells were made from are the nodes " +
-                "themselves. Leave empty for the nodes of every shell element - slabs, treads, landings - or every node of a " +
-                "model with no shells.",
+                full
+                    ? "Where people walk, tried for every Feel point; each takes the nearest node. Empty: the shell nodes, or all if no shells."
+                    : "Where people walk and the response is read; each takes the nearest node. Empty: the shell nodes, or all if no shells.",
                 GH_ParamAccess.list);
             Optional();
 
             if (full)
             {
                 unit.RegisterInputParam(new Param_Point(), FeelInput, FeelInput,
-                    "Where the vibration is felt, and the response is read: offices, a laboratory, a ward. Each point takes the " +
-                    "model's nearest node. Leave empty to read it at the Walk points.",
+                    "Where the vibration is felt and the response read; each takes the nearest node. Empty reads it at the Walk points.",
                     GH_ParamAccess.list);
                 Optional();
             }
 
             unit.RegisterInputParam(new Param_Integer(), FootstepsInput, FootstepsInput,
-                "How many steps the walker takes along the path - its length over the stride, about 0.75 m at 2 Hz. A steady-state " +
-                "response builds up step by step, so a short path gives less: P354's resonance build-up factor, 1 - e^(-2π ζ N). " +
-                "Leave empty for a path long enough to reach the steady state.",
+                "Steps the walker takes: path length over a 0.75 m stride. Empty: a path long enough to reach the steady state.",
                 GH_ParamAccess.item);
             Optional();
 
@@ -141,20 +135,14 @@ namespace Alpaca4d.Gh
             Optional();
 
             unit.RegisterInputParam(new Param_String(), WeightingInput, WeightingInput,
-                "Connect a 'ValueList'. How much of each frequency a person " + (full ? "where it is felt " : "") + "feels, P354 Table 5.1.\n" +
-                "Wb: offices, homes, wards, general laboratories, workshops, circulation and stairs.\n" +
-                "Wg: critical areas - operating theatres, precision laboratories.\n" +
-                "None: every frequency in full, which is conservative.",
+                "Weighting of P354 Table 5.1; connect a Value List. Wb: most floors, stairs. Wg: theatres, precision labs. None: off.",
                 GH_ParamAccess.item, new GH_String(defaults.Weighting.ToString()));
             Optional();
 
             int firstMenuInput = unit.Inputs.Count;
 
             unit.RegisterInputParam(new Param_String(), ActivityInput, ActivityInput,
-                "Connect a 'ValueList'. Which of P354's Fourier coefficients load the structure.\n" +
-                "Walking: on a floor, Table 3.1, four harmonics; paces 1.8 to 2.2 Hz.\n" +
-                "Stairs: up or down a stair, Table 3.2 from ISO 10137, two harmonics; paces up to 4.5 Hz on a fast descent. " +
-                "Use with a Cut Off of 12 Hz and 0.5% damping for a welded steel stair.",
+                "The P354 walking force; connect a Value List. Walking: on a floor, four harmonics. Stairs: up or down a stair, two.",
                 GH_ParamAccess.item, new GH_String(defaults.Activity.ToString()));
             Optional();
 
@@ -170,21 +158,17 @@ namespace Alpaca4d.Gh
             Optional();
 
             unit.RegisterInputParam(new Param_Integer(), StepsInput, StepsInput,
-                "How many paces are tried, evenly spaced from Minimum to Maximum Frequency, both included. A lightly damped " +
-                "structure resonates over a narrow band of paces, so try them closely: 41 over 1.8 to 2.2 Hz is one every 0.01 Hz.",
+                "How many paces are tried, evenly from Minimum to Maximum Frequency. Light damping needs them close: 0.01 Hz apart.",
                 GH_ParamAccess.item, new GH_Integer(defaults.FrequencySteps));
             Optional();
 
             unit.RegisterInputParam(new Param_Number(), CutOffInput, CutOffInput,
-                "P354's low to high frequency cut-off [Hz], Table 6.1: 10 for general floors and offices, 8 for enclosed spaces such " +
-                "as operating theatres and homes, 12 for stairs. Below it a floor is checked for both responses, above it for the " +
-                "transient alone. The steady state takes the modes up to 2 Hz past it, the transient those up to twice the fundamental.",
+                "P354's low to high frequency cut-off [Hz], Table 6.1: 10 floors and offices, 8 theatres and homes, 12 stairs.",
                 GH_ParamAccess.item, new GH_Number(defaults.CutOff));
             Optional();
 
             unit.RegisterInputParam(new Param_Number(), DampingInput, DampingInput,
-                "The damping ratio of every mode: 0.03 is 3%. P354 Table 4.1: 0.5% fully welded steel such as a stair, 1.1% a bare " +
-                "floor, 3% a floor fitted out and furnished, 4.5% partitions across the modes.",
+                "Damping ratio of every mode: 0.03 is 3%. P354 Table 4.1: 0.5% welded stair, 1.1% bare floor, 3% fitted out.",
                 GH_ParamAccess.item, new GH_Number(defaults.Damping));
             Optional();
 

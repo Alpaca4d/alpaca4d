@@ -37,17 +37,10 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddGenericParameter(PatternsInput, PatternsInput,
-                "The names of the Load Patterns whose loads become mass, as their Name input has them - Imposed - looked up " +
-                "among the patterns given to Assemble Model, whatever their case. Or the Load Patterns themselves, or Point, " +
-                "Linear and Mesh loads.\n" +
-                "The loads are taken at their own size: a pattern's Factor is not applied, Factor here is. Gravity Load is " +
-                "left out.",
+                "Load Pattern Names whose loads become mass, or the patterns or loads themselves. Their own Factor is not applied.",
                 GH_ParamAccess.list);
             pManager.AddNumberParameter("Factor", "Factor",
-                "How much of their weight is mass: 1 for permanent loads.\n" +
-                "Footfall (SCI P354): about 0.1 of the imposed load.\n" +
-                "Earthquake: ψ2 of a variable load - 0.3 for homes and offices, 0.6 for crowds and shops, 0.8 for storage, " +
-                "0 for roofs and for snow below 1000 m. EN 1998-1 4.2.4 takes φ ψ2 instead.",
+                "How much of their weight becomes mass. Default 1, for permanent loads; ψ2 for variable ones, about 0.1 for footfall.",
                 GH_ParamAccess.item, 1.0);
             pManager[pManager.ParamCount - 1].Optional = true;
         }

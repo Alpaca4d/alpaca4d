@@ -48,8 +48,7 @@ namespace Alpaca4d.Gh
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 
             evaluationUnit.RegisterInputParam(new Param_Number(), "Rho", "Rho",
-                $"Density [{Units.Mass}/{Units.Length}³]. Gravity Load reads it for the self-weight. OpenSees takes no density " +
-                "for this material, so these elements have no mass in a natural vibration or a time history.",
+                $"Density [{Units.Mass}/{Units.Length}³], for the self-weight only: these elements get no mass in a natural vibration or time history.",
                 GH_ParamAccess.item, new GH_Number(7850));
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 

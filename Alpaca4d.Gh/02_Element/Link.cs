@@ -37,22 +37,17 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddLineParameter("Line", "Line",
-                $"One line per link [{Units.Length}], drawn from the node it starts at to the node " +
-                "it ends at. Both ends have to land on nodes the model already has - a link joins " +
-                "parts together, it does not make nodes of its own.", GH_ParamAccess.list);
+                $"One line per link [{Units.Length}], from its start node to its end node. " +
+                "Both ends must land on nodes the model already has.", GH_ParamAccess.list);
             pManager.AddGenericParameter("Material", "Material",
-                "One uniaxial material per direction, in the order the directions are given.\n" +
-                $"A spring's material is read as a stiffness: its E is [{Units.Force}/{Units.Length}] " +
-                $"for a translation and [{Units.Force}{Units.Length}/{Units.Angle}] for a rotation.",
+                "One uniaxial material per direction, in Direction's order. " +
+                $"Its E is a stiffness: [{Units.Force}/{Units.Length}], or [{Units.Force}{Units.Length}/{Units.Angle}] for a rotation.",
                 GH_ParamAccess.list);
             pManager.AddIntegerParameter("Direction", "Direction",
-                "Which local directions the materials act in: 1, 2, 3 translation along the local " +
-                "x, y and z axes; 4, 5, 6 rotation about them. Anything left out is free.",
+                "The local directions the materials act in: 1-3 along local x, y, z; 4-6 rotation about them. The rest are free.",
                 GH_ParamAccess.list);
             pManager.AddPlaneParameter("Plane", "Plane",
-                "The frame the directions count along. Left empty its X axis runs along the link " +
-                "and the other two are across it, which is what a bearing or an interlayer wants.\n" +
-                "Give the world XY plane to count them along the global axes instead.",
+                "The frame the directions count along. Empty: x along the link, y and z across it. World XY for the global axes.",
                 GH_ParamAccess.item);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.ElementIdInput, GH_ParamAccess.item);

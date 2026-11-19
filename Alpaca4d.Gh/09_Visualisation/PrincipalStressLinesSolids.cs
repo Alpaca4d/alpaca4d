@@ -49,8 +49,7 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Boolean(), "Single Line", "SL",
-                "True draws one line of each family through each seed. False grows a field of lines from the seeds, " +
-                "Separation apart: through a whole solid that is many lines, which hide one another.", GH_ParamAccess.item, new GH_Boolean(true));
+                "True: one line of each family through each seed. False: a field of lines from the seeds, Separation apart.", GH_ParamAccess.item, new GH_Boolean(true));
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             // Advanced inputs (moved into the Advanced menu below)

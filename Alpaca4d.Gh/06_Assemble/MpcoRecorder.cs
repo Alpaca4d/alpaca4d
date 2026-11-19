@@ -41,9 +41,7 @@ namespace Alpaca4d.Gh
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddTextParameter("FileName", "FileName",
-                "Name of the results file, written beside the Grasshopper document. Letters, digits, " +
-                "'_', '-' and '.' only. Two analyses in one document keep their results apart by " +
-                "writing to files of their own.",
+                "Name of the results file, beside the document: letters, digits, '_', '-' and '.' only. Two analyses need a file each.",
                 GH_ParamAccess.item, DefaultFileName);
             pManager[pManager.ParamCount - 1].Optional = true;
         }

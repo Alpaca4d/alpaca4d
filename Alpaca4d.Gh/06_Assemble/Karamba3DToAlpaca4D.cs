@@ -39,8 +39,7 @@ namespace Alpaca4d.Gh
             pManager.AddTextParameter("LoadCases", "LoadCases", "The load cases to convert, by name. Left empty, every load case is converted.", GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
             pManager.AddBooleanParameter("AllowPartial", "AllowPartial",
-                "When something cannot be converted, the component outputs nothing, so that a model differing from Karamba's is never analysed by accident. " +
-                "Set to True to get the output anyway, without what could not be converted.", GH_ParamAccess.item, false);
+                "When something cannot be converted, nothing is output. True outputs the rest anyway.", GH_ParamAccess.item, false);
             pManager[pManager.ParamCount - 1].Optional = true;
         }
 
