@@ -34,6 +34,8 @@ namespace Alpaca4d.Gh
             "bending with axial force and shear (6.2); flexural buckling about both axes (6.3.1); " +
             "lateral-torsional buckling (6.3.2), with M_cr worked out on each beam's own moment diagram; and " +
             "bending with compression as a member (6.3.3, by Annex B). Not yet: torsional buckling and Class 4 sections.\n" +
+            "Buckling lengths left empty are worked out from the model: beams in line make a member, held where " +
+            "supports, bracing or the beams it sits on hold it. Model View's Buckling menu draws them.\n" +
             "The steel grade comes from the beam's material: make it with Material Library Elastic, or " +
             "name it after its grade (\"S355\").\n" +
             "One item per beam, in the order of the Element output. A check that could not be made is " +
@@ -85,9 +87,7 @@ namespace Alpaca4d.Gh
 
             if (this.MemberInputs)
                 unit.RegisterInputParam(new Param_Number(), "LengthY", "LengthY",
-                    $"Buckling length L_cr about local y - the minor axis of an I [{Units.Length}]. " + PerBeam +
-                    " Left empty, each beam's own length, node to node. A member drawn as several beams needs " +
-                    "its whole length here: each beam's own is only a piece of it.",
+                    $"Buckling length about local y, an I's minor axis [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                     GH_ParamAccess.list);
             else
                 unit.RegisterInputParam(new Param_Number(), "Length", "Length",
@@ -123,19 +123,12 @@ namespace Alpaca4d.Gh
             if (this.MemberInputs)
             {
                 unit.RegisterInputParam(new Param_Number(), "LengthZ", "LengthZ",
-                    $"Buckling length L_cr about local z - the major axis of an I [{Units.Length}]. " + PerBeam +
-                    " Left empty, each beam's own length, node to node.",
+                    $"Buckling length about local z, an I's major axis [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
                 unit.RegisterInputParam(new Param_Number(), "LengthLT", "LengthLT",
-                    $"Distance between lateral restraints, for lateral-torsional buckling [{Units.Length}]. Each beam " +
-                    "is taken as held sideways and against twist at both ends and at equal steps no longer than " +
-                    "this in between, and free to rotate and warp at each - fork supports - and every piece is " +
-                    "checked on its own part of the moment diagram. Longer than the beam, it stands for an " +
-                    "unrestrained length the beam is only part of, or a cantilever's effective length, and the " +
-                    "beam's peak moment is taken as uniform over all of it. " + PerBeam +
-                    " Left empty, each beam's own length: not safe for a cantilever, whose tip is not held.",
+                    $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -200,6 +193,22 @@ namespace Alpaca4d.Gh
         }
 
         private const string PerBeam = "One value for every beam, or one per beam checked, in the order of the Element output.";
+
+        /// <summary>
+        /// What the user should know about the buckling lengths worked out from the model, when some are:
+        /// that a model too large to look for its bracing in got each member's own length, and that a
+        /// slab or a wall holds nothing in them.
+        /// </summary>
+        internal static void SayHowLengths(GH_Component component, Alpaca4d.Model model, BucklingLengths worked, bool someWorkedOut)
+        {
+            if (!someWorkedOut || model.Beams.Count == 0) return;
+            if (worked.Approximate)
+                component.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "The model is too large to find its bracing in: each member was given its own length. Give the lengths by hand.");
+            if (model.Shells.Count > 0 || model.Bricks.Count > 0)
+                component.AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    "Lengths worked out from the model count no slab or wall as a restraint: give those they shorten by hand.");
+        }
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
@@ -282,9 +291,20 @@ namespace Alpaca4d.Gh
                 return;
             }
 
-            // Node to node, the length OpenSees integrates over. A beam curve is a straight line between
-            // its nodes, so this is its length too.
-            var members = beams.Select(b => new SteelMember(b.Curve != null ? b.Curve.PointAtStart.DistanceTo(b.Curve.PointAtEnd) : 0.0)).ToList();
+            // Node to node, the length OpenSees integrates over - a beam curve is a straight line between its
+            // nodes, so this is its length too - and the buckling lengths worked out from the model, which a
+            // length given here goes over. The old component, which never had them, keeps each beam's own.
+            List<SteelMember> members;
+            if (this.MemberInputs)
+            {
+                var worked = BucklingLengths.Of(alpacaModel);
+                members = worked.SteelMembers(alpacaModel);
+                SayHowLengths(this, alpacaModel, worked, lengthsY.Count == 0 || lengthsZ.Count == 0 || lengthsLT.Count == 0);
+            }
+            else
+            {
+                members = beams.Select(b => new SteelMember(b.Curve != null ? b.Curve.PointAtStart.DistanceTo(b.Curve.PointAtEnd) : 0.0)).ToList();
+            }
             for (int j = 0; j < kept.Count; j++)
             {
                 var member = members[kept[j]];
@@ -332,7 +352,8 @@ namespace Alpaca4d.Gh
                 Set(DA, "Report", results.Select(u => u.Report));
             Set(DA, "Element", kept.Select(i => beams[i]));
 
-            bool defaultLengths = lengthsY.Count == 0 || lengthsZ.Count == 0 || (this.MemberInputs && lengthsLT.Count == 0);
+            // Only the old component still takes each beam's own length; the new one works them out.
+            bool defaultLengths = !this.MemberInputs && lengthsY.Count == 0;
             Explain(results, kept, beams, defaultLengths);
         }
 
