@@ -43,18 +43,17 @@ namespace Alpaca4d.Gh
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthY", "LengthY",
-                $"Buckling length about local y, across a rectangle's Width [{Units.Length}]: one, or one per beam. Empty: each beam's.",
+                $"Buckling length about local y, across a rectangle's Width [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthZ", "LengthZ",
-                $"Buckling length about local z, across a rectangle's Height [{Units.Length}]: one, or one per beam. Empty: each beam's.",
+                $"Buckling length about local z, across a rectangle's Height [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
             unit.RegisterInputParam(new Param_Number(), "LengthLT", "LengthLT",
-                $"Spacing of lateral restraints, for lateral-torsional buckling [{Units.Length}]. " +
-                "Empty: each beam's length, unsafe for a cantilever.",
+                $"Lateral restraint spacing, for lateral-torsional buckling [{Units.Length}]: one, or one per beam. Empty: worked out from the model.",
                 GH_ParamAccess.list);
             unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
 
@@ -179,8 +178,11 @@ namespace Alpaca4d.Gh
                 return;
             }
 
-            // Node to node, the length OpenSees integrates over.
-            var members = beams.Select(b => new SteelMember(b.Curve != null ? b.Curve.PointAtStart.DistanceTo(b.Curve.PointAtEnd) : 0.0)).ToList();
+            // Node to node, the length OpenSees integrates over, and the buckling lengths worked out from the
+            // model, which a length given here goes over - as Steel and Section Optimiser take them.
+            var worked = BucklingLengths.Of(alpacaModel);
+            var members = worked.SteelMembers(alpacaModel);
+            SayHowLengths(this, alpacaModel, worked, lengthsY.Count == 0 || lengthsZ.Count == 0 || lengthsLT.Count == 0);
             for (int j = 0; j < kept.Count; j++)
             {
                 var member = members[kept[j]];
