@@ -44,6 +44,9 @@ namespace Alpaca4d.Element
     /// corotational bar holds the cable.</item>
     /// <item>A line load on a truss goes to its two end nodes, half each (<see cref="LumpedLoadTcl"/>):
     /// the bar has no bending to carry it with.</item>
+    /// <item>It takes Rayleigh damping (<c>-doRayleigh 1</c>), as the beams do. corotTruss leaves it
+    /// out unless told to, and in a transient analysis an undamped truss swings on after everything
+    /// round it has settled.</item>
     /// </list>
     ///
     /// A truss has no rotational stiffness, so a node that only trusses reach would leave its three
@@ -174,7 +177,7 @@ namespace Alpaca4d.Element
             }
 
             tcl.Append($"element corotTruss {this.Id} {this.INode} {this.JNode} {TclNumber.Write(this.Section.Area)} {material}" +
-                       $" -rho {TclNumber.Write(Alpaca4d.ModelMass.FromKg(this.MassDens))}\n");
+                       $" -rho {TclNumber.Write(Alpaca4d.ModelMass.FromKg(this.MassDens))} -doRayleigh 1\n");
             return tcl.ToString();
         }
 
