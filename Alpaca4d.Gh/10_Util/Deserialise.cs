@@ -83,7 +83,7 @@ namespace Alpaca4d.Gh
 			DA.SetData(0, reader.Model);
 		}
 
-		public override GH_Exposure Exposure => GH_Exposure.tertiary;
+		public override GH_Exposure Exposure => GH_Exposure.quarternary;
 		protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Deserialize__Alpaca4d_;
 		public override Guid ComponentGuid => new Guid("{D5309B00-6784-42E9-9219-1B68B6D3320F}");
 	}

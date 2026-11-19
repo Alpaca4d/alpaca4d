@@ -62,7 +62,7 @@ namespace Alpaca4d.Gh
             DA.SetData(0, _counter);
         }
 
-        public override GH_Exposure Exposure => GH_Exposure.tertiary;
+        public override GH_Exposure Exposure => GH_Exposure.quarternary;
 
         protected override System.Drawing.Bitmap Icon => Alpaca4d.Gh.Properties.Resources.Counter__Alpaca4d_;
 
