@@ -3,6 +3,7 @@ using Grasshopper.Kernel;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace Alpaca4d.Gh
@@ -61,6 +62,18 @@ namespace Alpaca4d.Gh
             base.OnComponentLoaded();
             foreach (var sub in _subcomponents)
                 sub.OnComponentLoaded();
+        }
+
+        /// <summary>
+        /// A Value List on GeomTransf (input 2 of Beam and WithHinges) fills itself with Linear, PDelta
+        /// and Corotational. Truss has no such input: it is always corotational.
+        /// </summary>
+        protected override void BeforeSolveInstance()
+        {
+            base.BeforeSolveInstance();
+            var unit = ActiveUnit?.Name;
+            if (_subcomponents.Any(s => (s is ForceBeamColumnSubComponent || s is WithHingesSubComponent) && s.name() == unit))
+                ValueListUtils.UpdateValueLists(this, 2, GeomTransfInput.Names);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)

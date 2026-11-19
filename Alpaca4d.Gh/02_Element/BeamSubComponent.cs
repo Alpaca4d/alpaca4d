@@ -25,7 +25,7 @@ namespace Alpaca4d.Gh
             evaluationUnit.RegisterInputParam(new Param_GenericObject(), "Section", "Section", "Cross-section.", GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = false;
 
-            evaluationUnit.RegisterInputParam(new Param_GenericObject(), "GeometricTransformation", "GeomTransf", "Optional geometric transformation. If omitted, Linear is used.", GH_ParamAccess.item);
+            evaluationUnit.RegisterInputParam(new Param_GenericObject(), "GeometricTransformation", "GeomTransf", GeomTransfInput.Description, GH_ParamAccess.item);
             evaluationUnit.Inputs[evaluationUnit.Inputs.Count - 1].Parameter.Optional = true;
 
             evaluationUnit.RegisterInputParam(new Param_Vector(), "ZAxis", "ZAxis", "Local z axis, squared off the beam. Left empty it is horizontal, so local y - the depth of an I-section, the Height of a rectangle - points as near straight up as the beam allows, and gravity bends a floor beam about its strong axis (Vy, Mz). A vertical member gets local y along global X.", GH_ParamAccess.item);
@@ -60,10 +60,12 @@ namespace Alpaca4d.Gh
                 zAxis = Alpaca4d.Utils.DefaultLocalZ(line);
             }
 
-            Alpaca4d.Element.GeomTransf geomTransf = null;
-            if (!DA.GetData(2, ref geomTransf))
+            var geomTransf = GeomTransfInput.Read(DA, 2, line, zAxis, out var transfError);
+            if (geomTransf == null)
             {
-                geomTransf = new Alpaca4d.Element.GeomTransf(Alpaca4d.Element.GeomTransfType.Linear, line, zAxis);
+                msg = transfError;
+                level = GH_RuntimeMessageLevel.Error;
+                return;
             }
 
             Color color = Alpaca4d.Colors.DefaultBeam;
