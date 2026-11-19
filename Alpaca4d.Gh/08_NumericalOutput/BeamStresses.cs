@@ -42,10 +42,15 @@ namespace Alpaca4d.Gh
             _filterInput = pManager.ParamCount;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _combinationInput = pManager.ParamCount;
+            pManager.AddParameter(ResultCombinations.Input());
         }
 
         /// <summary>Where the ElementId filter sits in the input list.</summary>
         private int _filterInput;
+
+        /// <summary>Where the Combination input sits: last, so that saved files keep the others in place.</summary>
+        private int _combinationInput;
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
@@ -67,11 +72,16 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var alpacaModel = new Alpaca4d.Model();
-            bool history = false;
-            int step = 0;
-
             if (!DA.GetData(0, ref alpacaModel)) return;
             if (!AnalysedModel.Check(this, alpacaModel)) return;
+            ResultCombinations.Read(this, DA, _combinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+        }
+
+        /// <summary>The stresses of one analysed model - the model itself, or one of its load combinations.</summary>
+        private void Read(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, ResultCombinations outputs)
+        {
+            bool history = false;
+            int step = 0;
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
@@ -84,7 +94,7 @@ namespace Alpaca4d.Gh
             var beams = alpacaModel.Beams;
             var kept = ElementFilterInput.Select(filter, beams, alpacaModel, "beams", this);
 
-            var outputs = Enumerable.Range(0, 8).Select(_ => new DataTree<double>()).ToArray();
+            var trees = Enumerable.Range(0, 8).Select(_ => new DataTree<double>()).ToArray();
             var shapeless = new SortedSet<int>();
 
             foreach (int current in steps)
@@ -109,25 +119,25 @@ namespace Alpaca4d.Gh
                     var path = history ? new GH_Path(current, beam.Id.Value) : new GH_Path(beam.Id.Value);
                     var stresses = all[i];
 
-                    outputs[0].AddRange(stresses.Select(x => MPa(x.SigmaN)), path);
+                    trees[0].AddRange(stresses.Select(x => MPa(x.SigmaN)), path);
 
                     // A section with no shape has only N/A to give. Its branches are still made, empty,
                     // so every output keeps one branch per beam and they line up with Element.
                     if (stresses.Count > 0 && !stresses[0].HasShape)
                     {
                         shapeless.Add(beam.Id.Value);
-                        for (int k = 1; k < outputs.Length; k++)
-                            outputs[k].EnsurePath(path);
+                        for (int k = 1; k < trees.Length; k++)
+                            trees[k].EnsurePath(path);
                         continue;
                     }
 
-                    outputs[1].AddRange(stresses.Select(x => MPa(x.SigmaMy)), path);
-                    outputs[2].AddRange(stresses.Select(x => MPa(x.SigmaMz)), path);
-                    outputs[3].AddRange(stresses.Select(x => MPa(x.SigmaMax)), path);
-                    outputs[4].AddRange(stresses.Select(x => MPa(x.SigmaMin)), path);
-                    outputs[5].AddRange(stresses.Select(x => MPa(x.TauV)), path);
-                    outputs[6].AddRange(stresses.Select(x => MPa(x.TauT)), path);
-                    outputs[7].AddRange(stresses.Select(x => MPa(x.VonMises)), path);
+                    trees[1].AddRange(stresses.Select(x => MPa(x.SigmaMy)), path);
+                    trees[2].AddRange(stresses.Select(x => MPa(x.SigmaMz)), path);
+                    trees[3].AddRange(stresses.Select(x => MPa(x.SigmaMax)), path);
+                    trees[4].AddRange(stresses.Select(x => MPa(x.SigmaMin)), path);
+                    trees[5].AddRange(stresses.Select(x => MPa(x.TauV)), path);
+                    trees[6].AddRange(stresses.Select(x => MPa(x.TauT)), path);
+                    trees[7].AddRange(stresses.Select(x => MPa(x.VonMises)), path);
                 }
             }
 
@@ -139,10 +149,10 @@ namespace Alpaca4d.Gh
                     $"only σN can be worked out for them (element {tags}). Their other branches are empty.");
             }
 
-            for (int i = 0; i < outputs.Length; i++)
-                DA.SetDataTree(i, outputs[i]);
+            for (int i = 0; i < trees.Length; i++)
+                outputs.Tree(i, trees[i]);
 
-            DA.SetDataList(8, kept.Select(i => beams[i]));
+            outputs.Same(8, kept.Select(i => beams[i]));
         }
 
         private static double MPa(double stress) => ModelStress.ToMPa(stress);

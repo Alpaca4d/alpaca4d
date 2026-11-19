@@ -39,10 +39,15 @@ namespace Alpaca4d.Gh
             _filterInput = pManager.ParamCount;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _combinationInput = pManager.ParamCount;
+            pManager.AddParameter(ResultCombinations.Input());
         }
 
         /// <summary>Where the ElementId filter sits in the input list.</summary>
         private int _filterInput;
+
+        /// <summary>Where the Combination input sits: last, so that saved files keep the others in place.</summary>
+        private int _combinationInput;
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
@@ -59,11 +64,16 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var alpacaModel = new Alpaca4d.Model();
-            bool history = false;
-            int step = 0;
-
             if (!DA.GetData(0, ref alpacaModel)) return;
             if (!AnalysedModel.Check(this, alpacaModel)) return;
+            ResultCombinations.Read(this, DA, _combinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+        }
+
+        /// <summary>The stresses of one analysed model - the model itself, or one of its load combinations.</summary>
+        private void Read(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, ResultCombinations outputs)
+        {
+            bool history = false;
+            int step = 0;
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
@@ -76,7 +86,7 @@ namespace Alpaca4d.Gh
             var kept = ElementFilterInput.Select(filter, shells, alpacaModel, "shells", this);
             var keptShells = kept.Select(i => shells[i]).ToList();
 
-            var outputs = Enumerable.Range(0, 6).Select(_ => new DataTree<double>()).ToArray();
+            var trees = Enumerable.Range(0, 6).Select(_ => new DataTree<double>()).ToArray();
 
             foreach (int current in steps)
             {
@@ -117,21 +127,21 @@ namespace Alpaca4d.Gh
                             ? new GH_Path(current, shell.Id.Value, layer)
                             : new GH_Path(shell.Id.Value, layer);
 
-                        outputs[0].AddRange(atLayer.Select(x => x.S11), path);
-                        outputs[1].AddRange(atLayer.Select(x => x.S22), path);
-                        outputs[2].AddRange(atLayer.Select(x => x.S12), path);
-                        outputs[3].AddRange(atLayer.Select(x => x.S23), path);
-                        outputs[4].AddRange(atLayer.Select(x => x.S31), path);
-                        outputs[5].AddRange(atLayer.Select(x => x.VonMises), path);
+                        trees[0].AddRange(atLayer.Select(x => x.S11), path);
+                        trees[1].AddRange(atLayer.Select(x => x.S22), path);
+                        trees[2].AddRange(atLayer.Select(x => x.S12), path);
+                        trees[3].AddRange(atLayer.Select(x => x.S23), path);
+                        trees[4].AddRange(atLayer.Select(x => x.S31), path);
+                        trees[5].AddRange(atLayer.Select(x => x.VonMises), path);
                     }
                 }
             }
 
-            for (int i = 0; i < outputs.Length; i++)
-                DA.SetDataTree(i, outputs[i]);
+            for (int i = 0; i < trees.Length; i++)
+                outputs.Tree(i, trees[i]);
 
-            DA.SetDataList(6, Alpaca4d.Result.Read.LayerNames);
-            DA.SetDataList(7, keptShells);
+            outputs.Same(6, Alpaca4d.Result.Read.LayerNames);
+            outputs.Same(7, keptShells);
         }
 
         public override GH_Exposure Exposure => GH_Exposure.tertiary;

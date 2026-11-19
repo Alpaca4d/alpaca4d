@@ -65,6 +65,8 @@ namespace Alpaca4d.Gh
         private const int ModelInput = 0, StepInput = 1, FilterInput = 2, LengthInput = 3;
         private const int FabricationInput = 4, GammaM0Input = 5, GammaM1Input = 6, ReportInput = 7;
         private const int LengthZInput = 8, LengthLTInput = 9, LoadInput = 10, SwayInput = 11;
+        // Only Utilisation has it, last of all: Utilisation_obsolete has none of the inputs from LengthZ on.
+        private const int CombinationInput = 12;
 
         protected override void RegisterEvaluationUnits(EvaluationUnitManager mngr)
         {
@@ -138,6 +140,8 @@ namespace Alpaca4d.Gh
                     "The beam is in a frame that buckles by swaying: Cm = 0.9 about both axes (Table B.3). One, or one per beam.",
                     GH_ParamAccess.list);
                 unit.Inputs[unit.Inputs.Count - 1].Parameter.Optional = true;
+
+                ResultCombinations.Register(unit);
             }
 
             unit.RegisterOutputParam(new Param_Number(), "Axial", "Axial", "N against the plastic resistance of the section, in tension or compression (6.2.3, 6.2.4).");
@@ -192,6 +196,14 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA, EvaluationUnit unit)
         {
             var alpacaModel = new Alpaca4d.Model();
+            if (!DA.GetData(ModelInput, ref alpacaModel)) return;
+            if (!AnalysedModel.Check(this, alpacaModel)) return;
+            ResultCombinations.Read(this, DA, CombinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+        }
+
+        /// <summary>The check of one analysed model - the model itself, or one of its load combinations.</summary>
+        private void Read(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, ResultCombinations outputs)
+        {
             int step = 0;
             var lengthsY = new List<double>();
             var lengthsZ = new List<double>();
@@ -202,8 +214,6 @@ namespace Alpaca4d.Gh
             string fabricationText = "Rolled";
             double gammaM0 = 1.0, gammaM1 = 1.0;
 
-            if (!DA.GetData(ModelInput, ref alpacaModel)) return;
-            if (!AnalysedModel.Check(this, alpacaModel)) return;
             DA.GetData(StepInput, ref step);
             var filter = ElementFilterInput.Read(DA, FilterInput, this);
             DA.GetDataList(LengthInput, lengthsY);
@@ -292,38 +302,40 @@ namespace Alpaca4d.Gh
 
             var results = kept.Select(i => all[i]).ToList();
 
-            Set(DA, "Axial", Numbers(results, u => u.Axial));
-            Set(DA, "ShearY", Numbers(results, u => u.ShearY));
-            Set(DA, "ShearZ", Numbers(results, u => u.ShearZ));
-            Set(DA, "Torsion", Numbers(results, u => u.Torsion));
-            Set(DA, "BendingY", Numbers(results, u => u.BendingY));
-            Set(DA, "BendingZ", Numbers(results, u => u.BendingZ));
-            Set(DA, "Combined", Numbers(results, u => u.Combined));
-            Set(DA, "BucklingY", Numbers(results, u => u.BucklingY));
-            Set(DA, "BucklingZ", Numbers(results, u => u.BucklingZ));
+            Set(outputs, "Axial", Numbers(results, u => u.Axial));
+            Set(outputs, "ShearY", Numbers(results, u => u.ShearY));
+            Set(outputs, "ShearZ", Numbers(results, u => u.ShearZ));
+            Set(outputs, "Torsion", Numbers(results, u => u.Torsion));
+            Set(outputs, "BendingY", Numbers(results, u => u.BendingY));
+            Set(outputs, "BendingZ", Numbers(results, u => u.BendingZ));
+            Set(outputs, "Combined", Numbers(results, u => u.Combined));
+            Set(outputs, "BucklingY", Numbers(results, u => u.BucklingY));
+            Set(outputs, "BucklingZ", Numbers(results, u => u.BucklingZ));
             if (this.MemberInputs)
             {
-                Set(DA, "LTB", Numbers(results, u => u.LateralTorsional));
-                Set(DA, "InteractionY", Numbers(results, u => u.InteractionY));
-                Set(DA, "InteractionZ", Numbers(results, u => u.InteractionZ));
+                Set(outputs, "LTB", Numbers(results, u => u.LateralTorsional));
+                Set(outputs, "InteractionY", Numbers(results, u => u.InteractionY));
+                Set(outputs, "InteractionZ", Numbers(results, u => u.InteractionZ));
             }
-            Set(DA, "Max", Numbers(results, u => u.Max));
-            Set(DA, "Type", results.Select(u => u.Type));
-            Set(DA, "Class", results.Select(u => u.Class.HasValue ? new GH_Integer(u.Class.Value) : null));
-            Set(DA, "Governing", results.Select(u => u.Governing));
+            Set(outputs, "Max", Numbers(results, u => u.Max));
+            outputs.Same(Output("Type"), results.Select(u => u.Type));
+            Set(outputs, "Class", results.Select(u => u.Class.HasValue ? new GH_Integer(u.Class.Value) : null));
+            Set(outputs, "Governing", results.Select(u => u.Governing));
             if (report)
-                Set(DA, "Report", results.Select(u => u.Report));
-            Set(DA, "Element", kept.Select(i => beams[i]));
+                Set(outputs, "Report", results.Select(u => u.Report));
+            outputs.Same(Output("Element"), kept.Select(i => beams[i]));
 
             bool defaultLengths = lengthsY.Count == 0 || lengthsZ.Count == 0 || (this.MemberInputs && lengthsLT.Count == 0);
             Explain(results, kept, beams, defaultLengths);
         }
 
         /// <summary>An output, by name: the outputs after BucklingZ move when LTB and the interactions are there.</summary>
-        private void Set(IGH_DataAccess DA, string name, System.Collections.IEnumerable data)
+        private void Set(ResultCombinations outputs, string name, System.Collections.IEnumerable data)
         {
-            DA.SetDataList(this.Params.IndexOfOutputParam(name), data);
+            outputs.List(Output(name), data);
         }
+
+        private int Output(string name) => this.Params.IndexOfOutputParam(name);
 
         /// <summary>
         /// One value per kept beam from a list of none (no value for any), one (the same for all) or

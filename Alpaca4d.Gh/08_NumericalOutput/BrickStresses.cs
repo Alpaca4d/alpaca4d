@@ -53,10 +53,15 @@ namespace Alpaca4d.Gh
                 "Frame of the six components: 0 global, 1 the element's own axes. Plane gives the one used.",
                 GH_ParamAccess.item, 0);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _combinationInput = pManager.ParamCount;
+            pManager.AddParameter(ResultCombinations.Input());
         }
 
         /// <summary>Where the ElementId filter sits in the input list.</summary>
         private int _filterInput;
+
+        /// <summary>Where the Combination input sits: last, so that saved files keep the others in place.</summary>
+        private int _combinationInput;
 
         /// <summary>Where the Axes choice sits in the input list.</summary>
         private int _axesInput;
@@ -103,11 +108,16 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var alpacaModel = new Alpaca4d.Model();
-            bool history = false;
-            int step = 0;
-
             if (!DA.GetData(0, ref alpacaModel)) return;
             if (!AnalysedModel.Check(this, alpacaModel)) return;
+            ResultCombinations.Read(this, DA, _combinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+        }
+
+        /// <summary>The stresses of one analysed model - the model itself, or one of its load combinations.</summary>
+        private void Read(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, ResultCombinations outputs)
+        {
+            bool history = false;
+            int step = 0;
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
@@ -124,34 +134,34 @@ namespace Alpaca4d.Gh
             var kept = ElementFilterInput.Select(filter, bricks, alpacaModel, "solid elements", this);
 
             // Six components plus von Mises, in the output order.
-            var outputs = Enumerable.Range(0, 7).Select(_ => new DataTree<double>()).ToArray();
+            var trees = Enumerable.Range(0, 7).Select(_ => new DataTree<double>()).ToArray();
 
             foreach (int current in steps)
             {
                 var stresses = StressesAt(alpacaModel, current, local);
-                for (int i = 0; i < outputs.Length; i++)
-                    outputs[i].AddRange(ElementFilterInput.Slice(stresses[i], kept), new Grasshopper.Kernel.Data.GH_Path(current));
+                for (int i = 0; i < trees.Length; i++)
+                    trees[i].AddRange(ElementFilterInput.Slice(stresses[i], kept), new Grasshopper.Kernel.Data.GH_Path(current));
             }
 
             // Finally assign the spiral to the output parameter.
-            for (int i = 0; i < outputs.Length; i++)
+            for (int i = 0; i < trees.Length; i++)
             {
                 // A single step keeps the flat list it has always been; a history is a tree
                 // with one branch per step.
                 if (history)
-                    DA.SetDataTree(i, outputs[i]);
+                    outputs.Tree(i, trees[i]);
                 else
-                    DA.SetDataList(i, outputs[i].AllData());
+                    outputs.List(i, trees[i].AllData());
             }
 
             // The only thing saying which element each value belongs to: unlike the beam and
             // shell components these outputs are flat lists, with no branch path to carry a tag.
-            DA.SetDataList(7, kept.Select(i => bricks[i]));
+            outputs.Same(7, kept.Select(i => bricks[i]));
 
             // The frame the numbers above are in. Written out even in the global case, where it is
             // the world plane sat at the element's centre, so that reading the two together never
             // depends on remembering which way the Axes input was set.
-            DA.SetDataList(8, kept.Select(i => local
+            outputs.Same(8, kept.Select(i => local
                 ? bricks[i].LocalPlane
                 : new Rhino.Geometry.Plane(bricks[i].LocalPlane.Origin,
                                            Rhino.Geometry.Vector3d.XAxis,

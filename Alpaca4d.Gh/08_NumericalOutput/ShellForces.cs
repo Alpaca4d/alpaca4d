@@ -42,10 +42,15 @@ namespace Alpaca4d.Gh
             _filterInput = pManager.ParamCount;
             pManager.AddTextParameter("ElementId", "ElementId", ElementIdentity.Filter, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _combinationInput = pManager.ParamCount;
+            pManager.AddParameter(ResultCombinations.Input());
         }
 
         /// <summary>Where the ElementId filter sits in the input list.</summary>
         private int _filterInput;
+
+        /// <summary>Where the Combination input sits: last, so that saved files keep the others in place.</summary>
+        private int _combinationInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
@@ -74,11 +79,16 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var alpacaModel = new Alpaca4d.Model();
-            bool history = false;
-            int step = 0;
-
             if (!DA.GetData(0, ref alpacaModel)) return;
             if (!AnalysedModel.Check(this, alpacaModel)) return;
+            ResultCombinations.Read(this, DA, _combinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+        }
+
+        /// <summary>The forces of one analysed model - the model itself, or one of its load combinations.</summary>
+        private void Read(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, ResultCombinations outputs)
+        {
+            bool history = false;
+            int step = 0;
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
@@ -197,15 +207,15 @@ namespace Alpaca4d.Gh
             }
 
             // Finally assign the spiral to the output parameter.
-            DA.SetDataTree(0, fxTree);
-            DA.SetDataTree(1, fyTree);
-            DA.SetDataTree(2, fxyTree);
-            DA.SetDataTree(3, mxTree);
-            DA.SetDataTree(4, myTree);
-            DA.SetDataTree(5, mxyTree);
-            DA.SetDataTree(6, vxzTree);
-            DA.SetDataTree(7, vyzTree);
-            DA.SetDataList(8, keptShells);
+            outputs.Tree(0, fxTree);
+            outputs.Tree(1, fyTree);
+            outputs.Tree(2, fxyTree);
+            outputs.Tree(3, mxTree);
+            outputs.Tree(4, myTree);
+            outputs.Tree(5, mxyTree);
+            outputs.Tree(6, vxzTree);
+            outputs.Tree(7, vyzTree);
+            outputs.Same(8, keptShells);
         }
 
 

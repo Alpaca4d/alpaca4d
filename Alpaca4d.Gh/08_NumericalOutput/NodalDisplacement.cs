@@ -45,10 +45,15 @@ namespace Alpaca4d.Gh
             _filterInput = pManager.ParamCount;
             pManager.AddIntegerParameter("NodeTag", "NodeTag", NodeFilterInput.NodeTagFilter, GH_ParamAccess.list);
             pManager[pManager.ParamCount - 1].Optional = true;
+            _combinationInput = pManager.ParamCount;
+            pManager.AddParameter(ResultCombinations.Input());
         }
 
         /// <summary>Where the NodeTag filter sits in the input list.</summary>
         private int _filterInput;
+
+        /// <summary>Where the Combination input sits: last, so that saved files keep the others in place.</summary>
+        private int _combinationInput;
 
         /// <summary>
         /// Registers all the output parameters for this component.
@@ -73,11 +78,16 @@ namespace Alpaca4d.Gh
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var alpacaModel = new Alpaca4d.Model();
-            bool history = false;
-            int step = 0;
-
             if (!DA.GetData(0, ref alpacaModel)) return;
             if (!AnalysedModel.Check(this, alpacaModel)) return;
+            ResultCombinations.Read(this, DA, _combinationInput, alpacaModel, (model, outputs) => Read(DA, model, outputs));
+        }
+
+        /// <summary>The displacements of one analysed model - the model itself, or one of its load combinations.</summary>
+        private void Read(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, ResultCombinations outputs)
+        {
+            bool history = false;
+            int step = 0;
             DA.GetData(1, ref history);
             DA.GetData(2, ref step);
 
@@ -139,13 +149,13 @@ namespace Alpaca4d.Gh
                     }
 
                     // Finally assign the spiral to the output parameter.
-                    SetPositions(DA, alpacaModel, kept);
-                    DA.SetDataList(1, disp);
-                    DA.SetDataList(2, rot);
-                    DA.SetDataList(4, vel);
-                    DA.SetDataList(5, angVel);
-                    DA.SetDataList(6, acc);
-                    DA.SetDataList(7, angAcc);
+                    SetPositions(outputs, alpacaModel, kept);
+                    outputs.List(1, disp);
+                    outputs.List(2, rot);
+                    outputs.List(4, vel);
+                    outputs.List(5, angVel);
+                    outputs.List(6, acc);
+                    outputs.List(7, angAcc);
                 }
                 else if(history == true)
                 {
@@ -178,13 +188,13 @@ namespace Alpaca4d.Gh
 
                     // Position leads, so 3 is the "--------" separator and the four transient
                     // outputs are 4 to 7 - the same indices RegisterOutputParams gives them.
-                    SetPositions(DA, alpacaModel, kept);
-                    DA.SetDataTree(1, disp);
-                    DA.SetDataTree(2, rot);
-                    DA.SetDataTree(4, vel);
-                    DA.SetDataTree(5, angVel);
-                    DA.SetDataTree(6, acc);
-                    DA.SetDataTree(7, angAcc);
+                    SetPositions(outputs, alpacaModel, kept);
+                    outputs.Tree(1, disp);
+                    outputs.Tree(2, rot);
+                    outputs.Tree(4, vel);
+                    outputs.Tree(5, angVel);
+                    outputs.Tree(6, acc);
+                    outputs.Tree(7, angAcc);
                 }
 			}
 			else
@@ -196,9 +206,9 @@ namespace Alpaca4d.Gh
                 rot = Alpaca4d.Result.Read.NodalOutput(alpacaModel, step, Alpaca4d.Result.ResultType.MODES_OF_VIBRATION_R, readTags);
 
                 // Finally assign the spiral to the output parameter.
-                SetPositions(DA, alpacaModel, kept);
-                DA.SetDataList(1, disp);
-                DA.SetDataList(2, rot);
+                SetPositions(outputs, alpacaModel, kept);
+                outputs.List(1, disp);
+                outputs.List(2, rot);
             }
         }
 
@@ -212,9 +222,9 @@ namespace Alpaca4d.Gh
         /// output of their own - filtered they are exactly what was typed into NodeTag, and
         /// unfiltered they are one to the number of nodes, in order.
         /// </summary>
-        private static void SetPositions(IGH_DataAccess DA, Alpaca4d.Model alpacaModel, System.Collections.Generic.List<int> kept)
+        private static void SetPositions(ResultCombinations outputs, Alpaca4d.Model alpacaModel, System.Collections.Generic.List<int> kept)
         {
-            DA.SetDataList(0, kept.Select(i => alpacaModel.Nodes[i].Pos));
+            outputs.Same(0, kept.Select(i => alpacaModel.Nodes[i].Pos));
         }
 
 
